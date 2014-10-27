@@ -34,25 +34,26 @@ func (cpu *Cpu) SetPC(addr Address) {
 
 // Step the cpu by one instruction.
 func (cpu *Cpu) Step() {
-	opcode := cpu.Mem.ReadByte(cpu.Reg.PC)
-	cpu.Reg.PC++
 
-	// Look up the instruction for the opcode
+	// Grab the next opcode at the current PC
+	opcode := cpu.Mem.ReadByte(cpu.Reg.PC)
+
+	// Look up the instruction data for the opcode
 	idata := &Instructions[opcode]
 
 	// Fetch the operand (if any) and advance the PC
-	operand := cpu.Mem.ReadBytes(cpu.Reg.PC, int(idata.Length)-1)
-	cpu.Reg.PC += Address(idata.Length - 1)
+	operand := cpu.Mem.ReadBytes(cpu.Reg.PC+1, int(idata.Length)-1)
+	cpu.Reg.PC += Address(idata.Length)
 
-	// Execute the opcode instruction
+	// Execute the instruction
 	cpu.pageCrossed = false
 	cpu.extraCycles = 0
 	if idata.fn != nil {
 		idata.fn(cpu, idata, operand)
 	}
 
-	// Update the CPU cycle counter, with special case logic
-	// when a page boundary is crossed
+	// Update the CPU cycle counter, with special-case logic
+	// to handle a page boundary crossing
 	cpu.Cycles += uint64(idata.Cycles) + uint64(cpu.extraCycles)
 	if cpu.pageCrossed {
 		cpu.Cycles += uint64(idata.BPCycles)

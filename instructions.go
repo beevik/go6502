@@ -142,7 +142,7 @@ const (
 	ABS             // Absolute
 	ABX             // Absolute,X
 	ABY             // Absolute,Y
-	IND             // Indirect
+	IND             // (Indirect)
 	IDX             // (Indirect,X)
 	IDY             // (Indirect),Y
 	ACC             // Accumulator
@@ -359,6 +359,8 @@ type Instruction struct {
 // All 6502 instructions indexed by opcode value.
 var Instructions [256]Instruction
 
+var variants map[string][]*Instruction
+
 // Build the Instructions table.
 func init() {
 
@@ -367,6 +369,10 @@ func init() {
 	for i := range impl {
 		symToImpl[impl[i].sym] = &impl[i]
 	}
+
+	// Create a map from instruction name string to the list of
+	// all instruction variants matching that name
+	variants = make(map[string][]*Instruction)
 
 	// Build a full array impl comprehensive instruction data
 	for _, d := range data {
@@ -379,5 +385,12 @@ func init() {
 		inst.Cycles = d.cycles
 		inst.BPCycles = d.bpcycles
 		inst.fn = impl.fn
+
+		variants[inst.Name] = append(variants[inst.Name], inst)
 	}
+}
+
+// Return all instructions matching the opcode name.
+func GetInstructions(opcode string) []*Instruction {
+	return variants[opcode]
 }

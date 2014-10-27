@@ -7,6 +7,9 @@ assembler, and disassembler.
 See http://godoc.org/github.com/beevik/go6502 for the godoc-formatted API
 documentation.
 
+The assembler and disassembler are currently under construction, so they
+may have a significant number of bugs.
+
 ###Example: Loading memory
 
 Initialize a 64KB memory space and load some machine code from a byte
