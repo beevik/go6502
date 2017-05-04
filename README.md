@@ -10,7 +10,7 @@ documentation.
 The assembler and disassembler are currently under construction, so they
 may have a significant number of bugs.
 
-###Example: Loading memory
+### Example: Loading memory
 
 Initialize a 64KB memory space and load some machine code from a byte
 slice.
@@ -31,7 +31,7 @@ cpu := go6502.NewCpu(mem)
 cpu.SetPC(0x600)
 ```
 
-###Example: Stepping the CPU manually
+### Example: Stepping the CPU manually
 
 To manually step the CPU one instruction at a time, use the Step function.
 ```go
@@ -40,7 +40,7 @@ for i := 0; i < 20; i++ {
 }
 ```
 
-###Example: Disassembling machine code
+### Example: Disassembling machine code
 
 To disassemble machine code while stepping the CPU, use the go6502.disasm
 package.
