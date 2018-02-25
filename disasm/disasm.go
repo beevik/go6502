@@ -8,6 +8,7 @@ package disasm
 
 import (
 	"fmt"
+
 	"github.com/beevik/go6502"
 )
 
@@ -47,9 +48,9 @@ func hexString(b []byte) string {
 // 'line' string representing the disassembled instruction and a 'next'
 // address that starts the following line of machine code.
 func Disassemble(m *go6502.Memory, addr go6502.Address) (line string, next go6502.Address) {
-	opcode := m.ReadByte(addr)
+	opcode := m.LoadByte(addr)
 	idata := &go6502.Instructions[opcode]
-	operand := m.ReadBytes(addr+1, int(idata.Length)-1)
+	operand := m.LoadBytes(addr+1, int(idata.Length)-1)
 	fmtString := "%s " + modeFormat[idata.Mode]
 	line = fmt.Sprintf(fmtString, idata.Name, hexString(operand))
 	next = addr + go6502.Address(idata.Length)
