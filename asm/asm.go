@@ -9,9 +9,10 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"github.com/beevik/go6502"
 	"io"
 	"strings"
+
+	"github.com/beevik/go6502"
 )
 
 var (
@@ -190,6 +191,52 @@ func (a *assembler) resolveLabels() {
 	}
 }
 
+func codeString(seg *segment) string {
+	sz := seg.operand.size()
+	switch {
+	case seg.inst.Mode == go6502.REL:
+		offset, _ := relOffset(seg.operand.expr.number, seg.addr+int(seg.inst.Length))
+		return fmt.Sprintf("%02X %02X   ", seg.inst.Opcode, offset)
+	case sz == 0:
+		return fmt.Sprintf("%02X      ", seg.inst.Opcode)
+	case sz == 1:
+		return fmt.Sprintf("%02X %02X   ", seg.inst.Opcode, seg.operand.expr.number)
+	default:
+		return fmt.Sprintf("%02X %02X %02X", seg.inst.Opcode, seg.operand.expr.number&0xff, seg.operand.expr.number>>8)
+	}
+}
+
+func operandString(seg *segment) string {
+	number := seg.operand.expr.number
+
+	var n string
+	switch seg.operand.size() {
+	case 1:
+		n = fmt.Sprintf("$%02X", number)
+	default:
+		n = fmt.Sprintf("$%04X", number)
+	}
+
+	switch seg.inst.Mode {
+	case go6502.IMM:
+		return "#" + n
+	case go6502.IND:
+		return "(" + n + ")"
+	case go6502.ABX:
+		return n + ",X"
+	case go6502.IDX:
+		return "(" + n + ",X)"
+	case go6502.IDY:
+		return "(" + n + "),Y"
+	case go6502.ZPX:
+		return n + ",X"
+	case go6502.ZPY:
+		return n + ",Y"
+	default:
+		return n
+	}
+}
+
 // Generate code
 func (a *assembler) generateCode() {
 	a.logSection("Generating code")
@@ -198,21 +245,21 @@ func (a *assembler) generateCode() {
 		a.code = append(a.code, seg.inst.Opcode)
 		switch {
 		case seg.operand.size() == 0:
-			a.log("%04X-  %s", seg.addr, seg.opcode.str)
+			a.log("%04X- %s  %s", seg.addr, codeString(seg), seg.opcode.str)
 		case seg.inst.Mode == go6502.REL:
-			offset, err := relOffset(seg.operand.expr.number, seg.addr)
+			offset, err := relOffset(seg.operand.expr.number, seg.addr+int(seg.inst.Length))
 			if err != nil {
 				a.addError(seg.opcode, "Branch offset out of bounds")
 			}
 			a.code = append(a.code, offset)
-			a.log("%04X-  %s  $%X", seg.addr, seg.opcode.str, offset)
+			a.log("%04X- %s  %s  $%X", seg.addr, codeString(seg), seg.opcode.str, offset)
 		case seg.operand.size() == 1:
 			a.code = append(a.code, byte(seg.operand.expr.number))
-			a.log("%04X-  %s  $%X", seg.addr, seg.opcode.str, seg.operand.expr.number)
+			a.log("%04X- %s  %s  %s", seg.addr, codeString(seg), seg.opcode.str, operandString(seg))
 		case seg.operand.size() == 2:
 			a.code = append(a.code, byte(seg.operand.expr.number&0xff))
 			a.code = append(a.code, byte(seg.operand.expr.number>>8))
-			a.log("%04X-  %s  $%X", seg.addr, seg.opcode.str, seg.operand.expr.number)
+			a.log("%04X- %s  %s  %s", seg.addr, codeString(seg), seg.opcode.str, operandString(seg))
 		default:
 			panic("invalid operand")
 		}
