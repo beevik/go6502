@@ -105,12 +105,13 @@ func Assemble(r io.Reader) (code []byte, err error) {
 
 	// Assembly consists of the following steps
 	steps := []func(a *assembler){
-		(*assembler).parse,           // Parse the assembly code
-		(*assembler).evalExpressions, // Evaluate operand & macro expressions
-		(*assembler).assignAddresses, // Assign addresses to instructions
-		(*assembler).resolveLabels,   // Resolve labels to addresses
-		(*assembler).evalExpressions, // Do another evaluation pass with resolved labels
-		(*assembler).generateCode,    // Generate the machine code
+		(*assembler).parse,                        // Parse the assembly code
+		(*assembler).evalExpressions,              // Evaluate operand & macro expressions
+		(*assembler).assignAddresses,              // Assign addresses to instructions
+		(*assembler).resolveLabels,                // Resolve labels to addresses
+		(*assembler).evalExpressions,              // Do another evaluation pass with resolved labels
+		(*assembler).handleUnevaluatedExpressions, // Cause error if there are unevaluated expressions
+		(*assembler).generateCode,                 // Generate the machine code
 	}
 
 	// Execute assembler steps, breaking if an error is encountered
@@ -191,6 +192,44 @@ func (a *assembler) resolveLabels() {
 	}
 }
 
+// Cause an error if there are any unevaluated expressions.
+func (a *assembler) handleUnevaluatedExpressions() {
+	if len(a.uneval) > 0 {
+		for _, e := range a.uneval {
+			a.addError(e.identifier, "unresolved label")
+		}
+	}
+}
+
+// Generate code
+func (a *assembler) generateCode() {
+	a.logSection("Generating code")
+	for i := range a.segments {
+		seg := &a.segments[i]
+		a.code = append(a.code, seg.inst.Opcode)
+		switch {
+		case seg.operand.size() == 0:
+			a.log("%04X- %s  %s", seg.addr, codeString(seg), seg.opcode.str)
+		case seg.inst.Mode == go6502.REL:
+			offset, err := relOffset(seg.operand.expr.number, seg.addr+int(seg.inst.Length))
+			if err != nil {
+				a.addError(seg.opcode, "Branch offset out of bounds")
+			}
+			a.code = append(a.code, offset)
+			a.log("%04X- %s  %s  $%X", seg.addr, codeString(seg), seg.opcode.str, offset)
+		case seg.operand.size() == 1:
+			a.code = append(a.code, byte(seg.operand.expr.number))
+			a.log("%04X- %s  %s  %s", seg.addr, codeString(seg), seg.opcode.str, operandString(seg))
+		case seg.operand.size() == 2:
+			a.code = append(a.code, byte(seg.operand.expr.number&0xff))
+			a.code = append(a.code, byte(seg.operand.expr.number>>8))
+			a.log("%04X- %s  %s  %s", seg.addr, codeString(seg), seg.opcode.str, operandString(seg))
+		default:
+			panic("invalid operand")
+		}
+	}
+}
+
 func codeString(seg *segment) string {
 	sz := seg.operand.size()
 	switch {
@@ -234,35 +273,6 @@ func operandString(seg *segment) string {
 		return n + ",Y"
 	default:
 		return n
-	}
-}
-
-// Generate code
-func (a *assembler) generateCode() {
-	a.logSection("Generating code")
-	for i := range a.segments {
-		seg := &a.segments[i]
-		a.code = append(a.code, seg.inst.Opcode)
-		switch {
-		case seg.operand.size() == 0:
-			a.log("%04X- %s  %s", seg.addr, codeString(seg), seg.opcode.str)
-		case seg.inst.Mode == go6502.REL:
-			offset, err := relOffset(seg.operand.expr.number, seg.addr+int(seg.inst.Length))
-			if err != nil {
-				a.addError(seg.opcode, "Branch offset out of bounds")
-			}
-			a.code = append(a.code, offset)
-			a.log("%04X- %s  %s  $%X", seg.addr, codeString(seg), seg.opcode.str, offset)
-		case seg.operand.size() == 1:
-			a.code = append(a.code, byte(seg.operand.expr.number))
-			a.log("%04X- %s  %s  %s", seg.addr, codeString(seg), seg.opcode.str, operandString(seg))
-		case seg.operand.size() == 2:
-			a.code = append(a.code, byte(seg.operand.expr.number&0xff))
-			a.code = append(a.code, byte(seg.operand.expr.number>>8))
-			a.log("%04X- %s  %s  %s", seg.addr, codeString(seg), seg.opcode.str, operandString(seg))
-		default:
-			panic("invalid operand")
-		}
 	}
 }
 

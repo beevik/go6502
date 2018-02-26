@@ -133,7 +133,7 @@ func labelChar(c byte) bool {
 }
 
 func identifierStartChar(c byte) bool {
-	return alpha(c) || c == '_'
+	return alpha(c) || c == '_' || c == '.'
 }
 
 func identifierChar(c byte) bool {
