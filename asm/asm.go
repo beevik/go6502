@@ -78,6 +78,7 @@ type asmerror struct {
 // The assembler is a state object used during the assembly of
 // machine code from assembly code.
 type assembler struct {
+	origin     int              // requested origin
 	pc         int              // the program counter
 	code       []byte           // generated machine code
 	scanner    *bufio.Scanner   // scans the io reader
@@ -92,9 +93,11 @@ type assembler struct {
 }
 
 // Assemble reads data from the provided stream and attempts to assemble
-// it into 6502 byte code.
-func Assemble(r io.Reader) (code []byte, err error) {
+// it into 6502 byte code. If successful, the function returns the assembled
+// machine code and the address it begins at.
+func Assemble(r io.Reader) (code []byte, origin go6502.Address, err error) {
 	a := &assembler{
+		origin:   0x600,
 		pc:       0x600,
 		scanner:  bufio.NewScanner(r),
 		macros:   make(map[string]*expr),
@@ -124,6 +127,7 @@ func Assemble(r io.Reader) (code []byte, err error) {
 		}
 	}
 
+	origin = go6502.Address(a.origin)
 	code = a.code
 	return
 }
@@ -196,7 +200,7 @@ func (a *assembler) resolveLabels() {
 func (a *assembler) handleUnevaluatedExpressions() {
 	if len(a.uneval) > 0 {
 		for _, e := range a.uneval {
-			a.addError(e.identifier, "unresolved label")
+			a.addError(e.identifier, "Unresolved label")
 		}
 	}
 }
@@ -230,6 +234,7 @@ func (a *assembler) generateCode() {
 	}
 }
 
+// Format a byte code string for an instruction.
 func codeString(seg *segment) string {
 	sz := seg.operand.size()
 	switch {
@@ -245,6 +250,7 @@ func codeString(seg *segment) string {
 	}
 }
 
+// Format an operand string based on the instruction's addressing mode.
 func operandString(seg *segment) string {
 	number := seg.operand.expr.number
 
@@ -297,6 +303,15 @@ func (a *assembler) parseLine(line fstring) (err error) {
 // Parse a line of assembly code that contains no label.
 func (a *assembler) parseUnlabeledLine(line fstring) (err error) {
 	a.logLine(line, "unlabeled_line")
+
+	// Is the next word a pseudo-op, rather than an opcode?
+	if line.startsWithChar('.') {
+		var pseudoOp fstring
+		pseudoOp, line = line.consumeWhile(wordChar)
+		err = a.parsePseudoOp(line.consumeWhitespace(), fstring{}, pseudoOp)
+		return
+	}
+
 	err = a.parseInstruction(line)
 	return
 }
@@ -373,6 +388,8 @@ func (a *assembler) parsePseudoOp(line, label, pseudoOp fstring) (err error) {
 	switch pseudoOp.str {
 	case ".EQ":
 		err = a.parseMacro(line, label)
+	case ".ORG":
+		err = a.parseOrigin(line)
 	default:
 		a.addError(line, "Invalid pseudo-op")
 		err = errParse
@@ -382,6 +399,11 @@ func (a *assembler) parsePseudoOp(line, label, pseudoOp fstring) (err error) {
 
 // Parse an ".EQ" macro definition.
 func (a *assembler) parseMacro(line, label fstring) (err error) {
+	if label.str == "" {
+		a.addError(line, ".EQ macro must begin with a label")
+		return
+	}
+
 	a.logLine(line, "macro=%s", label.str)
 
 	// Parse the macro expression.
@@ -403,6 +425,32 @@ func (a *assembler) parseMacro(line, label fstring) (err error) {
 
 	// Track the macro for later substitution.
 	a.macros[label.str] = e
+	return
+}
+
+// Parse an ".ORG" origin definition
+func (a *assembler) parseOrigin(line fstring) (err error) {
+	if len(a.segments) > 0 {
+		a.addError(line, ".ORG statement must come before first instruction")
+		return
+	}
+
+	a.logLine(line, "origin=%s", line.str)
+
+	var e *expr
+	e, line, err = a.exprParser.parse(line, a.scopeLabel, true)
+	if err != nil {
+		a.addExprErrors()
+		return
+	}
+
+	if !e.eval(a.macros, a.labels) {
+		a.addError(e.identifier, "Unable to evaluate .ORG expression")
+		return
+	}
+
+	a.origin = e.number
+	a.pc = e.number
 	return
 }
 

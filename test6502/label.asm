@@ -1,4 +1,7 @@
-START   
-        JMP .DONE
-        LDA #$00
-.DONE   BRK
+		.ORG $1000
+
+START
+		JMP .DONE
+
+		LDA #$00
+.DONE		BRK

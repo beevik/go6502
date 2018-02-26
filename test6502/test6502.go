@@ -26,7 +26,7 @@ func assemble(filename string) {
 	defer file.Close()
 
 	fmt.Printf("Assembling %s...\n\n", filename)
-	code, err := asm.Assemble(file)
+	code, origin, err := asm.Assemble(file)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
 		os.Exit(1)
@@ -35,10 +35,10 @@ func assemble(filename string) {
 	fmt.Printf("\nRunning assembled code...\n\n")
 
 	mem := go6502.NewMemory()
-	mem.CopyBytes(0x600, code)
+	mem.CopyBytes(origin, code)
 
 	cpu := go6502.NewCPU(mem)
-	cpu.SetPC(0x600)
+	cpu.SetPC(origin)
 
 	for i := 0; !cpu.Reg.Break; i++ {
 		pc := cpu.Reg.PC
