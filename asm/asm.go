@@ -81,7 +81,7 @@ type assembler struct {
 	pc         int              // the program counter
 	code       []byte           // generated machine code
 	scanner    *bufio.Scanner   // scans the io reader
-	currlabel  fstring          // label currently in scope
+	scopeLabel fstring          // label currently in scope
 	macros     map[string]*expr // .EQ macro -> expression
 	labels     map[string]int   // label -> segment index
 	segments   []segment        // segment of machine code
@@ -106,10 +106,10 @@ func Assemble(r io.Reader) (code []byte, err error) {
 	// Assembly consists of the following steps
 	steps := []func(a *assembler){
 		(*assembler).parse,                        // Parse the assembly code
-		(*assembler).evalExpressions,              // Evaluate operand & macro expressions
+		(*assembler).evaluateExpressions,          // Evaluate operand & macro expressions
 		(*assembler).assignAddresses,              // Assign addresses to instructions
 		(*assembler).resolveLabels,                // Resolve labels to addresses
-		(*assembler).evalExpressions,              // Do another evaluation pass with resolved labels
+		(*assembler).evaluateExpressions,          // Do another evaluation pass with resolved labels
 		(*assembler).handleUnevaluatedExpressions, // Cause error if there are unevaluated expressions
 		(*assembler).generateCode,                 // Generate the machine code
 	}
@@ -143,7 +143,7 @@ func (a *assembler) parse() {
 }
 
 // Evaluate all unevaluated expression trees using macros.
-func (a *assembler) evalExpressions() {
+func (a *assembler) evaluateExpressions() {
 	a.logSection("Evaluating expressions")
 	for {
 		var uneval []*expr
@@ -323,13 +323,13 @@ func (a *assembler) parseLabeledLine(line fstring) (err error) {
 	// If the label starts with '.', it is a local label. So append
 	// it to the active scope label.
 	if label.startsWithChar('.') {
-		if a.currlabel.isEmpty() {
+		if a.scopeLabel.isEmpty() {
 			a.addError(label, "No global label previously defined")
 			return errParse
 		}
-		label.str = a.currlabel.str + label.str
+		label.str = a.scopeLabel.str + label.str
 	} else {
-		a.currlabel = label
+		a.scopeLabel = label
 	}
 
 	// Associate the label with its segment number.
@@ -386,7 +386,7 @@ func (a *assembler) parseMacro(line, label fstring) (err error) {
 
 	// Parse the macro expression.
 	var e *expr
-	e, line, err = a.exprParser.parse(line, true)
+	e, line, err = a.exprParser.parse(line, a.scopeLabel, true)
 	if err != nil {
 		a.addExprErrors()
 		return
@@ -455,7 +455,7 @@ func (a *assembler) parseOperand(line fstring) (o operand, out fstring, err erro
 			a.addError(out, "Indirect addressing mode syntax error")
 			return
 		}
-		o.expr, _, err = a.exprParser.parse(expr, false)
+		o.expr, _, err = a.exprParser.parse(expr, a.scopeLabel, false)
 		if err != nil {
 			a.addExprErrors()
 			return
@@ -464,7 +464,7 @@ func (a *assembler) parseOperand(line fstring) (o operand, out fstring, err erro
 	case line.startsWithChar('#'):
 		// Handle immediate addressing mode
 		o.mode = go6502.IMM
-		o.expr, out, err = a.exprParser.parse(line.consume(1), false)
+		o.expr, out, err = a.exprParser.parse(line.consume(1), a.scopeLabel, false)
 		if err != nil {
 			a.addExprErrors()
 			return
@@ -478,7 +478,7 @@ func (a *assembler) parseOperand(line fstring) (o operand, out fstring, err erro
 			a.addError(out, "Absolute addressing mode syntax error")
 			return
 		}
-		o.expr, _, err = a.exprParser.parse(expr, false)
+		o.expr, _, err = a.exprParser.parse(expr, a.scopeLabel, false)
 		if err != nil {
 			a.addExprErrors()
 			return

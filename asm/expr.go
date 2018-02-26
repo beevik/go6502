@@ -108,6 +108,7 @@ func (op exprOp) collapses(other exprOp) bool {
 type expr struct {
 	number     int
 	identifier fstring
+	scopeLabel fstring
 	op         exprOp
 	evaluated  bool
 	address    bool
@@ -121,6 +122,9 @@ func (e *expr) String() string {
 	case e.op == opNumber:
 		return fmt.Sprintf("%d", e.number)
 	case e.op == opIdentifier:
+		if e.address && e.identifier.startsWithChar('.') {
+			return e.scopeLabel.str + e.identifier.str
+		}
 		return e.identifier.str
 	case e.op.isBinary():
 		return fmt.Sprintf("%s %s %s", e.child0.String(), e.child1.String(), e.op.symbol())
@@ -138,11 +142,17 @@ func (e *expr) eval(macros map[string]*expr, labels map[string]int) bool {
 		case e.op == opNumber:
 			e.evaluated = true
 		case e.op == opIdentifier:
-			if m, ok := macros[e.identifier.str]; ok && m.evaluated {
+			var ident string
+			if e.identifier.startsWithChar('.') {
+				ident = e.scopeLabel.str + e.identifier.str
+			} else {
+				ident = e.identifier.str
+			}
+			if m, ok := macros[ident]; ok && m.evaluated {
 				e.number = m.number
 				e.evaluated = true
 			}
-			if _, ok := labels[e.identifier.str]; ok {
+			if _, ok := labels[ident]; ok {
 				e.address = true
 			}
 		case e.op.isBinary():
@@ -209,7 +219,7 @@ type exprParser struct {
 }
 
 // Parse an expression from the line until it is exhausted.
-func (p *exprParser) parse(line fstring, allowParens bool) (e *expr, out fstring, err error) {
+func (p *exprParser) parse(line, scopeLabel fstring, allowParens bool) (e *expr, out fstring, err error) {
 	p.errors = nil
 	p.allowParens = allowParens
 	p.prevToken = token{}
@@ -236,7 +246,7 @@ func (p *exprParser) parse(line fstring, allowParens bool) (e *expr, out fstring
 			p.operandStack.push(&expr{op: opNumber, number: token.number, evaluated: true})
 
 		case tokenIdentifier:
-			p.operandStack.push(&expr{op: opIdentifier, identifier: token.identifier})
+			p.operandStack.push(&expr{op: opIdentifier, identifier: token.identifier, scopeLabel: scopeLabel})
 
 		case tokenOp:
 			for err == nil && !p.operatorStack.empty() && token.op.collapses(p.operatorStack.peek()) {

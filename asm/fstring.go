@@ -17,8 +17,21 @@ func (l fstring) String() string {
 	return l.str
 }
 
+func (l *fstring) advanceColumn(n int) int {
+	c := l.column
+	for i := 0; i < n; i++ {
+		if l.str[i] == '\t' {
+			c += 8 - (c % 8)
+		} else {
+			c++
+		}
+	}
+	return c
+}
+
 func (l fstring) consume(n int) fstring {
-	return fstring{l.row, l.column + n, l.str[n:], l.full}
+	col := l.advanceColumn(n)
+	return fstring{l.row, col, l.str[n:], l.full}
 }
 
 func (l fstring) trunc(n int) fstring {
@@ -26,7 +39,8 @@ func (l fstring) trunc(n int) fstring {
 }
 
 func (l fstring) substr(start, stop int) fstring {
-	return fstring{l.row, l.column + start, l.str[start:stop], l.full}
+	col := l.advanceColumn(start)
+	return fstring{l.row, col, l.str[start:stop], l.full}
 }
 
 func (l fstring) isEmpty() bool {
