@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	parseError = errors.New("parse error")
+	errParse = errors.New("parse error")
 )
 
 //
@@ -91,8 +91,8 @@ type assembler struct {
 	errors     []asmerror       // errors encountered during assembly
 }
 
-// Run the assembler on the text data read from the reader 'r'. Return the
-// machine code as a byte
+// Assemble reads data from the provided stream and attempts to assemble
+// it into 6502 byte code.
 func Assemble(r io.Reader) (code []byte, err error) {
 	a := &assembler{
 		pc:       0x600,
@@ -118,7 +118,7 @@ func Assemble(r io.Reader) (code []byte, err error) {
 	for _, step := range steps {
 		step(a)
 		if len(a.errors) > 0 {
-			err = parseError
+			err = errParse
 			return
 		}
 	}
@@ -187,7 +187,7 @@ func (a *assembler) resolveLabels() {
 	for label, segno := range a.labels {
 		addr := a.segments[segno].addr
 		a.log("%-15s Seg:%-3d Addr:$%04X", label, segno, addr)
-		a.macros[label] = &expr{op: op_number, number: addr, evaluated: true}
+		a.macros[label] = &expr{op: opNumber, number: addr, evaluated: true}
 	}
 }
 
@@ -315,7 +315,7 @@ func (a *assembler) parseLabeledLine(line fstring) (err error) {
 	if label.startsWithChar('.') {
 		if a.currlabel.isEmpty() {
 			a.addError(label, "No global label previously defined")
-			return parseError
+			return errParse
 		}
 		label.str = a.currlabel.str + label.str
 	} else {
@@ -339,7 +339,7 @@ func (a *assembler) parseLabel(line fstring) (label fstring, out fstring, err er
 	// Make sure label starts with a valid label character
 	if !line.startsWith(labelStartChar) {
 		a.addError(line, "Invalid label")
-		err = parseError
+		err = errParse
 		return
 	}
 
@@ -349,7 +349,7 @@ func (a *assembler) parseLabel(line fstring) (label fstring, out fstring, err er
 	// If the next character isn't whitespace, we encountered an invalid label character
 	if !line.isEmpty() && !line.startsWith(whitespace) {
 		a.addError(line, "Invalid label")
-		err = parseError
+		err = errParse
 		return
 	}
 
@@ -365,7 +365,7 @@ func (a *assembler) parsePseudoOp(line, label, pseudoOp fstring) (err error) {
 		err = a.parseMacro(line, label)
 	default:
 		a.addError(line, "Invalid pseudo-op")
-		err = parseError
+		err = errParse
 	}
 	return
 }
@@ -404,7 +404,7 @@ func (a *assembler) parseInstruction(line fstring) (err error) {
 	// No opcode characters? Or opcode has invalid suffix?
 	if opcode.isEmpty() || (!out.isEmpty() && !out.startsWith(whitespace)) {
 		a.addError(out, "Invalid opcode")
-		err = parseError
+		err = errParse
 		return
 	}
 
@@ -412,7 +412,7 @@ func (a *assembler) parseInstruction(line fstring) (err error) {
 	instructions := go6502.GetInstructions(opcode.str)
 	if instructions == nil {
 		a.addError(opcode, "Invalid opcode")
-		err = parseError
+		err = errParse
 		return
 	}
 
@@ -484,7 +484,7 @@ func (a *assembler) parseOperand(line fstring) (o operand, out fstring, err erro
 
 	if !out.isEmpty() && !out.startsWith(whitespace) {
 		a.addError(out, "Syntax error in expression")
-		err = parseError
+		err = errParse
 		return
 	}
 	out = out.consumeWhitespace()
@@ -545,7 +545,7 @@ func relOffset(addr1, addr2 int) (byte, error) {
 	diff := addr1 - addr2
 	switch {
 	case diff < -128 || diff > 127:
-		return 0, parseError
+		return 0, errParse
 	case diff >= 0:
 		return byte(diff), nil
 	default:
@@ -613,11 +613,11 @@ func (l fstring) consumeIndirect() (mode go6502.Mode, expr fstring, out fstring,
 	case out.startsWithChar(')'):
 		mode, out = go6502.IND, out.consume(1)
 	default:
-		err = parseError
+		err = errParse
 	}
 	out = out.consumeWhitespace()
 	if !out.isEmpty() {
-		err = parseError
+		err = errParse
 	}
 	return
 }
@@ -638,7 +638,7 @@ func (l fstring) consumeAbsolute() (mode go6502.Mode, expr fstring, out fstring,
 	}
 	out = out.consumeWhitespace()
 	if !out.isEmpty() {
-		err = parseError
+		err = errParse
 	}
 	return
 }

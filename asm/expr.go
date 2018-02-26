@@ -15,32 +15,32 @@ const (
 	// operators in descending order of precedence
 
 	// unary operations
-	op_uminus exprOp = iota
-	op_uplus
-	op_bitneg
+	opUnaryMinus exprOp = iota
+	opUnaryPlus
+	opBitwiseNEG
 
 	// binary operations
-	op_multiply
-	op_divide
-	op_modulo
-	op_add
-	op_subtract
-	op_shift_left
-	op_shift_right
-	op_and
-	op_xor
-	op_or
+	opMultiply
+	opDivide
+	opModulo
+	opAdd
+	opSubstract
+	opShiftLeft
+	opShiftRight
+	opBitwiseAND
+	opBitwiseXOR
+	opBitwiseOR
 
 	// value "operations"
-	op_number
-	op_identifier
+	opNumber
+	opIdentifier
 
 	// pseudo-operations (used only during parsing but not stored in expr's)
-	op_lparen
-	op_rparen
+	opLeftParen
+	opRightParen
 )
 
-type opdata_t struct {
+type opdata struct {
 	precedence      byte
 	binary          bool
 	leftAssociative bool
@@ -48,56 +48,55 @@ type opdata_t struct {
 	eval            func(a, b int) int
 }
 
-var opdata = []opdata_t{
+var ops = []opdata{
 	// unary and binary operations
-	{7, false, false, "-", func(a, b int) int { return -a }},             // op_uminus
-	{7, false, false, "+", func(a, b int) int { return -a }},             // op_uplus
-	{7, false, false, "~", func(a, b int) int { return 0xffffffff ^ a }}, // op_bitneg
-	{6, true, true, "*", func(a, b int) int { return a * b }},            // op_multiply
-	{6, true, true, "/", func(a, b int) int { return a / b }},            // op_divide
-	{6, true, true, "%", func(a, b int) int { return a % b }},            // op_modulo
-	{5, true, true, "+", func(a, b int) int { return a + b }},            // op_add
-	{5, true, true, "-", func(a, b int) int { return a - b }},            // op_subtract
-	{4, true, true, "<<", func(a, b int) int { return a << uint32(b) }},  // op_shift_left
-	{4, true, true, ">>", func(a, b int) int { return a >> uint32(b) }},  // op_shift_right
-	{3, true, true, "&", func(a, b int) int { return a & b }},            // op_and
-	{2, true, true, "^", func(a, b int) int { return a ^ b }},            // op_xor
-	{1, true, true, "|", func(a, b int) int { return a | b }},            // op_or
+	{7, false, false, "-", func(a, b int) int { return -a }},             // uminus
+	{7, false, false, "+", func(a, b int) int { return -a }},             // uplus
+	{7, false, false, "~", func(a, b int) int { return 0xffffffff ^ a }}, // bitneg
+	{6, true, true, "*", func(a, b int) int { return a * b }},            // multiply
+	{6, true, true, "/", func(a, b int) int { return a / b }},            // divide
+	{6, true, true, "%", func(a, b int) int { return a % b }},            // modulo
+	{5, true, true, "+", func(a, b int) int { return a + b }},            // add
+	{5, true, true, "-", func(a, b int) int { return a - b }},            // subtract
+	{4, true, true, "<<", func(a, b int) int { return a << uint32(b) }},  // shift_left
+	{4, true, true, ">>", func(a, b int) int { return a >> uint32(b) }},  // shift_right
+	{3, true, true, "&", func(a, b int) int { return a & b }},            // and
+	{2, true, true, "^", func(a, b int) int { return a ^ b }},            // xor
+	{1, true, true, "|", func(a, b int) int { return a | b }},            // or
 
 	// value operations
-	{0, false, false, "", nil}, // op_number
-	{0, false, false, "", nil}, // op_identifier
+	{0, false, false, "", nil}, // number
+	{0, false, false, "", nil}, // identifier
 
 	// pseudo-operations
-	{0, false, false, "", nil}, // op_lparen
-	{0, false, false, "", nil}, // op_rparen
+	{0, false, false, "", nil}, // lparen
+	{0, false, false, "", nil}, // rparen
 }
 
 func (op exprOp) isBinary() bool {
-	return opdata[op].binary
+	return ops[op].binary
 }
 
 func (op exprOp) eval(a, b int) int {
-	return opdata[op].eval(a, b)
+	return ops[op].eval(a, b)
 }
 
 func (op exprOp) symbol() string {
-	return opdata[op].symbol
+	return ops[op].symbol
 }
 
 func (op exprOp) isCollapsible() bool {
-	return opdata[op].precedence > 0
+	return ops[op].precedence > 0
 }
 
 // Compare the precendence and associativity of 'op' to 'other'.
 // Return true if the shunting yard algorithm should cause an
 // expression node collapse.
 func (op exprOp) collapses(other exprOp) bool {
-	if opdata[op].leftAssociative {
-		return opdata[op].precedence <= opdata[other].precedence
-	} else {
-		return opdata[op].precedence < opdata[other].precedence
+	if ops[op].leftAssociative {
+		return ops[op].precedence <= ops[other].precedence
 	}
+	return ops[op].precedence < ops[other].precedence
 }
 
 //
@@ -119,9 +118,9 @@ type expr struct {
 // Return the expression as a postfix notation string.
 func (e *expr) String() string {
 	switch {
-	case e.op == op_number:
+	case e.op == opNumber:
 		return fmt.Sprintf("%d", e.number)
-	case e.op == op_identifier:
+	case e.op == opIdentifier:
 		return e.identifier.str
 	case e.op.isBinary():
 		return fmt.Sprintf("%s %s %s", e.child0.String(), e.child1.String(), e.op.symbol())
@@ -136,9 +135,9 @@ func (e *expr) String() string {
 func (e *expr) eval(macros map[string]*expr, labels map[string]int) bool {
 	if !e.evaluated {
 		switch {
-		case e.op == op_number:
+		case e.op == opNumber:
 			e.evaluated = true
-		case e.op == op_identifier:
+		case e.op == opIdentifier:
 			if m, ok := macros[e.identifier.str]; ok && m.evaluated {
 				e.number = m.number
 				e.evaluated = true
@@ -177,16 +176,16 @@ func (e *expr) eval(macros map[string]*expr, labels map[string]int) bool {
 type tokentype byte
 
 const (
-	tt_nil tokentype = iota
-	tt_op
-	tt_number
-	tt_identifier
-	tt_lparen
-	tt_rparen
+	tokenNil tokentype = iota
+	tokenOp
+	tokenNumber
+	tokenIdentifier
+	tokenLeftParen
+	tokenRightParen
 )
 
 func (tt tokentype) isValue() bool {
-	return tt == tt_number || tt == tt_identifier
+	return tt == tokenNumber || tt == tokenIdentifier
 }
 
 type token struct {
@@ -226,20 +225,20 @@ func (p *exprParser) parse(line fstring, allowParens bool) (e *expr, out fstring
 		}
 
 		// We're done when the token parser returns the nil token
-		if token.tt == tt_nil {
+		if token.tt == tokenNil {
 			break
 		}
 
 		// Handle each possible token type
 		switch token.tt {
 
-		case tt_number:
-			p.operandStack.push(&expr{op: op_number, number: token.number, evaluated: true})
+		case tokenNumber:
+			p.operandStack.push(&expr{op: opNumber, number: token.number, evaluated: true})
 
-		case tt_identifier:
-			p.operandStack.push(&expr{op: op_identifier, identifier: token.identifier})
+		case tokenIdentifier:
+			p.operandStack.push(&expr{op: opIdentifier, identifier: token.identifier})
 
-		case tt_op:
+		case tokenOp:
 			for err == nil && !p.operatorStack.empty() && token.op.collapses(p.operatorStack.peek()) {
 				err = p.operandStack.collapse(p.operatorStack.pop())
 				if err != nil {
@@ -248,18 +247,18 @@ func (p *exprParser) parse(line fstring, allowParens bool) (e *expr, out fstring
 			}
 			p.operatorStack.push(token.op)
 
-		case tt_lparen:
-			p.operatorStack.push(op_lparen)
+		case tokenLeftParen:
+			p.operatorStack.push(opLeftParen)
 
-		case tt_rparen:
+		case tokenRightParen:
 			for err == nil {
 				if p.operatorStack.empty() {
 					p.addError(line, "Mismatched parentheses")
-					err = parseError
+					err = errParse
 					break
 				}
 				op := p.operatorStack.pop()
-				if op == op_lparen {
+				if op == opLeftParen {
 					break
 				}
 				err = p.operandStack.collapse(op)
@@ -277,7 +276,7 @@ func (p *exprParser) parse(line fstring, allowParens bool) (e *expr, out fstring
 		err = p.operandStack.collapse(p.operatorStack.pop())
 		if err != nil {
 			p.addError(line, "Expression syntax error 3")
-			err = parseError
+			err = errParse
 		}
 	}
 
@@ -291,54 +290,54 @@ func (p *exprParser) parse(line fstring, allowParens bool) (e *expr, out fstring
 // Attempt to parse the next token from the line.
 func (p *exprParser) parseToken(line fstring) (t token, out fstring, err error) {
 	if line.isEmpty() {
-		t.tt, out = tt_nil, line
+		t.tt, out = tokenNil, line
 		return
 	}
 	switch {
 
 	case line.startsWith(decimal) || line.startsWithChar('$'):
 		t.number, out, err = p.parseNumber(line)
-		t.tt = tt_number
-		if p.prevToken.tt.isValue() || p.prevToken.tt == tt_rparen {
+		t.tt = tokenNumber
+		if p.prevToken.tt.isValue() || p.prevToken.tt == tokenRightParen {
 			p.addError(line, "Expression syntax error 4")
-			err = parseError
+			err = errParse
 		}
 
 	case p.allowParens && line.startsWithChar('('):
 		p.parenCounter++
-		t.tt, t.op = tt_lparen, op_lparen
+		t.tt, t.op = tokenLeftParen, opLeftParen
 		out = line.consume(1)
 
 	case p.allowParens && line.startsWithChar(')'):
 		if p.parenCounter == 0 {
 			p.addError(line, "Mismatched parentheses")
-			err = parseError
+			err = errParse
 			out = line.consume(1)
 		} else {
 			p.parenCounter--
-			t.tt, t.op, out = tt_rparen, op_rparen, line.consume(1)
+			t.tt, t.op, out = tokenRightParen, opRightParen, line.consume(1)
 		}
 
 	case line.startsWith(identifierStartChar):
-		t.tt = tt_identifier
+		t.tt = tokenIdentifier
 		t.identifier, out = line.consumeWhile(identifierChar)
-		if p.prevToken.tt.isValue() || p.prevToken.tt == tt_rparen {
+		if p.prevToken.tt.isValue() || p.prevToken.tt == tokenRightParen {
 			p.addError(line, "Expression syntax error 5")
-			err = parseError
+			err = errParse
 		}
 
 	default:
-		for i, o := range opdata {
+		for i, o := range ops {
 			if o.symbol != "" && line.startsWithString(o.symbol) {
-				if o.binary || (!o.binary && !p.prevToken.tt.isValue() && p.prevToken.tt != tt_rparen) {
-					t.tt, t.op, out = tt_op, exprOp(i), line.consume(len(o.symbol))
+				if o.binary || (!o.binary && !p.prevToken.tt.isValue() && p.prevToken.tt != tokenRightParen) {
+					t.tt, t.op, out = tokenOp, exprOp(i), line.consume(len(o.symbol))
 					break
 				}
 			}
 		}
-		if t.tt != tt_op {
+		if t.tt != tokenOp {
 			p.addError(line, "Expression syntax error 6")
-			err = parseError
+			err = errParse
 		}
 	}
 
@@ -374,7 +373,7 @@ func (p *exprParser) parseNumber(line fstring) (number int, out fstring, err err
 	num64, converr := strconv.ParseInt(numstr.str, base, 32)
 	if converr != nil {
 		p.addError(numstr, "Failed to parse integer")
-		err = parseError
+		err = errParse
 	}
 
 	number = int(num64)
@@ -416,9 +415,8 @@ func (s *exprStack) pop() *expr {
 func (s *exprStack) peek() *expr {
 	if len(s.data) == 0 {
 		return nil
-	} else {
-		return s.data[len(s.data)-1]
 	}
+	return s.data[len(s.data)-1]
 }
 
 // Collapse one or more expression nodes on the top of the
@@ -427,15 +425,15 @@ func (s *exprStack) peek() *expr {
 func (s *exprStack) collapse(op exprOp) error {
 	switch {
 	case !op.isCollapsible():
-		return parseError
+		return errParse
 	case op.isBinary():
 		if len(s.data) < 2 {
-			return parseError
+			return errParse
 		}
 		s.push(&expr{op: op, child1: s.pop(), child0: s.pop()})
 	default:
 		if s.empty() {
-			return parseError
+			return errParse
 		}
 		s.push(&expr{op: op, child0: s.pop()})
 	}
