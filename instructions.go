@@ -63,70 +63,73 @@ const (
 	symTYA
 )
 
+type instfunc func(c *CPU, inst *Instruction, operand []byte)
+
 // Opcode name and function implementation
 type opcodeImpl struct {
-	sym  opsym
-	name string
-	fn   func(c *CPU, inst *Instruction, operand []byte)
+	sym    opsym
+	name   string
+	fnCMOS instfunc
+	fnNMOS instfunc
 }
 
 var impl = []opcodeImpl{
-	{symADC, "ADC", (*CPU).adc},
-	{symAND, "AND", (*CPU).and},
-	{symASL, "ASL", (*CPU).asl},
-	{symBCC, "BCC", (*CPU).bcc},
-	{symBCS, "BCS", (*CPU).bcs},
-	{symBEQ, "BEQ", (*CPU).beq},
-	{symBIT, "BIT", (*CPU).bit},
-	{symBMI, "BMI", (*CPU).bmi},
-	{symBNE, "BNE", (*CPU).bne},
-	{symBPL, "BPL", (*CPU).bpl},
-	{symBRK, "BRK", (*CPU).brk},
-	{symBVC, "BVC", (*CPU).bvc},
-	{symBVS, "BVS", (*CPU).bvs},
-	{symCLC, "CLC", (*CPU).clc},
-	{symCLD, "CLD", (*CPU).cld},
-	{symCLI, "CLI", (*CPU).cli},
-	{symCLV, "CLV", (*CPU).clv},
-	{symCMP, "CMP", (*CPU).cmp},
-	{symCPX, "CPX", (*CPU).cpx},
-	{symCPY, "CPY", (*CPU).cpy},
-	{symDEC, "DEC", (*CPU).dec},
-	{symDEX, "DEX", (*CPU).dex},
-	{symDEY, "DEY", (*CPU).dey},
-	{symEOR, "EOR", (*CPU).eor},
-	{symINC, "INC", (*CPU).inc},
-	{symINX, "INX", (*CPU).inx},
-	{symINY, "INY", (*CPU).iny},
-	{symJMP, "JMP", (*CPU).jmp},
-	{symJSR, "JSR", (*CPU).jsr},
-	{symLDA, "LDA", (*CPU).lda},
-	{symLDX, "LDX", (*CPU).ldx},
-	{symLDY, "LDY", (*CPU).ldy},
-	{symLSR, "LSR", (*CPU).lsr},
-	{symNOP, "NOP", (*CPU).nop},
-	{symORA, "ORA", (*CPU).ora},
-	{symPHA, "PHA", (*CPU).pha},
-	{symPHP, "PHP", (*CPU).php},
-	{symPLA, "PLA", (*CPU).pla},
-	{symPLP, "PLP", (*CPU).plp},
-	{symROL, "ROL", (*CPU).rol},
-	{symROR, "ROR", (*CPU).ror},
-	{symRTI, "RTI", (*CPU).rti},
-	{symRTS, "RTS", (*CPU).rts},
-	{symSBC, "SBC", (*CPU).sbc},
-	{symSEC, "SEC", (*CPU).sec},
-	{symSED, "SED", (*CPU).sed},
-	{symSEI, "SEI", (*CPU).sei},
-	{symSTA, "STA", (*CPU).sta},
-	{symSTX, "STX", (*CPU).stx},
-	{symSTY, "STY", (*CPU).sty},
-	{symTAX, "TAX", (*CPU).tax},
-	{symTAY, "TAY", (*CPU).tay},
-	{symTSX, "TSX", (*CPU).tsx},
-	{symTXA, "TXA", (*CPU).txa},
-	{symTXS, "TXS", (*CPU).txs},
-	{symTYA, "TYA", (*CPU).tya},
+	{symADC, "ADC", (*CPU).adc, (*CPU).adc},
+	{symAND, "AND", (*CPU).and, (*CPU).and},
+	{symASL, "ASL", (*CPU).asl, (*CPU).asl},
+	{symBCC, "BCC", (*CPU).bcc, (*CPU).bcc},
+	{symBCS, "BCS", (*CPU).bcs, (*CPU).bcs},
+	{symBEQ, "BEQ", (*CPU).beq, (*CPU).beq},
+	{symBIT, "BIT", (*CPU).bit, (*CPU).bit},
+	{symBMI, "BMI", (*CPU).bmi, (*CPU).bmi},
+	{symBNE, "BNE", (*CPU).bne, (*CPU).bne},
+	{symBPL, "BPL", (*CPU).bpl, (*CPU).bpl},
+	{symBRK, "BRK", (*CPU).brk, (*CPU).brk},
+	{symBVC, "BVC", (*CPU).bvc, (*CPU).bvc},
+	{symBVS, "BVS", (*CPU).bvs, (*CPU).bvs},
+	{symCLC, "CLC", (*CPU).clc, (*CPU).clc},
+	{symCLD, "CLD", (*CPU).cld, (*CPU).cld},
+	{symCLI, "CLI", (*CPU).cli, (*CPU).cli},
+	{symCLV, "CLV", (*CPU).clv, (*CPU).clv},
+	{symCMP, "CMP", (*CPU).cmp, (*CPU).cmp},
+	{symCPX, "CPX", (*CPU).cpx, (*CPU).cpx},
+	{symCPY, "CPY", (*CPU).cpy, (*CPU).cpy},
+	{symDEC, "DEC", (*CPU).dec, (*CPU).dec},
+	{symDEX, "DEX", (*CPU).dex, (*CPU).dex},
+	{symDEY, "DEY", (*CPU).dey, (*CPU).dey},
+	{symEOR, "EOR", (*CPU).eor, (*CPU).eor},
+	{symINC, "INC", (*CPU).inc, (*CPU).inc},
+	{symINX, "INX", (*CPU).inx, (*CPU).inx},
+	{symINY, "INY", (*CPU).iny, (*CPU).iny},
+	{symJMP, "JMP", (*CPU).jmp, (*CPU).jmp},
+	{symJSR, "JSR", (*CPU).jsr, (*CPU).jsr},
+	{symLDA, "LDA", (*CPU).lda, (*CPU).lda},
+	{symLDX, "LDX", (*CPU).ldx, (*CPU).ldx},
+	{symLDY, "LDY", (*CPU).ldy, (*CPU).ldy},
+	{symLSR, "LSR", (*CPU).lsr, (*CPU).lsr},
+	{symNOP, "NOP", (*CPU).nop, (*CPU).nop},
+	{symORA, "ORA", (*CPU).ora, (*CPU).ora},
+	{symPHA, "PHA", (*CPU).pha, (*CPU).pha},
+	{symPHP, "PHP", (*CPU).php, (*CPU).php},
+	{symPLA, "PLA", (*CPU).pla, (*CPU).pla},
+	{symPLP, "PLP", (*CPU).plp, (*CPU).plp},
+	{symROL, "ROL", (*CPU).rol, (*CPU).rol},
+	{symROR, "ROR", (*CPU).ror, (*CPU).ror},
+	{symRTI, "RTI", (*CPU).rti, (*CPU).rti},
+	{symRTS, "RTS", (*CPU).rts, (*CPU).rts},
+	{symSBC, "SBC", (*CPU).sbcc, (*CPU).sbcn},
+	{symSEC, "SEC", (*CPU).sec, (*CPU).sec},
+	{symSED, "SED", (*CPU).sed, (*CPU).sed},
+	{symSEI, "SEI", (*CPU).sei, (*CPU).sei},
+	{symSTA, "STA", (*CPU).sta, (*CPU).sta},
+	{symSTX, "STX", (*CPU).stx, (*CPU).stx},
+	{symSTY, "STY", (*CPU).sty, (*CPU).sty},
+	{symTAX, "TAX", (*CPU).tax, (*CPU).tax},
+	{symTAY, "TAY", (*CPU).tay, (*CPU).tay},
+	{symTSX, "TSX", (*CPU).tsx, (*CPU).tsx},
+	{symTXA, "TXA", (*CPU).txa, (*CPU).txa},
+	{symTXS, "TXS", (*CPU).txs, (*CPU).txs},
+	{symTYA, "TYA", (*CPU).tya, (*CPU).tya},
 }
 
 // Mode describes a memory addressing mode.
@@ -348,13 +351,14 @@ var data = []opcodeData{
 // An Instruction describes a 6502 CPU instruction, including its name,
 // its function implementation, and other metadata.
 type Instruction struct {
-	Name     string // string representation of the opcode
-	Mode     Mode   // addressing mode
-	Opcode   byte   // hexadecimal opcode value
-	Length   byte   // number of machine code bytes required, including opcode
-	Cycles   byte   // number of CPU cycles to execute the instruction
-	BPCycles byte   // additional cycles required by instruction if a boundary page is crossed
-	fn       func(c *CPU, inst *Instruction, operand []byte)
+	Name     string   // string representation of the opcode
+	Mode     Mode     // addressing mode
+	Opcode   byte     // hexadecimal opcode value
+	Length   byte     // number of machine code bytes required, including opcode
+	Cycles   byte     // number of CPU cycles to execute the instruction
+	BPCycles byte     // additional cycles required by instruction if a boundary page is crossed
+	fnCMOS   instfunc // implementing function for CMOS (65C02)
+	fnNMOS   instfunc // implementing function for NMOS (6502)
 }
 
 // Instructions is an array of all possible 6502 instructions indexed by
@@ -386,7 +390,8 @@ func init() {
 		inst.Length = d.length
 		inst.Cycles = d.cycles
 		inst.BPCycles = d.bpcycles
-		inst.fn = impl.fn
+		inst.fnCMOS = impl.fnCMOS
+		inst.fnNMOS = impl.fnNMOS
 
 		variants[inst.Name] = append(variants[inst.Name], inst)
 	}

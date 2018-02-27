@@ -220,7 +220,7 @@ func (a *assembler) generateCode() {
 				a.addError(seg.opcode, "Branch offset out of bounds")
 			}
 			a.code = append(a.code, offset)
-			a.log("%04X- %s  %s  $%X", seg.addr, codeString(seg), seg.opcode.str, offset)
+			a.log("%04X- %s  %s  %s", seg.addr, codeString(seg), seg.opcode.str, operandString(seg))
 		case seg.operand.size() == 1:
 			a.code = append(a.code, byte(seg.operand.expr.number))
 			a.log("%04X- %s  %s  %s", seg.addr, codeString(seg), seg.opcode.str, operandString(seg))
@@ -250,6 +250,23 @@ func codeString(seg *segment) string {
 	}
 }
 
+// Formatting for addressing modes
+var modeFormat = []string{
+	"#$%s",    // IMM
+	"%s",      // IMP
+	"$%s",     // REL
+	"$%s",     // ZPG
+	"$%s,X",   // ZPX
+	"$%s,Y",   // ZPY
+	"$%s",     // ABS
+	"$%s,X",   // ABX
+	"$%s,Y",   // ABY
+	"($%s)",   // IND
+	"($%s,X)", // IDX
+	"($%s),Y", // IDY
+	"%s",      // ACC
+}
+
 // Format an operand string based on the instruction's addressing mode.
 func operandString(seg *segment) string {
 	number := seg.operand.expr.number
@@ -257,29 +274,12 @@ func operandString(seg *segment) string {
 	var n string
 	switch seg.operand.size() {
 	case 1:
-		n = fmt.Sprintf("$%02X", number)
+		n = fmt.Sprintf("%02X", number)
 	default:
-		n = fmt.Sprintf("$%04X", number)
+		n = fmt.Sprintf("%04X", number)
 	}
 
-	switch seg.inst.Mode {
-	case go6502.IMM:
-		return "#" + n
-	case go6502.IND:
-		return "(" + n + ")"
-	case go6502.ABX:
-		return n + ",X"
-	case go6502.IDX:
-		return "(" + n + ",X)"
-	case go6502.IDY:
-		return "(" + n + "),Y"
-	case go6502.ZPX:
-		return n + ",X"
-	case go6502.ZPY:
-		return n + ",Y"
-	default:
-		return n
-	}
+	return fmt.Sprintf(modeFormat[seg.inst.Mode], n)
 }
 
 // Parse a single line of assembly code.

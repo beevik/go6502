@@ -1,0 +1,7 @@
+		.ORG $600
+
+START		;SED
+		SEC
+		LDA #$80
+		SBC #$90
+		BRK
