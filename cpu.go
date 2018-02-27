@@ -66,24 +66,6 @@ func (cpu *CPU) Step() {
 	}
 }
 
-// Run the Cpu indefinitely.
-func (cpu *CPU) Run() {
-	exitRequired := false
-	interruptCounter := 0
-	for {
-		// Single-step the processor by one instruction
-		cpu.Step()
-
-		// Check for interrupts
-		if interruptCounter < 0 {
-			interruptCounter += interruptPeriod
-			if exitRequired {
-				break
-			}
-		}
-	}
-}
-
 // Load a byte value using the requested addressing mode
 // and the variable-sized instruction operand.
 func (cpu *CPU) load(mode Mode, operand []byte) byte {
