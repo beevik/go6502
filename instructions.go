@@ -309,7 +309,7 @@ var data = []opcodeData{
 
 	{symRTI, IMP, 0x40, 1, 6, 0},
 
-	{symNOP, IMM, 0xea, 1, 2, 0},
+	{symNOP, IMP, 0xea, 1, 2, 0},
 
 	{symTAX, IMP, 0xaa, 1, 2, 0},
 	{symTXA, IMP, 0x8a, 1, 2, 0},

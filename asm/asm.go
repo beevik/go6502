@@ -54,10 +54,11 @@ func (o *operand) size() int {
 // A segment is a placeholder for a few bytes of
 // machine code, usually representing a single instruction.
 type segment struct {
-	addr    int                 // resolved machine code address
-	opcode  fstring             // instruction opcode string
-	operand operand             // instruction operand data
-	inst    *go6502.Instruction // resolved 6502 instruction
+	addr     int                 // resolved machine code address
+	opcode   fstring             // instruction opcode string
+	operand  operand             // instruction operand data
+	inst     *go6502.Instruction // resolved 6502 instruction
+	bytedata []byte              // byte data instead of instruction
 }
 
 //
@@ -173,16 +174,25 @@ func (a *assembler) assignAddresses() {
 		seg := &a.segments[i]
 		seg.addr = a.pc
 
-		seg.inst = findMatchingInstruction(seg.opcode, seg.operand)
-		if seg.inst == nil {
-			a.addError(seg.opcode, "Invalid addressing mode for opcode")
-			return
-		}
-		a.log("%04X  %s Len:%d Mode:%d Opcode:%02X",
-			seg.addr, seg.opcode.str, seg.inst.Length,
-			seg.inst.Mode, seg.inst.Opcode)
+		switch {
+		case seg.bytedata == nil:
+			seg.inst = findMatchingInstruction(seg.opcode, seg.operand)
+			if seg.inst == nil {
+				a.addError(seg.opcode, "Invalid addressing mode for opcode")
+				return
+			}
+			a.log("%04X  %s Len:%d Mode:%d Opcode:%02X",
+				seg.addr, seg.opcode.str, seg.inst.Length,
+				seg.inst.Mode, seg.inst.Opcode)
 
-		a.pc += int(seg.inst.Length)
+			a.pc += int(seg.inst.Length)
+
+		default:
+			a.log("%04X  bytedata Len:%d",
+				seg.addr, len(seg.bytedata))
+
+			a.pc += len(seg.bytedata)
+		}
 	}
 }
 
@@ -205,38 +215,58 @@ func (a *assembler) handleUnevaluatedExpressions() {
 	}
 }
 
+var hex = "0123456789ABCDEF"
+
+func byteString(b []byte) string {
+	out := make([]byte, len(b)*3)
+	for i := 0; i < len(b); i++ {
+		out[i*3+0] = hex[(b[i] >> 4)]
+		out[i*3+1] = hex[(b[i] & 0x0f)]
+		out[i*3+2] = ' '
+	}
+	return string(out)
+}
+
 // Generate code
 func (a *assembler) generateCode() {
 	a.logSection("Generating code")
 	for i := range a.segments {
 		seg := &a.segments[i]
-		a.code = append(a.code, seg.inst.Opcode)
+
 		switch {
-		case seg.operand.size() == 0:
-			a.log("%04X- %s  %s", seg.addr, codeString(seg), seg.opcode.str)
-		case seg.inst.Mode == go6502.REL:
-			offset, err := relOffset(seg.operand.expr.number, seg.addr+int(seg.inst.Length))
-			if err != nil {
-				a.addError(seg.opcode, "Branch offset out of bounds")
+		case seg.bytedata == nil:
+			a.code = append(a.code, seg.inst.Opcode)
+			switch {
+			case seg.inst.Length == 1:
+				a.log("%04X- %s  %s", seg.addr, codeString(seg), seg.opcode.str)
+			case seg.inst.Mode == go6502.REL:
+				offset, err := relOffset(seg.operand.expr.number, seg.addr+int(seg.inst.Length))
+				if err != nil {
+					a.addError(seg.opcode, "Branch offset out of bounds")
+				}
+				a.code = append(a.code, offset)
+				a.log("%04X- %s  %s  %s", seg.addr, codeString(seg), seg.opcode.str, operandString(seg))
+			case seg.inst.Length == 2:
+				a.code = append(a.code, byte(seg.operand.expr.number))
+				a.log("%04X- %s  %s  %s", seg.addr, codeString(seg), seg.opcode.str, operandString(seg))
+			case seg.inst.Length == 3:
+				a.code = append(a.code, byte(seg.operand.expr.number&0xff))
+				a.code = append(a.code, byte(seg.operand.expr.number>>8))
+				a.log("%04X- %s  %s  %s", seg.addr, codeString(seg), seg.opcode.str, operandString(seg))
+			default:
+				panic("invalid operand")
 			}
-			a.code = append(a.code, offset)
-			a.log("%04X- %s  %s  %s", seg.addr, codeString(seg), seg.opcode.str, operandString(seg))
-		case seg.operand.size() == 1:
-			a.code = append(a.code, byte(seg.operand.expr.number))
-			a.log("%04X- %s  %s  %s", seg.addr, codeString(seg), seg.opcode.str, operandString(seg))
-		case seg.operand.size() == 2:
-			a.code = append(a.code, byte(seg.operand.expr.number&0xff))
-			a.code = append(a.code, byte(seg.operand.expr.number>>8))
-			a.log("%04X- %s  %s  %s", seg.addr, codeString(seg), seg.opcode.str, operandString(seg))
+
 		default:
-			panic("invalid operand")
+			a.code = append(a.code, seg.bytedata...)
+			a.log("%04X-*%s", seg.addr, byteString(seg.bytedata))
 		}
 	}
 }
 
 // Format a byte code string for an instruction.
 func codeString(seg *segment) string {
-	sz := seg.operand.size()
+	sz := seg.inst.Length - 1
 	switch {
 	case seg.inst.Mode == go6502.REL:
 		offset, _ := relOffset(seg.operand.expr.number, seg.addr+int(seg.inst.Length))
@@ -272,8 +302,8 @@ func operandString(seg *segment) string {
 	number := seg.operand.expr.number
 
 	var n string
-	switch seg.operand.size() {
-	case 1:
+	switch seg.inst.Length {
+	case 2:
 		n = fmt.Sprintf("%02X", number)
 	default:
 		n = fmt.Sprintf("%04X", number)
@@ -385,13 +415,15 @@ func (a *assembler) parseLabel(line fstring) (label fstring, out fstring, err er
 
 // Parse a pseudo-op beginning with "." (such as ".EQ").
 func (a *assembler) parsePseudoOp(line, label, pseudoOp fstring) (err error) {
-	switch pseudoOp.str {
-	case ".EQ":
+	switch strings.ToLower(pseudoOp.str) {
+	case ".eq":
 		err = a.parseMacro(line, label)
-	case ".ORG":
+	case ".org":
 		err = a.parseOrigin(line)
+	case ".byte":
+		err = a.parseBytes(line, label)
 	default:
-		a.addError(line, "Invalid pseudo-op")
+		a.addError(pseudoOp, "Invalid pseudo-op")
 		err = errParse
 	}
 	return
@@ -451,6 +483,44 @@ func (a *assembler) parseOrigin(line fstring) (err error) {
 
 	a.origin = e.number
 	a.pc = e.number
+	return
+}
+
+// Parse a .BYTES pseudo-op
+func (a *assembler) parseBytes(line, label fstring) (err error) {
+	a.logLine(line, "bytes=%s", label.str)
+
+	b := []byte{}
+	var p exprParser
+	for !line.isEmpty() {
+		var n int
+		n, line, err = p.parseNumber(line)
+		if err != nil {
+			break
+		}
+		_, line = line.consumeWhile(func(c byte) bool { return c == ',' || whitespace(c) })
+
+		b = append(b, byte(n))
+	}
+
+	// If the label starts with '.', it is a local label. So append
+	// it to the active scope label.
+	if label.startsWithChar('.') {
+		if a.scopeLabel.isEmpty() {
+			a.addError(label, "No global label previously defined")
+			return errParse
+		}
+		label.str = a.scopeLabel.str + label.str
+	} else {
+		a.scopeLabel = label
+	}
+
+	// Associate the label with its segment number.
+	a.labels[label.str] = len(a.segments)
+	a.logLine(line, "label=%s [%d]", label.str, len(a.segments))
+
+	seg := segment{bytedata: b}
+	a.segments = append(a.segments, seg)
 	return
 }
 

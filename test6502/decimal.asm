@@ -1,7 +1,10 @@
 		.ORG $600
 
-START		SED
+START		CMP $CC,Y
+		SED
 		CLC
 		LDA #$84
 		ADC #$25
 		BRK
+
+TABLE		.BYTE		$01,$0A,$64,$E8,$10

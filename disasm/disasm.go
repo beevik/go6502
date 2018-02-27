@@ -49,18 +49,18 @@ func hexString(b []byte) string {
 // address that starts the following line of machine code.
 func Disassemble(m *go6502.Memory, addr go6502.Address) (line string, next go6502.Address) {
 	opcode := m.LoadByte(addr)
-	idata := &go6502.Instructions[opcode]
-	operand := m.LoadBytes(addr+1, int(idata.Length)-1)
-	if idata.Mode == go6502.REL {
+	inst := &go6502.Instructions[opcode]
+	operand := m.LoadBytes(addr+1, int(inst.Length)-1)
+	if inst.Mode == go6502.REL {
 		// Convert relative offset to absolute address.
-		braddr := int(addr) + int(idata.Length+operand[0])
+		braddr := int(addr) + int(inst.Length+operand[0])
 		if operand[0] > 0x7f {
 			braddr -= 256
 		}
 		operand = []byte{byte(braddr & 0xff), byte(braddr >> 8)}
 	}
-	fmtString := "%s " + modeFormat[idata.Mode]
-	line = fmt.Sprintf(fmtString, idata.Name, hexString(operand))
-	next = addr + go6502.Address(idata.Length)
+	format := "%s " + modeFormat[inst.Mode]
+	line = fmt.Sprintf(format, inst.Name, hexString(operand))
+	next = addr + go6502.Address(inst.Length)
 	return
 }

@@ -40,29 +40,29 @@ func (cpu *CPU) Step() {
 	opcode := cpu.Mem.LoadByte(cpu.Reg.PC)
 
 	// Look up the instruction data for the opcode
-	idata := &Instructions[opcode]
+	inst := &Instructions[opcode]
 
 	// Fetch the operand (if any) and advance the PC
-	operand := cpu.Mem.LoadBytes(cpu.Reg.PC+1, int(idata.Length)-1)
-	cpu.Reg.PC += Address(idata.Length)
+	operand := cpu.Mem.LoadBytes(cpu.Reg.PC+1, int(inst.Length)-1)
+	cpu.Reg.PC += Address(inst.Length)
 
 	// Execute the instruction
 	cpu.pageCrossed = false
 	cpu.extraCycles = 0
-	if idata.fnCMOS != nil {
+	if inst.fnCMOS != nil {
 		switch cpu.CMOS {
 		case true:
-			idata.fnCMOS(cpu, idata, operand)
+			inst.fnCMOS(cpu, inst, operand)
 		case false:
-			idata.fnNMOS(cpu, idata, operand)
+			inst.fnNMOS(cpu, inst, operand)
 		}
 	}
 
 	// Update the CPU cycle counter, with special-case logic
 	// to handle a page boundary crossing
-	cpu.Cycles += uint64(idata.Cycles) + uint64(cpu.extraCycles)
+	cpu.Cycles += uint64(inst.Cycles) + uint64(cpu.extraCycles)
 	if cpu.pageCrossed {
-		cpu.Cycles += uint64(idata.BPCycles)
+		cpu.Cycles += uint64(inst.BPCycles)
 	}
 }
 
