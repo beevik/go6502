@@ -23,7 +23,7 @@ type CPU struct {
 
 // NewCPU creates a new 65C02 CPU object bound to the specified memory.
 func NewCPU(m *Memory) *CPU {
-	cpu := &CPU{Mem: m, CMOS: false}
+	cpu := &CPU{Mem: m, CMOS: true}
 	cpu.Reg.Init()
 	return cpu
 }
@@ -229,29 +229,101 @@ func (cpu *CPU) interrupt() {
 	cpu.Reg.PC = cpu.Mem.LoadAddress(Address(0xfffe))
 }
 
-// Add with carry
-func (cpu *CPU) adc(inst *Instruction, operand []byte) {
-	A := uint32(cpu.Reg.A)
+// Add with carry (CMOS)
+func (cpu *CPU) adcc(inst *Instruction, operand []byte) {
+	acc := uint32(cpu.Reg.A)
+	add := uint32(cpu.load(inst.Mode, operand))
 	carry := boolToUint32(cpu.Reg.Carry)
-	orig := uint32(cpu.load(inst.Mode, operand))
-	v := A + orig + carry
-	cpu.Reg.Zero = ((v & 0xff) == 0)
-	if cpu.Reg.Decimal {
-		if (A&0x0f)+(orig&0x0f)+carry > 9 {
-			v += 6
+	var v uint32
+
+	cpu.Reg.Overflow = (((acc ^ add) & 0x80) == 0)
+
+	switch cpu.Reg.Decimal {
+	case true:
+		cpu.extraCycles++
+
+		lo := (acc & 0x0f) + (add & 0x0f) + carry
+
+		var carrylo uint32
+		if lo >= 0x0a {
+			carrylo = 0x10
+			lo -= 0xa
 		}
-		cpu.Reg.Negative = ((v & 0x80) != 0)
-		cpu.Reg.Overflow = (((A ^ orig) & 0x80) == 0) && (((A ^ v) & 0x80) != 0)
-		if v > 0x99 {
-			v += 96
+
+		hi := (acc & 0xf0) + (add & 0xf0) + carrylo
+
+		if hi >= 0xa0 {
+			cpu.Reg.Carry = true
+			if hi >= 0x180 {
+				cpu.Reg.Overflow = false
+			}
+			hi -= 0xa0
+		} else {
+			cpu.Reg.Carry = false
+			if hi < 0x80 {
+				cpu.Reg.Overflow = false
+			}
 		}
-		cpu.Reg.Carry = (v > 0x99)
-	} else {
-		cpu.Reg.Negative = ((v & 0x80) != 0)
-		cpu.Reg.Overflow = (((A ^ orig) & 0x80) == 0) && (((A ^ v) & 0x80) != 0)
-		cpu.Reg.Carry = (v > 0xff)
+
+		v = hi | lo
+
+	case false:
+		v = acc + add + carry
+		if v >= 0x100 {
+			cpu.Reg.Carry = true
+			if v >= 0x180 {
+				cpu.Reg.Overflow = false
+			}
+		} else {
+			cpu.Reg.Carry = false
+			if v < 0x80 {
+				cpu.Reg.Overflow = false
+			}
+		}
 	}
-	cpu.Reg.A = byte(v & 0xff)
+
+	cpu.Reg.A = byte(v)
+	cpu.updateNZ(cpu.Reg.A)
+}
+
+// Add with carry (NMOS)
+func (cpu *CPU) adcn(inst *Instruction, operand []byte) {
+	acc := uint32(cpu.Reg.A)
+	add := uint32(cpu.load(inst.Mode, operand))
+	carry := boolToUint32(cpu.Reg.Carry)
+	var v uint32
+
+	switch cpu.Reg.Decimal {
+	case true:
+		lo := (acc & 0x0f) + (add & 0x0f) + carry
+
+		var carrylo uint32
+		if lo >= 0x0a {
+			carrylo = 0x10
+			lo -= 0x0a
+		}
+
+		hi := (acc & 0xf0) + (add & 0xf0) + carrylo
+
+		if hi >= 0xa0 {
+			cpu.Reg.Carry = true
+			hi -= 0xa0
+		} else {
+			cpu.Reg.Carry = false
+		}
+
+		v = hi | lo
+
+		cpu.Reg.Overflow = ((acc^v)&0x80) != 0 && ((acc^add)&0x80) == 0
+
+	case false:
+		v = acc + add + carry
+		cpu.Reg.Carry = (v >= 0x100)
+		cpu.Reg.Overflow = (((acc & 0x80) == (add & 0x80)) && ((acc & 0x80) != (v & 0x80)))
+	}
+
+	cpu.Reg.A = byte(v)
+	cpu.updateNZ(cpu.Reg.A)
 }
 
 // Boolean AND
@@ -533,8 +605,8 @@ func (cpu *CPU) rts(inst *Instruction, operand []byte) {
 
 // Subtract with Carry (CMOS)
 func (cpu *CPU) sbcc(inst *Instruction, operand []byte) {
-	sub := uint32(cpu.load(inst.Mode, operand))
 	acc := uint32(cpu.Reg.A)
+	sub := uint32(cpu.load(inst.Mode, operand))
 	carry := boolToUint32(cpu.Reg.Carry)
 	cpu.Reg.Overflow = ((acc ^ sub) & 0x80) != 0
 	var v uint32
@@ -593,8 +665,8 @@ func (cpu *CPU) sbcc(inst *Instruction, operand []byte) {
 
 // Subtract with Carry (NMOS)
 func (cpu *CPU) sbcn(inst *Instruction, operand []byte) {
-	sub := uint32(cpu.load(inst.Mode, operand))
 	acc := uint32(cpu.Reg.A)
+	sub := uint32(cpu.load(inst.Mode, operand))
 	carry := boolToUint32(cpu.Reg.Carry)
 	var v uint32
 
@@ -626,8 +698,8 @@ func (cpu *CPU) sbcn(inst *Instruction, operand []byte) {
 		cpu.Reg.Overflow = ((acc^v)&0x80) != 0 && ((acc^sub)&0x80) != 0
 
 	case false:
-		v = acc - sub - (carry ^ 1)
-		cpu.Reg.Carry = (v < 0x100)
+		v = 0xff + acc - sub + carry
+		cpu.Reg.Carry = (v >= 0x100)
 		cpu.Reg.Overflow = (((acc & 0x80) != (sub & 0x80)) && ((acc & 0x80) != (v & 0x80)))
 	}
 

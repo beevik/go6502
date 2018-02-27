@@ -74,7 +74,7 @@ type opcodeImpl struct {
 }
 
 var impl = []opcodeImpl{
-	{symADC, "ADC", (*CPU).adc, (*CPU).adc},
+	{symADC, "ADC", (*CPU).adcc, (*CPU).adcn},
 	{symAND, "AND", (*CPU).and, (*CPU).and},
 	{symASL, "ASL", (*CPU).asl, (*CPU).asl},
 	{symBCC, "BCC", (*CPU).bcc, (*CPU).bcc},
