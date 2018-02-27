@@ -13,7 +13,7 @@ func newFstring(row int, str string) fstring {
 	return fstring{row, 0, str, str}
 }
 
-func (l fstring) String() string {
+func (l *fstring) String() string {
 	return l.str
 }
 
@@ -29,71 +29,71 @@ func (l *fstring) advanceColumn(n int) int {
 	return c
 }
 
-func (l fstring) consume(n int) fstring {
+func (l *fstring) consume(n int) fstring {
 	col := l.advanceColumn(n)
 	return fstring{l.row, col, l.str[n:], l.full}
 }
 
-func (l fstring) trunc(n int) fstring {
+func (l *fstring) trunc(n int) fstring {
 	return fstring{l.row, l.column, l.str[:n], l.full}
 }
 
-func (l fstring) substr(start, stop int) fstring {
+func (l *fstring) substr(start, stop int) fstring {
 	col := l.advanceColumn(start)
 	return fstring{l.row, col, l.str[start:stop], l.full}
 }
 
-func (l fstring) isEmpty() bool {
+func (l *fstring) isEmpty() bool {
 	return len(l.str) == 0
 }
 
-func (l fstring) startsWith(fn func(c byte) bool) bool {
+func (l *fstring) startsWith(fn func(c byte) bool) bool {
 	return len(l.str) > 0 && fn(l.str[0])
 }
 
-func (l fstring) startsWithChar(c byte) bool {
+func (l *fstring) startsWithChar(c byte) bool {
 	return len(l.str) > 0 && l.str[0] == c
 }
 
-func (l fstring) startsWithString(s string) bool {
+func (l *fstring) startsWithString(s string) bool {
 	return len(l.str) >= len(s) && l.str[:len(s)] == s
 }
 
-func (l fstring) consumeWhitespace() fstring {
+func (l *fstring) consumeWhitespace() fstring {
 	return l.consume(l.scanWhile(whitespace))
 }
 
-func (l fstring) scanWhile(fn func(c byte) bool) int {
+func (l *fstring) scanWhile(fn func(c byte) bool) int {
 	i := 0
 	for ; i < len(l.str) && fn(l.str[i]); i++ {
 	}
 	return i
 }
 
-func (l fstring) scanUntil(fn func(c byte) bool) int {
+func (l *fstring) scanUntil(fn func(c byte) bool) int {
 	i := 0
 	for ; i < len(l.str) && !fn(l.str[i]); i++ {
 	}
 	return i
 }
 
-func (l fstring) consumeWhile(fn func(c byte) bool) (consumed, remain fstring) {
+func (l *fstring) consumeWhile(fn func(c byte) bool) (consumed, remain fstring) {
 	i := l.scanWhile(fn)
 	consumed, remain = l.trunc(i), l.consume(i)
 	return
 }
 
-func (l fstring) consumeUntil(fn func(c byte) bool) (consumed, remain fstring) {
+func (l *fstring) consumeUntil(fn func(c byte) bool) (consumed, remain fstring) {
 	i := l.scanUntil(fn)
 	consumed, remain = l.trunc(i), l.consume(i)
 	return
 }
 
-func (l fstring) peekNextWord() fstring {
+func (l *fstring) peekNextWord() fstring {
 	return l.trunc(l.scanWhile(wordChar))
 }
 
-func (l fstring) stripTrailingComment() fstring {
+func (l *fstring) stripTrailingComment() fstring {
 	lastNonWs := 0
 	for i := 0; i < len(l.str); i++ {
 		if l.str[i] == ';' {
