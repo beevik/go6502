@@ -1,5 +1,7 @@
 package asm
 
+import "strings"
+
 // An fstring is a string that keeps track of its position within the
 // file from which it was read.
 type fstring struct {
@@ -57,6 +59,10 @@ func (l *fstring) startsWithChar(c byte) bool {
 
 func (l *fstring) startsWithString(s string) bool {
 	return len(l.str) >= len(s) && l.str[:len(s)] == s
+}
+
+func (l *fstring) startsWithStringI(lower string) bool {
+	return len(l.str) >= len(lower) && strings.ToLower(l.str[:len(lower)]) == lower
 }
 
 func (l *fstring) consumeWhitespace() fstring {
@@ -151,5 +157,5 @@ func identifierStartChar(c byte) bool {
 }
 
 func identifierChar(c byte) bool {
-	return alpha(c) || decimal(c) || c == '_' || c == '.'
+	return alpha(c) || decimal(c) || c == '_' || c == '.' || c == ':'
 }

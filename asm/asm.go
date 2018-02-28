@@ -19,6 +19,11 @@ var (
 	errParse = errors.New("parse error")
 )
 
+var absolutePrefixes = []string{
+	"a:",
+	"abs:",
+}
+
 //
 // operand
 //
@@ -26,21 +31,18 @@ var (
 // An operand represents the right-hand side of an assembly
 // instruction.
 type operand struct {
-	value int         // resolved numeric value
-	mode  go6502.Mode // candidate addressing mode
-	expr  *expr       // expression tree, used to resolve value
+	value         int         // resolved numeric value
+	mode          go6502.Mode // candidate addressing mode
+	expr          *expr       // expression tree, used to resolve value
+	forceAbsolute bool        // operand must use 2-byte absolute address
 }
 
-// Return the size of the operand in bytes
+// Return the size of the operand in bytes.
 func (o *operand) size() int {
 	switch {
 	case o.mode == go6502.IMP:
 		return 0
-	case o.expr.address:
-		return 2
-	case o.expr.number > 0xffff:
-		return 4
-	case o.expr.number > 0xff:
+	case o.expr.address || o.forceAbsolute || o.expr.number > 0xff:
 		return 2
 	default:
 		return 1
@@ -598,9 +600,9 @@ func (a *assembler) parseOperand(line fstring) (o operand, out fstring, err erro
 		}
 
 	default:
-		// Handle absolute addressing modes
+		// Handle absolute addressing modes (zero page and full absolute)
 		var expr fstring
-		o.mode, expr, out, err = line.consumeAbsolute()
+		o.mode, o.forceAbsolute, expr, out, err = line.consumeAbsolute()
 		if err != nil {
 			a.addError(out, "Absolute addressing mode syntax error")
 			return
@@ -762,9 +764,18 @@ func (l fstring) consumeIndirect() (mode go6502.Mode, expr fstring, out fstring,
 // Consume an absolute operand expression until an absolute
 // addressing mode substring is reached. Return the candidate
 // addressing mode and expression substring.
-func (l fstring) consumeAbsolute() (mode go6502.Mode, expr fstring, out fstring, err error) {
+func (l fstring) consumeAbsolute() (mode go6502.Mode, forceAbsolute bool, expr fstring, out fstring, err error) {
 	i := l.scanUntil(func(c byte) bool { return c == ',' })
 	expr, out = l.trunc(i), l.consume(i)
+
+	for _, p := range absolutePrefixes {
+		if expr.startsWithStringI(p) {
+			expr = expr.consume(len(p))
+			forceAbsolute = true
+			break
+		}
+	}
+
 	switch {
 	case out.startsWithString(",X"):
 		mode, out = go6502.ABX, out.consume(2)
@@ -773,6 +784,7 @@ func (l fstring) consumeAbsolute() (mode go6502.Mode, expr fstring, out fstring,
 	default:
 		mode = go6502.ABS
 	}
+
 	out = out.consumeWhitespace()
 	if !out.isEmpty() {
 		err = errParse

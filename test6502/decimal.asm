@@ -1,8 +1,9 @@
 		.ORG $600
 
-X 		.EQ 		-1
+X 		.EQ 		$FE
 
-START		CMP $CC,Y
+START		
+		LDX ABS:X,Y
 		SED
 		CLC
 		LDA #$84
