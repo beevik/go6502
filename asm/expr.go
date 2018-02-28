@@ -306,7 +306,7 @@ func (p *exprParser) parseToken(line fstring) (t token, out fstring, err error) 
 	switch {
 
 	case line.startsWith(decimal) || line.startsWithChar('$'):
-		t.number, out, err = p.parseNumber(line)
+		t.number, _, out, err = p.parseNumber(line)
 		t.tt = tokenNumber
 		if p.prevToken.tt.isValue() || p.prevToken.tt == tokenRightParen {
 			p.addError(line, "Expression syntax error 4")
@@ -361,23 +361,36 @@ func (p *exprParser) parseToken(line fstring) (t token, out fstring, err error) 
 //   $[0-9a-fA-F]+		Hexadecimal number
 //	 0x[0-9a-fA-F]+ 	Hexadecimal number
 //	 0b[01]+ 			Binary number
-func (p *exprParser) parseNumber(line fstring) (number int, out fstring, err error) {
-
+//
+// The function returns the parsed value, the number of bytes used to
+// hold the value, the remainder of the line, and any parsing error
+// encountered.  The number of bytes used to hold the value will be 1, 2
+// or 4.
+//
+// If a hexadecimal or binary value is parsed, the length of the parsed
+// string is used to determine how many bytes are required to hold the
+// value.  For example, if the parsed string is "0x0020", the number of bytes
+// required to hold the value is 2, while if the parse string is "0x20", the
+// number of bytes required is 1.
+//
+// If a decimal number if parsed, the length of the parsed string is ignored,
+// and the minimum number of bytes required to hold the value is returned.
+func (p *exprParser) parseNumber(line fstring) (value, bytes int, remain fstring, err error) {
 	// Select decimal, hexadecimal or binary depending on the prefix
-	base, fn := 10, decimal
+	base, fn, bitsPerChar := 10, decimal, 0
 	if line.startsWithChar('$') {
 		line = line.consume(1)
-		base, fn = 16, hexadecimal
+		base, fn, bitsPerChar = 16, hexadecimal, 4
 	} else if line.startsWithString("0x") {
 		line = line.consume(2)
-		base, fn = 16, hexadecimal
+		base, fn, bitsPerChar = 16, hexadecimal, 4
 	} else if line.startsWithString("0b") {
 		line = line.consume(2)
-		base, fn = 2, binary
+		base, fn, bitsPerChar = 2, binary, 1
 	}
 
 	// Consume the number and update the remaining line
-	numstr, out := line.consumeWhile(fn)
+	numstr, remain := line.consumeWhile(fn)
 
 	// Convert the string to an integer
 	num64, converr := strconv.ParseInt(numstr.str, base, 32)
@@ -386,7 +399,26 @@ func (p *exprParser) parseNumber(line fstring) (number int, out fstring, err err
 		err = errParse
 	}
 
-	number = int(num64)
+	value = int(num64)
+
+	l := len(numstr.str)
+	switch bitsPerChar {
+	case 0:
+		switch {
+		case value < 0x100:
+			bytes = 1
+		case value < 0x10000:
+			bytes = 2
+		default:
+			bytes = 4
+		}
+	default:
+		bytes = (l*bitsPerChar + 7) / 8
+		if bytes > 2 {
+			bytes = 4
+		}
+	}
+
 	return
 }
 

@@ -1,5 +1,7 @@
 		.ORG $600
 
+X 		.EQ 		-1
+
 START		CMP $CC,Y
 		SED
 		CLC
@@ -7,4 +9,4 @@ START		CMP $CC,Y
 		ADC #$25
 		BRK
 
-TABLE		.BYTE		$01,$0A,$64,$E8,$10
+TABLE		.BYTE		0x200

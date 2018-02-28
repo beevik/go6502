@@ -49,13 +49,11 @@ func (cpu *CPU) Step() {
 	// Execute the instruction
 	cpu.pageCrossed = false
 	cpu.extraCycles = 0
-	if inst.fnCMOS != nil {
-		switch cpu.CMOS {
-		case true:
-			inst.fnCMOS(cpu, inst, operand)
-		case false:
-			inst.fnNMOS(cpu, inst, operand)
-		}
+	switch {
+	case cpu.CMOS && inst.fnCMOS != nil:
+		inst.fnCMOS(cpu, inst, operand)
+	case !cpu.CMOS && inst.fnNMOS != nil:
+		inst.fnNMOS(cpu, inst, operand)
 	}
 
 	// Update the CPU cycle counter, with special-case logic

@@ -365,6 +365,21 @@ func (a *assembler) parseLabeledLine(line fstring) (err error) {
 		return
 	}
 
+	// Store the label.
+	err = a.storeLabel(line, label)
+	if err != nil {
+		return
+	}
+
+	// Parse any instruction following the label
+	if !line.isEmpty() {
+		err = a.parseInstruction(line)
+	}
+	return
+}
+
+// Store a label into the assembler's label list.
+func (a *assembler) storeLabel(line, label fstring) error {
 	// If the label starts with '.', it is a local label. So append
 	// it to the active scope label.
 	if label.startsWithChar('.') {
@@ -380,17 +395,11 @@ func (a *assembler) parseLabeledLine(line fstring) (err error) {
 	// Associate the label with its segment number.
 	a.labels[label.str] = len(a.segments)
 	a.logLine(line, "label=%s [%d]", label.str, len(a.segments))
-
-	// Parse any instruction following the label
-	if !line.isEmpty() {
-		err = a.parseInstruction(line)
-	}
-	return
+	return nil
 }
 
 // Parse a label string at the beginning of a line of assembly code.
 func (a *assembler) parseLabel(line fstring) (label fstring, out fstring, err error) {
-
 	// Make sure label starts with a valid label character
 	if !line.startsWith(labelStartChar) {
 		a.addError(line, "Invalid label")
@@ -491,33 +500,33 @@ func (a *assembler) parseBytes(line, label fstring) (err error) {
 	a.logLine(line, "bytes=%s", label.str)
 
 	b := []byte{}
-	var p exprParser
 	for !line.isEmpty() {
-		var n int
-		n, line, err = p.parseNumber(line)
+		var value int
+		var bytes int
+		value, bytes, line, err = a.exprParser.parseNumber(line)
 		if err != nil {
+			a.addExprErrors()
 			break
 		}
-		_, line = line.consumeWhile(func(c byte) bool { return c == ',' || whitespace(c) })
 
-		b = append(b, byte(n))
-	}
-
-	// If the label starts with '.', it is a local label. So append
-	// it to the active scope label.
-	if label.startsWithChar('.') {
-		if a.scopeLabel.isEmpty() {
-			a.addError(label, "No global label previously defined")
-			return errParse
+		switch bytes {
+		case 1:
+			b = append(b, byte(value))
+		case 2:
+			b = append(b, []byte{byte(value), byte(value >> 8)}...)
+		case 4:
+			b = append(b, []byte{byte(value), byte(value >> 8), byte(value >> 16), byte(value >> 24)}...)
 		}
-		label.str = a.scopeLabel.str + label.str
-	} else {
-		a.scopeLabel = label
+
+		_, line = line.consumeWhile(func(c byte) bool { return c == ',' || whitespace(c) })
 	}
 
-	// Associate the label with its segment number.
-	a.labels[label.str] = len(a.segments)
-	a.logLine(line, "label=%s [%d]", label.str, len(a.segments))
+	if !label.isEmpty() {
+		err = a.storeLabel(line, label)
+		if err != nil {
+			return
+		}
+	}
 
 	seg := segment{bytedata: b}
 	a.segments = append(a.segments, seg)
