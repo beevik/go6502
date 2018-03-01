@@ -1,10 +1,21 @@
 		.ORG	$0600
 
+; -------
+; Exports
+; -------
+
+		.EX	START
+		.EX	START.1
+		.EX	LDA_TEST
+		.EX	LDX_TEST
+		.EX	END
+
+
 ; ---------
 ; Constants
 ; ---------
 
-STORE:		.EQ	$0200
+STORE		.EQ	$0200
 
 ; -------
 ; Program
@@ -25,7 +36,7 @@ START:
 		LDA #$00
 		BEQ .1
 		LDX #$EE
-.1:		BRK
+.1		BRK
 
 LDA_TEST	LDA #$20	; Immediate
 		LDA $20		; Zero page
@@ -50,3 +61,5 @@ LDY_TEST	LDY #$20	; Immediate
 		LDY $0200	; Absolute
 		LDY $0200,X	; Absolute + X
 		RTS
+
+END

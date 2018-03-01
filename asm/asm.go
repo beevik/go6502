@@ -50,13 +50,16 @@ var modeFormat = []string{
 }
 
 var pseudoOps = map[string]func(a *assembler, line, label fstring) error{
-	".eq":   (*assembler).parseMacro,
-	".equ":  (*assembler).parseMacro,
-	".or":   (*assembler).parseOrigin,
-	".org":  (*assembler).parseOrigin,
-	".db":   (*assembler).parseBytes,
-	".byte": (*assembler).parseBytes,
-	".at":   (*assembler).parseAt,
+	".eq":     (*assembler).parseMacro,
+	".equ":    (*assembler).parseMacro,
+	".or":     (*assembler).parseOrigin,
+	".org":    (*assembler).parseOrigin,
+	".db":     (*assembler).parseBytes,
+	".byte":   (*assembler).parseBytes,
+	".at":     (*assembler).parseAt,
+	".addr":   (*assembler).parseAt,
+	".ex":     (*assembler).parseExport,
+	".export": (*assembler).parseExport,
 }
 
 // A segment is a small chunk of machine code that may represent a single
@@ -140,6 +143,15 @@ func (d *data) address() int {
 	return d.addr
 }
 
+// An export segment contains an exported address.
+type export struct {
+	expr *expr
+}
+
+func (e *export) address() int {
+	return 0
+}
+
 // An asmerror is used to keep track of errors encountered
 // during assembly.
 type asmerror struct {
@@ -157,6 +169,7 @@ type assembler struct {
 	scopeLabel fstring          // label currently in scope
 	macros     map[string]*expr // .EQ macro -> expression
 	labels     map[string]int   // label -> segment index
+	exports    []Export         // exported addresses
 	segments   []segment        // segment of machine code
 	uneval     []*expr          // expressions requiring evaluation
 	verbose    bool             // verbose output for debugging
@@ -169,10 +182,17 @@ type Options struct {
 	Verbose bool
 }
 
+// An Export describes an exported address.
+type Export struct {
+	Label string
+	Addr  go6502.Address
+}
+
 // Result of the Assemble function.
 type Result struct {
-	Code   []byte         // Assembled machine code
-	Origin go6502.Address // Code origin address
+	Code    []byte         // Assembled machine code
+	Origin  go6502.Address // Code origin address
+	Exports []Export       // Exported addresses
 }
 
 // Assemble reads data from the provided stream and attempts to assemble
@@ -184,6 +204,7 @@ func Assemble(r io.Reader, o Options) (*Result, error) {
 		scanner:  bufio.NewScanner(r),
 		macros:   make(map[string]*expr),
 		labels:   make(map[string]int),
+		exports:  make([]Export, 0),
 		segments: make([]segment, 0, 32),
 		verbose:  o.Verbose,
 	}
@@ -200,7 +221,7 @@ func Assemble(r io.Reader, o Options) (*Result, error) {
 	}
 
 	// Execute assembler steps, breaking if an error is encountered
-	// in any one of them
+	// in any one of them.
 	for _, step := range steps {
 		step(a)
 		if len(a.errors) > 0 {
@@ -208,7 +229,12 @@ func Assemble(r io.Reader, o Options) (*Result, error) {
 		}
 	}
 
-	return &Result{Code: a.code, Origin: go6502.Address(a.origin)}, nil
+	result := &Result{
+		Code:    a.code,
+		Origin:  go6502.Address(a.origin),
+		Exports: a.exports,
+	}
+	return result, nil
 }
 
 // Read the assembly code and perform the initial parsing. Build up
@@ -330,6 +356,16 @@ func (a *assembler) generateCode() {
 			}
 			a.code = append(a.code, ss.bytes...)
 			a.log("%04X-*%s", ss.addr, byteString(ss.bytes))
+
+		case *export:
+			if ss.expr.op != opIdentifier || !ss.expr.address {
+				a.addError(ss.expr.line, "export is not an address label")
+			}
+			export := Export{
+				Label: ss.expr.identifier.str,
+				Addr:  go6502.Address(ss.expr.value),
+			}
+			a.exports = append(a.exports, export)
 		}
 	}
 }
@@ -592,6 +628,30 @@ func (a *assembler) parseAt(line, label fstring) (err error) {
 	a.logLine(line, "val=$%X", e.value)
 
 	seg := &data{bytes: []byte{0, 0}, expr: e}
+	a.segments = append(a.segments, seg)
+	return
+}
+
+func (a *assembler) parseExport(line, label fstring) (err error) {
+	a.logLine(line, "export=")
+
+	// Parse the EXPORT expression.
+	var e *expr
+	e, line, err = a.exprParser.parse(line, a.scopeLabel, true)
+	if err != nil {
+		a.addExprErrors()
+		return
+	}
+
+	// Attempt to evaluate the expression immediately.
+	if !e.eval(a.macros, a.labels) {
+		a.uneval = append(a.uneval, e)
+	}
+
+	a.logLine(line, "expr=%s", e.String())
+	a.logLine(line, "val=$%X", e.value)
+
+	seg := &export{expr: e}
 	a.segments = append(a.segments, seg)
 	return
 }

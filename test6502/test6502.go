@@ -21,6 +21,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	if len(r.Exports) > 0 {
+		fmt.Println("Exported addresses:")
+		for _, e := range r.Exports {
+			fmt.Printf("  %-15s $%04X\n", e.Label, e.Addr)
+		}
+	}
+
 	run(r.Code, r.Origin)
 }
 
