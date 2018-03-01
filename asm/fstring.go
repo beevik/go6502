@@ -159,3 +159,7 @@ func identifierStartChar(c byte) bool {
 func identifierChar(c byte) bool {
 	return alpha(c) || decimal(c) || c == '_' || c == '.' || c == ':'
 }
+
+func pseudoOpStartChar(c byte) bool {
+	return c == '.' || c == '='
+}

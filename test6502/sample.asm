@@ -15,6 +15,7 @@
 ; Constants
 ; ---------
 
+DOLLAR 		.EQ	'$'+$80
 STORE		.EQ	$0200
 
 ; -------
@@ -31,11 +32,11 @@ START:
 		STA STORE+$1
 		ADC #$FE
 		STA STORE
-		LDA #$FF
+		LDA #DOLLAR
 		LDA STORE
 		LDA #$00
 		BEQ .1
-		LDX #$EE
+		LDX #'$'+$80
 .1		BRK
 
 LDA_TEST	LDA #$20	; Immediate

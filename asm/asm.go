@@ -52,6 +52,7 @@ var modeFormat = []string{
 var pseudoOps = map[string]func(a *assembler, line, label fstring) error{
 	".eq":     (*assembler).parseMacro,
 	".equ":    (*assembler).parseMacro,
+	"=":       (*assembler).parseMacro,
 	".or":     (*assembler).parseOrigin,
 	".org":    (*assembler).parseOrigin,
 	".db":     (*assembler).parseBytes,
@@ -393,7 +394,7 @@ func (a *assembler) parseUnlabeledLine(line fstring) (err error) {
 	a.logLine(line, "unlabeled_line")
 
 	// Is the next word a pseudo-op, rather than an opcode?
-	if line.startsWithChar('.') {
+	if line.startsWith(pseudoOpStartChar) {
 		var pseudoOp fstring
 		pseudoOp, line = line.consumeWhile(wordChar)
 		err = a.parsePseudoOp(line.consumeWhitespace(), fstring{}, pseudoOp)
@@ -416,7 +417,7 @@ func (a *assembler) parseLabeledLine(line fstring) (err error) {
 	}
 
 	// Is the next word a pseudo-op, rather than an opcode?
-	if line.startsWithChar('.') {
+	if line.startsWith(pseudoOpStartChar) {
 		var pseudoOp fstring
 		pseudoOp, line = line.consumeWhile(wordChar)
 		err = a.parsePseudoOp(line.consumeWhitespace(), label, pseudoOp)

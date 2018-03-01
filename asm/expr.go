@@ -310,7 +310,7 @@ func (p *exprParser) parseToken(line fstring) (t token, out fstring, err error) 
 	}
 	switch {
 
-	case line.startsWith(decimal) || line.startsWithChar('$'):
+	case line.startsWith(decimal) || line.startsWithChar('$') || line.startsWithChar('\''):
 		t.number, _, out, err = p.parseNumber(line)
 		t.tt = tokenNumber
 		if p.prevToken.tt.isValue() || p.prevToken.tt == tokenRightParen {
@@ -366,6 +366,7 @@ func (p *exprParser) parseToken(line fstring) (t token, out fstring, err error) 
 //   $[0-9a-fA-F]+		Hexadecimal number
 //	 0x[0-9a-fA-F]+ 	Hexadecimal number
 //	 0b[01]+ 			Binary number
+//   '[any-char]'		ASCII character
 //
 // The function returns the parsed value, the number of bytes used to
 // hold the value, the remainder of the line, and any parsing error
@@ -383,13 +384,16 @@ func (p *exprParser) parseToken(line fstring) (t token, out fstring, err error) 
 func (p *exprParser) parseNumber(line fstring) (value, bytes int, remain fstring, err error) {
 	// Select decimal, hexadecimal or binary depending on the prefix
 	base, fn, bitsPerChar := 10, decimal, 0
-	if line.startsWithChar('$') {
+	switch {
+	case line.startsWithChar('$'):
 		line = line.consume(1)
 		base, fn, bitsPerChar = 16, hexadecimal, 4
-	} else if line.startsWithString("0x") {
+	case line.startsWithChar('\''):
+		return p.parseCharLiteral(line)
+	case line.startsWithString("0x"):
 		line = line.consume(2)
 		base, fn, bitsPerChar = 16, hexadecimal, 4
-	} else if line.startsWithString("0b") {
+	case line.startsWithString("0b"):
 		line = line.consume(2)
 		base, fn, bitsPerChar = 2, binary, 1
 	}
@@ -424,6 +428,19 @@ func (p *exprParser) parseNumber(line fstring) (value, bytes int, remain fstring
 		}
 	}
 
+	return
+}
+
+func (p *exprParser) parseCharLiteral(line fstring) (value, bytes int, remain fstring, err error) {
+	if len(line.str) < 3 || line.str[2] != '\'' {
+		p.addError(line, "invalid character literal")
+		err = errParse
+		return
+	}
+
+	value = int(line.str[1])
+	bytes = 1
+	remain = line.consume(3)
 	return
 }
 
