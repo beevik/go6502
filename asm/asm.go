@@ -414,6 +414,11 @@ func (a *assembler) storeLabel(line, label fstring) error {
 		a.scopeLabel = label
 	}
 
+	if _, found := a.labels[label.str]; found {
+		a.addError(label, "label '%s' used more than once", label.str)
+		return errParse
+	}
+
 	// Associate the label with its segment number.
 	a.labels[label.str] = len(a.segments)
 	a.logLine(line, "label=%s [%d]", label.str, len(a.segments))
@@ -422,7 +427,7 @@ func (a *assembler) storeLabel(line, label fstring) error {
 
 // Parse a label string at the beginning of a line of assembly code.
 func (a *assembler) parseLabel(line fstring) (label fstring, out fstring, err error) {
-	// Make sure label starts with a valid label character
+	// Make sure label starts with a valid label character.
 	if !line.startsWith(labelStartChar) {
 		s, _ := line.consumeUntil(whitespace)
 		a.addError(line, "invalid label '%s'", s.str)
@@ -430,8 +435,13 @@ func (a *assembler) parseLabel(line fstring) (label fstring, out fstring, err er
 		return
 	}
 
-	// Grab the label and advance the line past it
+	// Grab the label and advance the line past it.
 	label, line = line.consumeWhile(labelChar)
+
+	// Skip colon after label.
+	if line.startsWithChar(':') {
+		line = line.consume(1)
+	}
 
 	// If the next character isn't whitespace, we encountered an invalid label character
 	if !line.isEmpty() && !line.startsWith(whitespace) {

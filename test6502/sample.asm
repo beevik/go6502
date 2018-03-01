@@ -4,13 +4,14 @@
 ; Constants
 ; ---------
 
-STORE		.EQ	$0200
+STORE:		.EQ	$0200
 
 ; -------
 ; Program
 ; -------
 
-START		JSR LDA_TEST
+START:
+		JSR LDA_TEST
 		JSR LDX_TEST
 		JSR LDY_TEST
 		LDX #$05
@@ -22,9 +23,9 @@ START		JSR LDA_TEST
 		LDA #$FF
 		LDA STORE
 		LDA #$00
-		BEQ .DONE
+		BEQ .1
 		LDX #$EE
-.DONE		BRK
+.1:		BRK
 
 LDA_TEST	LDA #$20	; Immediate
 		LDA $20		; Zero page
