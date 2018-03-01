@@ -91,7 +91,7 @@ func offsetAddress(addr Address, offset byte) (newAddr Address, pageCrossed bool
 // exceeds the zero-page address space, wrap it.
 func offsetZeroPage(addr Address, offset byte) Address {
 	addr += Address(offset)
-	if addr > 0x100 {
+	if addr >= 0x100 {
 		addr -= 0x100
 	}
 	return addr

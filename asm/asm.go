@@ -19,20 +19,83 @@ var (
 	errParse = errors.New("parse error")
 )
 
+var hex = "0123456789ABCDEF"
+
 var absolutePrefixes = []string{
 	"a:",
 	"abs:",
 }
 
-//
-// operand
-//
+var modeFormat = []string{
+	"#$%s",    // IMM
+	"%s",      // IMP
+	"$%s",     // REL
+	"$%s",     // ZPG
+	"$%s,X",   // ZPX
+	"$%s,Y",   // ZPY
+	"$%s",     // ABS
+	"$%s,X",   // ABX
+	"$%s,Y",   // ABY
+	"($%s)",   // IND
+	"($%s,X)", // IDX
+	"($%s),Y", // IDY
+	"%s",      // ACC
+}
 
-// An operand represents the right-hand side of an assembly
-// instruction.
+// A segment is a small chunk of machine code that may represent a single
+// instruction or a group of byte data.
+type segment interface {
+	address() int
+}
+
+// An instruction segment contains a single instruction, including its
+// opcode and operand data.
+type instruction struct {
+	addr    int                 // address assigned to the segment
+	opcode  fstring             // opcode string
+	inst    *go6502.Instruction // selected instruction data for the opcode
+	operand operand             // parameter data for the instruction
+}
+
+func (i *instruction) address() int {
+	return i.addr
+}
+
+// Format a byte code string for an instruction.
+func (i *instruction) codeString() string {
+	sz := i.inst.Length - 1
+	switch {
+	case i.inst.Mode == go6502.REL:
+		offset, _ := relOffset(i.operand.expr.number, i.addr+int(i.inst.Length))
+		return fmt.Sprintf("%02X %02X   ", i.inst.Opcode, offset)
+	case sz == 0:
+		return fmt.Sprintf("%02X      ", i.inst.Opcode)
+	case sz == 1:
+		return fmt.Sprintf("%02X %02X   ", i.inst.Opcode, i.operand.expr.number)
+	default:
+		return fmt.Sprintf("%02X %02X %02X", i.inst.Opcode, i.operand.expr.number&0xff, i.operand.expr.number>>8)
+	}
+}
+
+// Format an operand string based on the instruction's addressing mode.
+func (i *instruction) operandString() string {
+	number := i.operand.expr.number
+
+	var n string
+	switch i.inst.Length {
+	case 2:
+		n = fmt.Sprintf("%02X", number)
+	default:
+		n = fmt.Sprintf("%04X", number)
+	}
+
+	return fmt.Sprintf(modeFormat[i.inst.Mode], n)
+}
+
+// An operand represents the parameter(s) of an assembly instruction.
 type operand struct {
 	value         int         // resolved numeric value
-	mode          go6502.Mode // candidate addressing mode
+	modeGuess     go6502.Mode // addressing mode guesed based on operand string
 	expr          *expr       // expression tree, used to resolve value
 	forceAbsolute bool        // operand must use 2-byte absolute address
 }
@@ -40,7 +103,7 @@ type operand struct {
 // Return the size of the operand in bytes.
 func (o *operand) size() int {
 	switch {
-	case o.mode == go6502.IMP:
+	case o.modeGuess == go6502.IMP:
 		return 0
 	case o.expr.address || o.forceAbsolute || o.expr.number > 0xff:
 		return 2
@@ -49,23 +112,16 @@ func (o *operand) size() int {
 	}
 }
 
-//
-// segment
-//
-
-// A segment is a placeholder for a few bytes of
-// machine code, usually representing a single instruction.
-type segment struct {
-	addr     int                 // resolved machine code address
-	opcode   fstring             // instruction opcode string
-	operand  operand             // instruction operand data
-	inst     *go6502.Instruction // resolved 6502 instruction
-	bytedata []byte              // byte data instead of instruction
+// A data segment contains one or more bytes of byte data.
+type data struct {
+	addr  int    // address assigned to the segment
+	bytes []byte // resolved byte data
+	expr  *expr  // expression used for .at
 }
 
-//
-// asmerror
-//
+func (d *data) address() int {
+	return d.addr
+}
 
 // An asmerror is used to keep track of errors encountered
 // during assembly.
@@ -73,10 +129,6 @@ type asmerror struct {
 	line fstring // row & column of assembly code causing the error
 	msg  string  // error message
 }
-
-//
-// assembler
-//
 
 // The assembler is a state object used during the assembly of
 // machine code from assembly code.
@@ -173,27 +225,23 @@ func (a *assembler) evaluateExpressions() {
 func (a *assembler) assignAddresses() {
 	a.logSection("Assigning addresses")
 	for i := range a.segments {
-		seg := &a.segments[i]
-		seg.addr = a.pc
-
-		switch {
-		case seg.bytedata == nil:
-			seg.inst = findMatchingInstruction(seg.opcode, seg.operand)
-			if seg.inst == nil {
-				a.addError(seg.opcode, "Invalid addressing mode for opcode")
+		switch ss := a.segments[i].(type) {
+		case *instruction:
+			ss.addr = a.pc
+			ss.inst = findMatchingInstruction(ss.opcode, ss.operand)
+			if ss.inst == nil {
+				a.addError(ss.opcode, "Invalid addressing mode for opcode")
 				return
 			}
 			a.log("%04X  %s Len:%d Mode:%d Opcode:%02X",
-				seg.addr, seg.opcode.str, seg.inst.Length,
-				seg.inst.Mode, seg.inst.Opcode)
+				ss.addr, ss.opcode.str, ss.inst.Length,
+				ss.inst.Mode, ss.inst.Opcode)
+			a.pc += int(ss.inst.Length)
 
-			a.pc += int(seg.inst.Length)
-
-		default:
-			a.log("%04X  bytedata Len:%d",
-				seg.addr, len(seg.bytedata))
-
-			a.pc += len(seg.bytedata)
+		case *data:
+			ss.addr = a.pc
+			a.log("%04X  bytedata Len:%d", ss.addr, len(ss.bytes))
+			a.pc += len(ss.bytes)
 		}
 	}
 }
@@ -202,7 +250,7 @@ func (a *assembler) assignAddresses() {
 func (a *assembler) resolveLabels() {
 	a.logSection("Resolving labels")
 	for label, segno := range a.labels {
-		addr := a.segments[segno].addr
+		addr := a.segments[segno].address()
 		a.log("%-15s Seg:%-3d Addr:$%04X", label, segno, addr)
 		a.macros[label] = &expr{op: opNumber, number: addr, evaluated: true}
 	}
@@ -212,106 +260,44 @@ func (a *assembler) resolveLabels() {
 func (a *assembler) handleUnevaluatedExpressions() {
 	if len(a.uneval) > 0 {
 		for _, e := range a.uneval {
-			a.addError(e.identifier, "Unresolved label")
+			a.addError(e.identifier, "Unresolved expression")
 		}
 	}
-}
-
-var hex = "0123456789ABCDEF"
-
-func byteString(b []byte) string {
-	out := make([]byte, len(b)*3)
-	for i := 0; i < len(b); i++ {
-		out[i*3+0] = hex[(b[i] >> 4)]
-		out[i*3+1] = hex[(b[i] & 0x0f)]
-		out[i*3+2] = ' '
-	}
-	return string(out)
 }
 
 // Generate code
 func (a *assembler) generateCode() {
 	a.logSection("Generating code")
 	for i := range a.segments {
-		seg := &a.segments[i]
-
-		switch {
-		case seg.bytedata == nil:
-			a.code = append(a.code, seg.inst.Opcode)
+		switch ss := a.segments[i].(type) {
+		case *instruction:
+			a.code = append(a.code, ss.inst.Opcode)
 			switch {
-			case seg.inst.Length == 1:
-				a.log("%04X- %s  %s", seg.addr, codeString(seg), seg.opcode.str)
-			case seg.inst.Mode == go6502.REL:
-				offset, err := relOffset(seg.operand.expr.number, seg.addr+int(seg.inst.Length))
+			case ss.inst.Length == 1:
+				a.log("%04X- %s  %s", ss.addr, ss.codeString(), ss.opcode.str)
+			case ss.inst.Mode == go6502.REL:
+				offset, err := relOffset(ss.operand.expr.number, ss.addr+int(ss.inst.Length))
 				if err != nil {
-					a.addError(seg.opcode, "Branch offset out of bounds")
+					a.addError(ss.opcode, "Branch offset out of bounds")
 				}
 				a.code = append(a.code, offset)
-				a.log("%04X- %s  %s  %s", seg.addr, codeString(seg), seg.opcode.str, operandString(seg))
-			case seg.inst.Length == 2:
-				a.code = append(a.code, byte(seg.operand.expr.number))
-				a.log("%04X- %s  %s  %s", seg.addr, codeString(seg), seg.opcode.str, operandString(seg))
-			case seg.inst.Length == 3:
-				a.code = append(a.code, byte(seg.operand.expr.number&0xff))
-				a.code = append(a.code, byte(seg.operand.expr.number>>8))
-				a.log("%04X- %s  %s  %s", seg.addr, codeString(seg), seg.opcode.str, operandString(seg))
+				a.log("%04X- %s  %s  %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
+			case ss.inst.Length == 2:
+				a.code = append(a.code, byte(ss.operand.expr.number))
+				a.log("%04X- %s  %s  %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
+			case ss.inst.Length == 3:
+				a.code = append(a.code, byte(ss.operand.expr.number&0xff))
+				a.code = append(a.code, byte(ss.operand.expr.number>>8))
+				a.log("%04X- %s  %s  %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
 			default:
 				panic("invalid operand")
 			}
 
-		default:
-			a.code = append(a.code, seg.bytedata...)
-			a.log("%04X-*%s", seg.addr, byteString(seg.bytedata))
+		case *data:
+			a.code = append(a.code, ss.bytes...)
+			a.log("%04X-*%s", ss.addr, byteString(ss.bytes))
 		}
 	}
-}
-
-// Format a byte code string for an instruction.
-func codeString(seg *segment) string {
-	sz := seg.inst.Length - 1
-	switch {
-	case seg.inst.Mode == go6502.REL:
-		offset, _ := relOffset(seg.operand.expr.number, seg.addr+int(seg.inst.Length))
-		return fmt.Sprintf("%02X %02X   ", seg.inst.Opcode, offset)
-	case sz == 0:
-		return fmt.Sprintf("%02X      ", seg.inst.Opcode)
-	case sz == 1:
-		return fmt.Sprintf("%02X %02X   ", seg.inst.Opcode, seg.operand.expr.number)
-	default:
-		return fmt.Sprintf("%02X %02X %02X", seg.inst.Opcode, seg.operand.expr.number&0xff, seg.operand.expr.number>>8)
-	}
-}
-
-// Formatting for addressing modes
-var modeFormat = []string{
-	"#$%s",    // IMM
-	"%s",      // IMP
-	"$%s",     // REL
-	"$%s",     // ZPG
-	"$%s,X",   // ZPX
-	"$%s,Y",   // ZPY
-	"$%s",     // ABS
-	"$%s,X",   // ABX
-	"$%s,Y",   // ABY
-	"($%s)",   // IND
-	"($%s,X)", // IDX
-	"($%s),Y", // IDY
-	"%s",      // ACC
-}
-
-// Format an operand string based on the instruction's addressing mode.
-func operandString(seg *segment) string {
-	number := seg.operand.expr.number
-
-	var n string
-	switch seg.inst.Length {
-	case 2:
-		n = fmt.Sprintf("%02X", number)
-	default:
-		n = fmt.Sprintf("%04X", number)
-	}
-
-	return fmt.Sprintf(modeFormat[seg.inst.Mode], n)
 }
 
 // Parse a single line of assembly code.
@@ -433,6 +419,8 @@ func (a *assembler) parsePseudoOp(line, label, pseudoOp fstring) (err error) {
 		err = a.parseOrigin(line)
 	case ".byte":
 		err = a.parseBytes(line, label)
+	case ".at":
+		err = a.parseAt(line, label)
 	default:
 		a.addError(pseudoOp, "Invalid pseudo-op")
 		err = errParse
@@ -492,6 +480,9 @@ func (a *assembler) parseOrigin(line fstring) (err error) {
 		return
 	}
 
+	a.logLine(line, "expr=%s", e.String())
+	a.logLine(line, "val=$%04X", e.number)
+
 	a.origin = e.number
 	a.pc = e.number
 	return
@@ -530,14 +521,21 @@ func (a *assembler) parseBytes(line, label fstring) (err error) {
 		}
 	}
 
-	seg := segment{bytedata: b}
+	seg := &data{bytes: b}
 	a.segments = append(a.segments, seg)
+	return
+}
+
+// Parse an .AT pseudo-op.
+func (a *assembler) parseAt(line, label fstring) (err error) {
+	a.logLine(line, "at=%s", label.str)
+	// TODO: Write me
 	return
 }
 
 // Parse a 6502 assembly opcode + operand.
 func (a *assembler) parseInstruction(line fstring) (err error) {
-	// Parse the opcode
+	// Parse the opcode.
 	opcode, out := line.consumeWhile(opcodeChar)
 
 	// No opcode characters? Or opcode has invalid suffix?
@@ -563,7 +561,7 @@ func (a *assembler) parseInstruction(line fstring) (err error) {
 	operand, out, err = a.parseOperand(out)
 
 	// Create a code segment for the instruction
-	seg := segment{opcode: opcode, operand: operand}
+	seg := &instruction{opcode: opcode, operand: operand}
 	a.segments = append(a.segments, seg)
 	return
 }
@@ -573,13 +571,13 @@ func (a *assembler) parseOperand(line fstring) (o operand, out fstring, err erro
 	switch {
 	case line.isEmpty():
 		// Handle immediate mode (no operand)
-		o.mode, out = go6502.IMP, line
+		o.modeGuess, out = go6502.IMP, line
 		return
 
 	case line.startsWithChar('('):
 		// Handle indirect addressing modes
 		var expr fstring
-		o.mode, expr, out, err = line.consume(1).consumeIndirect()
+		o.modeGuess, expr, out, err = line.consume(1).consumeIndirect()
 		if err != nil {
 			a.addError(out, "Indirect addressing mode syntax error")
 			return
@@ -592,7 +590,7 @@ func (a *assembler) parseOperand(line fstring) (o operand, out fstring, err erro
 
 	case line.startsWithChar('#'):
 		// Handle immediate addressing mode
-		o.mode = go6502.IMM
+		o.modeGuess = go6502.IMM
 		o.expr, out, err = a.exprParser.parse(line.consume(1), a.scopeLabel, false)
 		if err != nil {
 			a.addExprErrors()
@@ -602,7 +600,7 @@ func (a *assembler) parseOperand(line fstring) (o operand, out fstring, err erro
 	default:
 		// Handle absolute addressing modes (zero page and full absolute)
 		var expr fstring
-		o.mode, o.forceAbsolute, expr, out, err = line.consumeAbsolute()
+		o.modeGuess, o.forceAbsolute, expr, out, err = line.consumeAbsolute()
 		if err != nil {
 			a.addError(out, "Absolute addressing mode syntax error")
 			return
@@ -618,7 +616,7 @@ func (a *assembler) parseOperand(line fstring) (o operand, out fstring, err erro
 		a.uneval = append(a.uneval, o.expr)
 	}
 	a.logLine(out, "expr=%s", o.expr)
-	a.logLine(out, "mode=%d", o.mode)
+	a.logLine(out, "mode=%d", o.modeGuess)
 	a.logLine(out, "val=$%X", o.expr.number)
 
 	if !out.isEmpty() && !out.startsWith(whitespace) {
@@ -702,31 +700,31 @@ func findMatchingInstruction(opcode fstring, operand operand) *go6502.Instructio
 		match, qual := false, 0
 		switch {
 		case inst.Mode == go6502.IMP || inst.Mode == go6502.ACC:
-			match, qual = (operand.mode == go6502.IMP) && (operand.size() == 0), 0
+			match, qual = (operand.modeGuess == go6502.IMP) && (operand.size() == 0), 0
 		case operand.size() == 0:
 			match = false
 		case inst.Mode == go6502.IMM:
-			match, qual = (operand.mode == go6502.IMM) && (operand.size() == 1), 1
+			match, qual = (operand.modeGuess == go6502.IMM) && (operand.size() == 1), 1
 		case inst.Mode == go6502.REL:
-			match, qual = (operand.mode == go6502.ABS) && (operand.size() <= 2), 1
+			match, qual = (operand.modeGuess == go6502.ABS) && (operand.size() <= 2), 1
 		case inst.Mode == go6502.ZPG:
-			match, qual = (operand.mode == go6502.ABS) && (operand.size() == 1), 1
+			match, qual = (operand.modeGuess == go6502.ABS) && (operand.size() == 1), 1
 		case inst.Mode == go6502.ZPX:
-			match, qual = (operand.mode == go6502.ABX) && (operand.size() == 1), 1
+			match, qual = (operand.modeGuess == go6502.ABX) && (operand.size() == 1), 1
 		case inst.Mode == go6502.ZPY:
-			match, qual = (operand.mode == go6502.ABY) && (operand.size() == 1), 1
+			match, qual = (operand.modeGuess == go6502.ABY) && (operand.size() == 1), 1
 		case inst.Mode == go6502.ABS:
-			match, qual = (operand.mode == go6502.ABS) && (operand.size() <= 2), 2
+			match, qual = (operand.modeGuess == go6502.ABS) && (operand.size() <= 2), 2
 		case inst.Mode == go6502.ABX:
-			match, qual = (operand.mode == go6502.ABX) && (operand.size() <= 2), 2
+			match, qual = (operand.modeGuess == go6502.ABX) && (operand.size() <= 2), 2
 		case inst.Mode == go6502.ABY:
-			match, qual = (operand.mode == go6502.ABY) && (operand.size() <= 2), 2
+			match, qual = (operand.modeGuess == go6502.ABY) && (operand.size() <= 2), 2
 		case inst.Mode == go6502.IND:
-			match, qual = (operand.mode == go6502.IND) && (operand.size() <= 2), 2
+			match, qual = (operand.modeGuess == go6502.IND) && (operand.size() <= 2), 2
 		case inst.Mode == go6502.IDX:
-			match, qual = (operand.mode == go6502.IDX) && (operand.size() == 1), 1
+			match, qual = (operand.modeGuess == go6502.IDX) && (operand.size() == 1), 1
 		case inst.Mode == go6502.IDY:
-			match, qual = (operand.mode == go6502.IDY) && (operand.size() == 1), 1
+			match, qual = (operand.modeGuess == go6502.IDY) && (operand.size() == 1), 1
 		}
 		if !match {
 			continue
@@ -790,4 +788,14 @@ func (l fstring) consumeAbsolute() (mode go6502.Mode, forceAbsolute bool, expr f
 		err = errParse
 	}
 	return
+}
+
+func byteString(b []byte) string {
+	out := make([]byte, len(b)*3)
+	for i := 0; i < len(b); i++ {
+		out[i*3+0] = hex[(b[i] >> 4)]
+		out[i*3+1] = hex[(b[i] & 0x0f)]
+		out[i*3+2] = ' '
+	}
+	return string(out)
 }
