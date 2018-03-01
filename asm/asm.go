@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/beevik/go6502"
@@ -17,12 +18,9 @@ import (
 
 // TODO:
 //  - String and character expressions
-//  - Better error messages in non-verbose mode
-// 	- Assembler returns result struct
-//  - Assembler options (verbose, ...)
 //  - Display addressing mode strings in debug output
 //  - High byte (/) and low byte(#) prefixes
-// 	- Format bytes data as 3 bytes per row
+//  - Format bytes data as 3 bytes per row
 
 var (
 	errParse = errors.New("parse error")
@@ -85,20 +83,20 @@ func (i *instruction) codeString() string {
 	sz := i.inst.Length - 1
 	switch {
 	case i.inst.Mode == go6502.REL:
-		offset, _ := relOffset(i.operand.expr.number, i.addr+int(i.inst.Length))
+		offset, _ := relOffset(i.operand.expr.value, i.addr+int(i.inst.Length))
 		return fmt.Sprintf("%02X %02X   ", i.inst.Opcode, offset)
 	case sz == 0:
 		return fmt.Sprintf("%02X      ", i.inst.Opcode)
 	case sz == 1:
-		return fmt.Sprintf("%02X %02X   ", i.inst.Opcode, i.operand.expr.number)
+		return fmt.Sprintf("%02X %02X   ", i.inst.Opcode, i.operand.expr.value)
 	default:
-		return fmt.Sprintf("%02X %02X %02X", i.inst.Opcode, i.operand.expr.number&0xff, i.operand.expr.number>>8)
+		return fmt.Sprintf("%02X %02X %02X", i.inst.Opcode, i.operand.expr.value&0xff, i.operand.expr.value>>8)
 	}
 }
 
 // Format an operand string based on the instruction's addressing mode.
 func (i *instruction) operandString() string {
-	number := i.operand.expr.number
+	number := i.operand.expr.value
 
 	var n string
 	switch i.inst.Length {
@@ -124,7 +122,7 @@ func (o *operand) size() int {
 	switch {
 	case o.modeGuess == go6502.IMP:
 		return 0
-	case o.expr.address || o.forceAbsolute || o.expr.number > 0xff:
+	case o.expr.address || o.forceAbsolute || o.expr.value > 0xff:
 		return 2
 	default:
 		return 1
@@ -166,10 +164,20 @@ type assembler struct {
 	errors     []asmerror       // errors encountered during assembly
 }
 
+// Options for Assemble function.
+type Options struct {
+	Verbose bool
+}
+
+// Result of the Assemble function.
+type Result struct {
+	Code   []byte         // Assembled machine code
+	Origin go6502.Address // Code origin address
+}
+
 // Assemble reads data from the provided stream and attempts to assemble
-// it into 6502 byte code. If successful, the function returns the assembled
-// machine code and the address it begins at.
-func Assemble(r io.Reader) (code []byte, origin go6502.Address, err error) {
+// it into 6502 byte code.
+func Assemble(r io.Reader, o Options) (*Result, error) {
 	a := &assembler{
 		origin:   0x600,
 		pc:       0x600,
@@ -177,7 +185,7 @@ func Assemble(r io.Reader) (code []byte, origin go6502.Address, err error) {
 		macros:   make(map[string]*expr),
 		labels:   make(map[string]int),
 		segments: make([]segment, 0, 32),
-		verbose:  true,
+		verbose:  o.Verbose,
 	}
 
 	// Assembly consists of the following steps
@@ -196,14 +204,11 @@ func Assemble(r io.Reader) (code []byte, origin go6502.Address, err error) {
 	for _, step := range steps {
 		step(a)
 		if len(a.errors) > 0 {
-			err = errParse
-			return
+			return nil, errParse
 		}
 	}
 
-	origin = go6502.Address(a.origin)
-	code = a.code
-	return
+	return &Result{Code: a.code, Origin: go6502.Address(a.origin)}, nil
 }
 
 // Read the assembly code and perform the initial parsing. Build up
@@ -227,7 +232,7 @@ func (a *assembler) evaluateExpressions() {
 		var uneval []*expr
 		for _, e := range a.uneval {
 			if e.eval(a.macros, a.labels) {
-				a.log("%-25s Val:$%X", e.String(), e.number)
+				a.log("%-25s Val:$%X", e.String(), e.value)
 			} else {
 				a.log("%-25s Val:????? isaddr:%v", e.String(), e.address)
 				uneval = append(uneval, e)
@@ -249,7 +254,7 @@ func (a *assembler) assignAddresses() {
 			ss.addr = a.pc
 			ss.inst = findMatchingInstruction(ss.opcode, ss.operand)
 			if ss.inst == nil {
-				a.addError(ss.opcode, "Invalid addressing mode for opcode")
+				a.addError(ss.opcode, "invalid addressing mode for opcode '%s'", ss.opcode.str)
 				return
 			}
 			a.log("%04X  %s Len:%d Mode:%d Opcode:%02X",
@@ -277,7 +282,7 @@ func (a *assembler) resolveLabels() {
 			addr = a.pc
 		}
 		a.log("%-15s Seg:%-3d Addr:$%04X", label, segno, addr)
-		a.macros[label] = &expr{op: opNumber, number: addr, evaluated: true}
+		a.macros[label] = &expr{op: opNumber, value: addr, evaluated: true}
 	}
 }
 
@@ -285,7 +290,7 @@ func (a *assembler) resolveLabels() {
 func (a *assembler) handleUnevaluatedExpressions() {
 	if len(a.uneval) > 0 {
 		for _, e := range a.uneval {
-			a.addError(e.identifier, "Unresolved expression")
+			a.addError(e.line, "unresolved expression")
 		}
 	}
 }
@@ -301,18 +306,18 @@ func (a *assembler) generateCode() {
 			case ss.inst.Length == 1:
 				a.log("%04X- %s  %s", ss.addr, ss.codeString(), ss.opcode.str)
 			case ss.inst.Mode == go6502.REL:
-				offset, err := relOffset(ss.operand.expr.number, ss.addr+int(ss.inst.Length))
+				offset, err := relOffset(ss.operand.expr.value, ss.addr+int(ss.inst.Length))
 				if err != nil {
-					a.addError(ss.opcode, "Branch offset out of bounds")
+					a.addError(ss.opcode, "branch offset out of bounds")
 				}
 				a.code = append(a.code, offset)
 				a.log("%04X- %s  %s  %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
 			case ss.inst.Length == 2:
-				a.code = append(a.code, byte(ss.operand.expr.number))
+				a.code = append(a.code, byte(ss.operand.expr.value))
 				a.log("%04X- %s  %s  %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
 			case ss.inst.Length == 3:
-				a.code = append(a.code, byte(ss.operand.expr.number&0xff))
-				a.code = append(a.code, byte(ss.operand.expr.number>>8))
+				a.code = append(a.code, byte(ss.operand.expr.value&0xff))
+				a.code = append(a.code, byte(ss.operand.expr.value>>8))
 				a.log("%04X- %s  %s  %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
 			default:
 				panic("invalid operand")
@@ -320,7 +325,7 @@ func (a *assembler) generateCode() {
 
 		case *data:
 			if ss.expr != nil {
-				v := ss.expr.number
+				v := ss.expr.value
 				ss.bytes = []byte{byte(v & 0xff), byte(v >> 8)}
 			}
 			a.code = append(a.code, ss.bytes...)
@@ -401,7 +406,7 @@ func (a *assembler) storeLabel(line, label fstring) error {
 	// it to the active scope label.
 	if label.startsWithChar('.') {
 		if a.scopeLabel.isEmpty() {
-			a.addError(label, "No global label previously defined")
+			a.addError(label, "no global label '%s' previously defined", label.str)
 			return errParse
 		}
 		label.str = a.scopeLabel.str + label.str
@@ -419,7 +424,8 @@ func (a *assembler) storeLabel(line, label fstring) error {
 func (a *assembler) parseLabel(line fstring) (label fstring, out fstring, err error) {
 	// Make sure label starts with a valid label character
 	if !line.startsWith(labelStartChar) {
-		a.addError(line, "Invalid label")
+		s, _ := line.consumeUntil(whitespace)
+		a.addError(line, "invalid label '%s'", s.str)
 		err = errParse
 		return
 	}
@@ -429,7 +435,8 @@ func (a *assembler) parseLabel(line fstring) (label fstring, out fstring, err er
 
 	// If the next character isn't whitespace, we encountered an invalid label character
 	if !line.isEmpty() && !line.startsWith(whitespace) {
-		a.addError(line, "Invalid label")
+		s, _ := line.consumeUntil(whitespace)
+		a.addError(line, "invalid label '%s%s'", label.str, s.str)
 		err = errParse
 		return
 	}
@@ -443,7 +450,7 @@ func (a *assembler) parseLabel(line fstring) (label fstring, out fstring, err er
 func (a *assembler) parsePseudoOp(line, label, pseudoOp fstring) (err error) {
 	fn, ok := pseudoOps[strings.ToLower(pseudoOp.str)]
 	if !ok {
-		a.addError(pseudoOp, "Invalid pseudo-op")
+		a.addError(pseudoOp, "invalid directive '%s'", pseudoOp.str)
 		return errParse
 	}
 	return fn(a, line, label)
@@ -452,7 +459,7 @@ func (a *assembler) parsePseudoOp(line, label, pseudoOp fstring) (err error) {
 // Parse an ".EQ" macro definition.
 func (a *assembler) parseMacro(line, label fstring) (err error) {
 	if label.str == "" {
-		a.addError(line, ".EQ macro must begin with a label")
+		a.addError(line, ".EQ must begin with a label")
 		return
 	}
 
@@ -473,7 +480,7 @@ func (a *assembler) parseMacro(line, label fstring) (err error) {
 	}
 
 	a.logLine(line, "expr=%s", e.String())
-	a.logLine(line, "val=$%X", e.number)
+	a.logLine(line, "val=$%X", e.value)
 
 	// Track the macro for later substitution.
 	a.macros[label.str] = e
@@ -483,7 +490,7 @@ func (a *assembler) parseMacro(line, label fstring) (err error) {
 // Parse an ".ORG" origin definition
 func (a *assembler) parseOrigin(line, label fstring) (err error) {
 	if len(a.segments) > 0 {
-		a.addError(line, ".ORG statement must come before first instruction")
+		a.addError(line, "origin directive must appear before first instruction")
 		return
 	}
 
@@ -497,15 +504,15 @@ func (a *assembler) parseOrigin(line, label fstring) (err error) {
 	}
 
 	if !e.eval(a.macros, a.labels) {
-		a.addError(e.identifier, "Unable to evaluate .ORG expression")
+		a.addError(e.identifier, "unable to evaluate expression")
 		return
 	}
 
 	a.logLine(line, "expr=%s", e.String())
-	a.logLine(line, "val=$%04X", e.number)
+	a.logLine(line, "val=$%04X", e.value)
 
-	a.origin = e.number
-	a.pc = e.number
+	a.origin = e.value
+	a.pc = e.value
 	return
 }
 
@@ -572,7 +579,7 @@ func (a *assembler) parseAt(line, label fstring) (err error) {
 	}
 
 	a.logLine(line, "expr=%s", e.String())
-	a.logLine(line, "val=$%X", e.number)
+	a.logLine(line, "val=$%X", e.value)
 
 	seg := &data{bytes: []byte{0, 0}, expr: e}
 	a.segments = append(a.segments, seg)
@@ -586,7 +593,7 @@ func (a *assembler) parseInstruction(line fstring) (err error) {
 
 	// No opcode characters? Or opcode has invalid suffix?
 	if opcode.isEmpty() || (!out.isEmpty() && !out.startsWith(whitespace)) {
-		a.addError(out, "Invalid opcode")
+		a.addError(out, "invalid opcode '%s'", opcode.str)
 		err = errParse
 		return
 	}
@@ -594,7 +601,7 @@ func (a *assembler) parseInstruction(line fstring) (err error) {
 	// Validate the opcode
 	instructions := go6502.GetInstructions(opcode.str)
 	if instructions == nil {
-		a.addError(opcode, "Invalid opcode")
+		a.addError(opcode, "invalid opcode '%s'", opcode.str)
 		err = errParse
 		return
 	}
@@ -613,19 +620,19 @@ func (a *assembler) parseInstruction(line fstring) (err error) {
 }
 
 // Parse the operand expression following an opcode.
-func (a *assembler) parseOperand(line fstring) (o operand, out fstring, err error) {
+func (a *assembler) parseOperand(line fstring) (o operand, remain fstring, err error) {
 	switch {
 	case line.isEmpty():
 		// Handle immediate mode (no operand)
-		o.modeGuess, out = go6502.IMP, line
+		o.modeGuess, remain = go6502.IMP, line
 		return
 
 	case line.startsWithChar('('):
 		// Handle indirect addressing modes
 		var expr fstring
-		o.modeGuess, expr, out, err = line.consume(1).consumeIndirect()
+		o.modeGuess, expr, remain, err = line.consume(1).consumeIndirect()
 		if err != nil {
-			a.addError(out, "Indirect addressing mode syntax error")
+			a.addError(remain, "unknown addressing mode format")
 			return
 		}
 		o.expr, _, err = a.exprParser.parse(expr, a.scopeLabel, false)
@@ -637,7 +644,7 @@ func (a *assembler) parseOperand(line fstring) (o operand, out fstring, err erro
 	case line.startsWithChar('#'):
 		// Handle immediate addressing mode
 		o.modeGuess = go6502.IMM
-		o.expr, out, err = a.exprParser.parse(line.consume(1), a.scopeLabel, false)
+		o.expr, remain, err = a.exprParser.parse(line.consume(1), a.scopeLabel, false)
 		if err != nil {
 			a.addExprErrors()
 			return
@@ -646,9 +653,9 @@ func (a *assembler) parseOperand(line fstring) (o operand, out fstring, err erro
 	default:
 		// Handle absolute addressing modes (zero page and full absolute)
 		var expr fstring
-		o.modeGuess, o.forceAbsolute, expr, out, err = line.consumeAbsolute()
+		o.modeGuess, o.forceAbsolute, expr, remain, err = line.consumeAbsolute()
 		if err != nil {
-			a.addError(out, "Absolute addressing mode syntax error")
+			a.addError(remain, "unknown addressing mode format")
 			return
 		}
 		o.expr, _, err = a.exprParser.parse(expr, a.scopeLabel, false)
@@ -661,29 +668,33 @@ func (a *assembler) parseOperand(line fstring) (o operand, out fstring, err erro
 	if !o.expr.eval(a.macros, a.labels) {
 		a.uneval = append(a.uneval, o.expr)
 	}
-	a.logLine(out, "expr=%s", o.expr)
-	a.logLine(out, "mode=%d", o.modeGuess)
-	a.logLine(out, "val=$%X", o.expr.number)
+	a.logLine(remain, "expr=%s", o.expr)
+	a.logLine(remain, "mode=%d", o.modeGuess)
+	a.logLine(remain, "val=$%X", o.expr.value)
 
-	if !out.isEmpty() && !out.startsWith(whitespace) {
-		a.addError(out, "Syntax error in expression")
+	if !remain.isEmpty() && !remain.startsWith(whitespace) {
+		a.addError(remain, "operand expression")
 		err = errParse
 		return
 	}
-	out = out.consumeWhitespace()
+
+	remain = remain.consumeWhitespace()
 	return
 }
 
 // Append an error message to the assembler's error state.
-func (a *assembler) addError(l fstring, msg string) {
+func (a *assembler) addError(l fstring, format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
 	a.errors = append(a.errors, asmerror{l, msg})
 	if a.verbose {
-		fmt.Printf("Error: %s\n", msg)
+		fmt.Printf("Syntax error: %s\n", msg)
 		fmt.Println(l.full)
 		for i := 0; i < l.column; i++ {
 			fmt.Printf("-")
 		}
 		fmt.Println("^")
+	} else {
+		fmt.Fprintf(os.Stderr, "Syntax error line %d, col %d: %s\n", l.row, l.column+1, msg)
 	}
 }
 

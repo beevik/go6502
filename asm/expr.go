@@ -106,21 +106,22 @@ func (op exprOp) collapses(other exprOp) bool {
 // An expr represents a single node in a binary expression tree.
 // The root node represents an entire expression.
 type expr struct {
-	number     int
-	identifier fstring
-	scopeLabel fstring
-	op         exprOp
-	evaluated  bool
-	address    bool
-	child0     *expr
-	child1     *expr
+	line       fstring // start of expression line
+	value      int     // resolved value
+	identifier fstring // if expression is an identifier
+	scopeLabel fstring // active scope label when parsing began
+	op         exprOp  // if expression is an operation
+	evaluated  bool    // true if value has been evaluated
+	address    bool    // true if value is an address
+	child0     *expr   // first child in expression tree
+	child1     *expr   // second child in expression tree (parent must be binary op)
 }
 
 // Return the expression as a postfix notation string.
 func (e *expr) String() string {
 	switch {
 	case e.op == opNumber:
-		return fmt.Sprintf("%d", e.number)
+		return fmt.Sprintf("%d", e.value)
 	case e.op == opIdentifier:
 		if e.address && e.identifier.startsWithChar('.') {
 			return e.scopeLabel.str + e.identifier.str
@@ -149,7 +150,7 @@ func (e *expr) eval(macros map[string]*expr, labels map[string]int) bool {
 				ident = e.identifier.str
 			}
 			if m, ok := macros[ident]; ok && m.evaluated {
-				e.number = m.number
+				e.value = m.value
 				e.evaluated = true
 			}
 			if _, ok := labels[ident]; ok {
@@ -159,7 +160,7 @@ func (e *expr) eval(macros map[string]*expr, labels map[string]int) bool {
 			e.child0.eval(macros, labels)
 			e.child1.eval(macros, labels)
 			if e.child0.evaluated && e.child1.evaluated {
-				e.number = e.op.eval(e.child0.number, e.child1.number)
+				e.value = e.op.eval(e.child0.value, e.child1.value)
 				e.evaluated = true
 			}
 			if e.child0.address || e.child1.address {
@@ -168,7 +169,7 @@ func (e *expr) eval(macros map[string]*expr, labels map[string]int) bool {
 		default:
 			e.child0.eval(macros, labels)
 			if e.child0.evaluated {
-				e.number = e.op.eval(e.child0.number, 0)
+				e.value = e.op.eval(e.child0.value, 0)
 				e.evaluated = true
 			}
 			if e.child0.address {
@@ -219,17 +220,19 @@ type exprParser struct {
 }
 
 // Parse an expression from the line until it is exhausted.
-func (p *exprParser) parse(line, scopeLabel fstring, allowParens bool) (e *expr, out fstring, err error) {
+func (p *exprParser) parse(line, scopeLabel fstring, allowParens bool) (e *expr, remain fstring, err error) {
 	p.errors = nil
 	p.allowParens = allowParens
 	p.prevToken = token{}
+
+	orig := line
 
 	// Process expression using Dijkstra's shunting-yard algorithm
 	for err == nil {
 
 		// Parse the next expression token
 		var token token
-		token, out, err = p.parseToken(line)
+		token, remain, err = p.parseToken(line)
 		if err != nil {
 			break
 		}
@@ -243,7 +246,7 @@ func (p *exprParser) parse(line, scopeLabel fstring, allowParens bool) (e *expr,
 		switch token.tt {
 
 		case tokenNumber:
-			p.operandStack.push(&expr{op: opNumber, number: token.number, evaluated: true})
+			p.operandStack.push(&expr{op: opNumber, value: token.number, evaluated: true})
 
 		case tokenIdentifier:
 			p.operandStack.push(&expr{op: opIdentifier, identifier: token.identifier, scopeLabel: scopeLabel})
@@ -252,7 +255,7 @@ func (p *exprParser) parse(line, scopeLabel fstring, allowParens bool) (e *expr,
 			for err == nil && !p.operatorStack.empty() && token.op.collapses(p.operatorStack.peek()) {
 				err = p.operandStack.collapse(p.operatorStack.pop())
 				if err != nil {
-					p.addError(line, "Expression syntax error 1")
+					p.addError(line, "expression parse failure")
 				}
 			}
 			p.operatorStack.push(token.op)
@@ -263,7 +266,7 @@ func (p *exprParser) parse(line, scopeLabel fstring, allowParens bool) (e *expr,
 		case tokenRightParen:
 			for err == nil {
 				if p.operatorStack.empty() {
-					p.addError(line, "Mismatched parentheses")
+					p.addError(line, "mismatched parentheses")
 					err = errParse
 					break
 				}
@@ -273,26 +276,28 @@ func (p *exprParser) parse(line, scopeLabel fstring, allowParens bool) (e *expr,
 				}
 				err = p.operandStack.collapse(op)
 				if err != nil {
-					p.addError(line, "Expression syntax error 2")
+					p.addError(line, "expression parse failure")
 				}
 			}
 
 		}
-		line = out
+		line = remain
 	}
 
 	// Collapse any operators (and operands) remaining on the stack
 	for err == nil && !p.operatorStack.empty() {
 		err = p.operandStack.collapse(p.operatorStack.pop())
 		if err != nil {
-			p.addError(line, "Expression syntax error 3")
+			p.addError(line, "expression parse failure")
 			err = errParse
 		}
 	}
 
 	if err == nil {
 		e = p.operandStack.peek()
+		e.line = orig
 	}
+
 	p.reset()
 	return
 }
@@ -309,7 +314,7 @@ func (p *exprParser) parseToken(line fstring) (t token, out fstring, err error) 
 		t.number, _, out, err = p.parseNumber(line)
 		t.tt = tokenNumber
 		if p.prevToken.tt.isValue() || p.prevToken.tt == tokenRightParen {
-			p.addError(line, "Expression syntax error 4")
+			p.addError(line, "expression parse failure")
 			err = errParse
 		}
 
@@ -320,7 +325,7 @@ func (p *exprParser) parseToken(line fstring) (t token, out fstring, err error) 
 
 	case p.allowParens && line.startsWithChar(')'):
 		if p.parenCounter == 0 {
-			p.addError(line, "Mismatched parentheses")
+			p.addError(line, "mismatched parentheses")
 			err = errParse
 			out = line.consume(1)
 		} else {
@@ -332,7 +337,7 @@ func (p *exprParser) parseToken(line fstring) (t token, out fstring, err error) 
 		t.tt = tokenIdentifier
 		t.identifier, out = line.consumeWhile(identifierChar)
 		if p.prevToken.tt.isValue() || p.prevToken.tt == tokenRightParen {
-			p.addError(line, "Expression syntax error 5")
+			p.addError(line, "expression parse failure")
 			err = errParse
 		}
 
@@ -346,7 +351,7 @@ func (p *exprParser) parseToken(line fstring) (t token, out fstring, err error) 
 			}
 		}
 		if t.tt != tokenOp {
-			p.addError(line, "Expression syntax error 6")
+			p.addError(line, "expression parse failure")
 			err = errParse
 		}
 	}
@@ -395,7 +400,7 @@ func (p *exprParser) parseNumber(line fstring) (value, bytes int, remain fstring
 	// Convert the string to an integer
 	num64, converr := strconv.ParseInt(numstr.str, base, 32)
 	if converr != nil {
-		p.addError(numstr, "Failed to parse integer")
+		p.addError(numstr, "integer parse failure")
 		err = errParse
 	}
 

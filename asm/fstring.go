@@ -5,8 +5,8 @@ import "strings"
 // An fstring is a string that keeps track of its position within the
 // file from which it was read.
 type fstring struct {
-	row    int    // line number of string being worked on
-	column int    // starting column of substring currently being worked on
+	row    int    // 1-based line number of substring
+	column int    // 0-based column of start of substring
 	str    string // the actual substring of interest
 	full   string // the full line as originally read from the file
 }

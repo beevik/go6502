@@ -15,24 +15,24 @@ func main() {
 		os.Exit(0)
 	}
 
-	code, origin, err := assemble(os.Args[1])
+	r, err := assemble(os.Args[1])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
 		os.Exit(1)
 	}
 
-	run(code, origin)
+	run(r.Code, r.Origin)
 }
 
-func assemble(filename string) (code []byte, origin go6502.Address, err error) {
+func assemble(filename string) (*asm.Result, error) {
 	file, err := os.Open(filename)
 	if err != nil {
-		return
+		return nil, err
 	}
 	defer file.Close()
 
 	fmt.Printf("Assembling %s...\n\n", filename)
-	return asm.Assemble(file)
+	return asm.Assemble(file, asm.Options{Verbose: true})
 }
 
 func run(code []byte, origin go6502.Address) {
