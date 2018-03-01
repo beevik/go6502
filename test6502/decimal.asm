@@ -1,6 +1,7 @@
 		.ORG 		$600
 
 X 		.EQ 		$100
+LEN 		.EQ		END-START
 
 START		
 		LDA #$44
@@ -14,9 +15,11 @@ START
 		CLC
 		LDA #$84
 		ADC #$25
-		.BYTE 		$18 $69 $25	; CLC, ADC #$25
+		.DB 		$18 $69 $25	; CLC, ADC #$25
 		BRK
 
-TABLE		.BYTE		0x02001516
-		.AT 		START
-		
+TABLE		.DB		0x02001516
+BEGIN		.AT 		START
+		.AT 		LEN
+END
+END2

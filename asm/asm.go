@@ -15,6 +15,15 @@ import (
 	"github.com/beevik/go6502"
 )
 
+// TODO:
+//  - String and character expressions
+//  - Better error messages in non-verbose mode
+// 	- Assembler returns result struct
+//  - Assembler options (verbose, ...)
+//  - Display addressing mode strings in debug output
+//  - High byte (/) and low byte(#) prefixes
+// 	- Format bytes data as 3 bytes per row
+
 var (
 	errParse = errors.New("parse error")
 )
@@ -40,6 +49,16 @@ var modeFormat = []string{
 	"($%s,X)", // IDX
 	"($%s),Y", // IDY
 	"%s",      // ACC
+}
+
+var pseudoOps = map[string]func(a *assembler, line, label fstring) error{
+	".eq":   (*assembler).parseMacro,
+	".equ":  (*assembler).parseMacro,
+	".or":   (*assembler).parseOrigin,
+	".org":  (*assembler).parseOrigin,
+	".db":   (*assembler).parseBytes,
+	".byte": (*assembler).parseBytes,
+	".at":   (*assembler).parseAt,
 }
 
 // A segment is a small chunk of machine code that may represent a single
@@ -224,8 +243,8 @@ func (a *assembler) evaluateExpressions() {
 // Determine addresses of all code segments.
 func (a *assembler) assignAddresses() {
 	a.logSection("Assigning addresses")
-	for i := range a.segments {
-		switch ss := a.segments[i].(type) {
+	for _, s := range a.segments {
+		switch ss := s.(type) {
 		case *instruction:
 			ss.addr = a.pc
 			ss.inst = findMatchingInstruction(ss.opcode, ss.operand)
@@ -250,7 +269,13 @@ func (a *assembler) assignAddresses() {
 func (a *assembler) resolveLabels() {
 	a.logSection("Resolving labels")
 	for label, segno := range a.labels {
-		addr := a.segments[segno].address()
+		var addr int
+		switch {
+		case segno < len(a.segments):
+			addr = a.segments[segno].address()
+		default:
+			addr = a.pc
+		}
 		a.log("%-15s Seg:%-3d Addr:$%04X", label, segno, addr)
 		a.macros[label] = &expr{op: opNumber, number: addr, evaluated: true}
 	}
@@ -268,8 +293,8 @@ func (a *assembler) handleUnevaluatedExpressions() {
 // Generate code
 func (a *assembler) generateCode() {
 	a.logSection("Generating code")
-	for i := range a.segments {
-		switch ss := a.segments[i].(type) {
+	for _, s := range a.segments {
+		switch ss := s.(type) {
 		case *instruction:
 			a.code = append(a.code, ss.inst.Opcode)
 			switch {
@@ -294,6 +319,10 @@ func (a *assembler) generateCode() {
 			}
 
 		case *data:
+			if ss.expr != nil {
+				v := ss.expr.number
+				ss.bytes = []byte{byte(v & 0xff), byte(v >> 8)}
+			}
 			a.code = append(a.code, ss.bytes...)
 			a.log("%04X-*%s", ss.addr, byteString(ss.bytes))
 		}
@@ -412,20 +441,12 @@ func (a *assembler) parseLabel(line fstring) (label fstring, out fstring, err er
 
 // Parse a pseudo-op beginning with "." (such as ".EQ").
 func (a *assembler) parsePseudoOp(line, label, pseudoOp fstring) (err error) {
-	switch strings.ToLower(pseudoOp.str) {
-	case ".eq":
-		err = a.parseMacro(line, label)
-	case ".org":
-		err = a.parseOrigin(line)
-	case ".byte":
-		err = a.parseBytes(line, label)
-	case ".at":
-		err = a.parseAt(line, label)
-	default:
+	fn, ok := pseudoOps[strings.ToLower(pseudoOp.str)]
+	if !ok {
 		a.addError(pseudoOp, "Invalid pseudo-op")
-		err = errParse
+		return errParse
 	}
-	return
+	return fn(a, line, label)
 }
 
 // Parse an ".EQ" macro definition.
@@ -460,13 +481,13 @@ func (a *assembler) parseMacro(line, label fstring) (err error) {
 }
 
 // Parse an ".ORG" origin definition
-func (a *assembler) parseOrigin(line fstring) (err error) {
+func (a *assembler) parseOrigin(line, label fstring) (err error) {
 	if len(a.segments) > 0 {
 		a.addError(line, ".ORG statement must come before first instruction")
 		return
 	}
 
-	a.logLine(line, "origin=%s", line.str)
+	a.logLine(line, "origin=")
 
 	var e *expr
 	e, line, err = a.exprParser.parse(line, a.scopeLabel, true)
@@ -490,7 +511,7 @@ func (a *assembler) parseOrigin(line fstring) (err error) {
 
 // Parse a .BYTES pseudo-op
 func (a *assembler) parseBytes(line, label fstring) (err error) {
-	a.logLine(line, "bytes=%s", label.str)
+	a.logLine(line, "bytes=")
 
 	b := []byte{}
 	for !line.isEmpty() {
@@ -528,8 +549,33 @@ func (a *assembler) parseBytes(line, label fstring) (err error) {
 
 // Parse an .AT pseudo-op.
 func (a *assembler) parseAt(line, label fstring) (err error) {
-	a.logLine(line, "at=%s", label.str)
-	// TODO: Write me
+	a.logLine(line, "at=")
+
+	// Parse the AT expression.
+	var e *expr
+	e, line, err = a.exprParser.parse(line, a.scopeLabel, true)
+	if err != nil {
+		a.addExprErrors()
+		return
+	}
+
+	// Attempt to evaluate the expression immediately.
+	if !e.eval(a.macros, a.labels) {
+		a.uneval = append(a.uneval, e)
+	}
+
+	if !label.isEmpty() {
+		err = a.storeLabel(line, label)
+		if err != nil {
+			return
+		}
+	}
+
+	a.logLine(line, "expr=%s", e.String())
+	a.logLine(line, "val=$%X", e.number)
+
+	seg := &data{bytes: []byte{0, 0}, expr: e}
+	a.segments = append(a.segments, seg)
 	return
 }
 
@@ -739,32 +785,32 @@ func findMatchingInstruction(opcode fstring, operand operand) *go6502.Instructio
 // Consume an operand expression starting with '(' until
 // an indirect addressing mode substring is reached. Return
 // the candidate addressing mode and expression substring.
-func (l fstring) consumeIndirect() (mode go6502.Mode, expr fstring, out fstring, err error) {
+func (l fstring) consumeIndirect() (mode go6502.Mode, expr fstring, remain fstring, err error) {
 	i := l.scanUntil(func(c byte) bool { return c == ',' || c == ')' })
-	expr, out = l.trunc(i), l.consume(i)
+	expr, remain = l.trunc(i), l.consume(i)
 	switch {
-	case out.startsWithString(",X)"):
-		mode, out = go6502.IDX, out.consume(3)
-	case out.startsWithString("),Y"):
-		mode, out = go6502.IDY, out.consume(3)
-	case out.startsWithChar(')'):
-		mode, out = go6502.IND, out.consume(1)
+	case remain.startsWithString(",X)"):
+		mode, remain = go6502.IDX, remain.consume(3)
+	case remain.startsWithString("),Y"):
+		mode, remain = go6502.IDY, remain.consume(3)
+	case remain.startsWithChar(')'):
+		mode, remain = go6502.IND, remain.consume(1)
 	default:
 		err = errParse
 	}
-	out = out.consumeWhitespace()
-	if !out.isEmpty() {
+	remain = remain.consumeWhitespace()
+	if !remain.isEmpty() {
 		err = errParse
 	}
 	return
 }
 
 // Consume an absolute operand expression until an absolute
-// addressing mode substring is reached. Return the candidate
-// addressing mode and expression substring.
-func (l fstring) consumeAbsolute() (mode go6502.Mode, forceAbsolute bool, expr fstring, out fstring, err error) {
+// addressing mode substring is reached. Guess the addressing mode,
+// and return the expression substring.
+func (l fstring) consumeAbsolute() (mode go6502.Mode, forceAbsolute bool, expr fstring, remain fstring, err error) {
 	i := l.scanUntil(func(c byte) bool { return c == ',' })
-	expr, out = l.trunc(i), l.consume(i)
+	expr, remain = l.trunc(i), l.consume(i)
 
 	for _, p := range absolutePrefixes {
 		if expr.startsWithStringI(p) {
@@ -775,27 +821,34 @@ func (l fstring) consumeAbsolute() (mode go6502.Mode, forceAbsolute bool, expr f
 	}
 
 	switch {
-	case out.startsWithString(",X"):
-		mode, out = go6502.ABX, out.consume(2)
-	case out.startsWithString(",Y"):
-		mode, out = go6502.ABY, out.consume(2)
+	case remain.startsWithString(",X"):
+		mode, remain = go6502.ABX, remain.consume(2)
+	case remain.startsWithString(",Y"):
+		mode, remain = go6502.ABY, remain.consume(2)
 	default:
 		mode = go6502.ABS
 	}
 
-	out = out.consumeWhitespace()
-	if !out.isEmpty() {
+	remain = remain.consumeWhitespace()
+	if !remain.isEmpty() {
 		err = errParse
 	}
 	return
 }
 
+// Return a hexadecimal string representation of a byte slice.
 func byteString(b []byte) string {
-	out := make([]byte, len(b)*3)
-	for i := 0; i < len(b); i++ {
-		out[i*3+0] = hex[(b[i] >> 4)]
-		out[i*3+1] = hex[(b[i] & 0x0f)]
-		out[i*3+2] = ' '
+	if len(b) < 1 {
+		return ""
 	}
+	out := make([]byte, len(b)*3-1)
+	i, j := 0, 0
+	for n := len(b) - 1; i < n; i, j = i+1, j+3 {
+		out[j+0] = hex[(b[i] >> 4)]
+		out[j+1] = hex[(b[i] & 0x0f)]
+		out[j+2] = ' '
+	}
+	out[j+0] = hex[(b[i] >> 4)]
+	out[j+1] = hex[(b[i] & 0x0f)]
 	return string(out)
 }
