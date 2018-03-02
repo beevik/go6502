@@ -19,7 +19,6 @@ import (
 // TODO:
 //  - Display addressing mode strings in debug output
 //  - High byte (/) and low byte(#) prefixes
-//  - Format bytes data as 3 bytes per row
 //  - Debug output options
 
 var (
@@ -356,7 +355,13 @@ func (a *assembler) generateCode() {
 				ss.bytes = []byte{byte(v & 0xff), byte(v >> 8)}
 			}
 			a.code = append(a.code, ss.bytes...)
-			a.log("%04X-*%s", ss.addr, byteString(ss.bytes))
+			for i, n := 0, len(ss.bytes); i < n; i += 3 {
+				j := i + 3
+				if j > n {
+					j = n
+				}
+				a.log("%04X-*%s", ss.addr+i, byteString(ss.bytes[i:j]))
+			}
 
 		case *export:
 			if ss.expr.op != opIdentifier || !ss.expr.address {
