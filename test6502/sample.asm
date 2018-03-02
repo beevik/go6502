@@ -15,7 +15,6 @@
 ; Constants
 ; ---------
 
-DOLLAR 		.EQ	'$'+$80
 STORE		.EQ	$0200
 
 ; -------
@@ -26,14 +25,6 @@ START:
 		JSR LDA_TEST
 		JSR LDX_TEST
 		JSR LDY_TEST
-		LDX #$05
-		LDA ($02,X)
-		LDA #$08
-		STA STORE+$1
-		ADC #$FE
-		STA STORE
-		LDA #DOLLAR
-		LDA STORE
 		LDA #$00
 		BEQ .1
 		LDX #'$'+$80
@@ -63,4 +54,5 @@ LDY_TEST	LDY #$20	; Immediate
 		LDY $0200,X	; Absolute + X
 		RTS
 
+		.DB		"String  ", $00, $0102, $03040506, '<, '<'
 END

@@ -83,6 +83,13 @@ func (l *fstring) scanUntil(fn func(c byte) bool) int {
 	return i
 }
 
+func (l *fstring) scanUntilChar(c byte) int {
+	i := 0
+	for ; i < len(l.str) && l.str[i] != c; i++ {
+	}
+	return i
+}
+
 func (l *fstring) consumeWhile(fn func(c byte) bool) (consumed, remain fstring) {
 	i := l.scanWhile(fn)
 	consumed, remain = l.trunc(i), l.consume(i)
@@ -91,6 +98,12 @@ func (l *fstring) consumeWhile(fn func(c byte) bool) (consumed, remain fstring) 
 
 func (l *fstring) consumeUntil(fn func(c byte) bool) (consumed, remain fstring) {
 	i := l.scanUntil(fn)
+	consumed, remain = l.trunc(i), l.consume(i)
+	return
+}
+
+func (l *fstring) consumeUntilChar(c byte) (consumed, remain fstring) {
+	i := l.scanUntilChar(c)
 	consumed, remain = l.trunc(i), l.consume(i)
 	return
 }

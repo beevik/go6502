@@ -17,10 +17,10 @@ import (
 )
 
 // TODO:
-//  - String and character expressions
 //  - Display addressing mode strings in debug output
 //  - High byte (/) and low byte(#) prefixes
 //  - Format bytes data as 3 bytes per row
+//  - Debug output options
 
 var (
 	errParse = errors.New("parse error")
@@ -569,21 +569,36 @@ func (a *assembler) parseBytes(line, label fstring) (err error) {
 
 	b := []byte{}
 	for !line.isEmpty() {
-		var value int
-		var bytes int
-		value, bytes, line, err = a.exprParser.parseNumber(line)
-		if err != nil {
-			a.addExprErrors()
-			break
-		}
+		switch {
+		case line.startsWithChar('"'):
+			var s fstring
+			line = line.consume(1)
+			s, line = line.consumeUntilChar('"')
+			if line.isEmpty() || line.str[0] != '"' {
+				a.addError(line, "invalid string")
+				break
+			}
 
-		switch bytes {
-		case 1:
-			b = append(b, byte(value))
-		case 2:
-			b = append(b, []byte{byte(value), byte(value >> 8)}...)
-		case 4:
-			b = append(b, []byte{byte(value), byte(value >> 8), byte(value >> 16), byte(value >> 24)}...)
+			line = line.consume(1)
+			b = append(b, []byte(s.str)...)
+
+		default:
+			var value int
+			var bytes int
+			value, bytes, line, err = a.exprParser.parseNumber(line)
+			if err != nil {
+				a.addExprErrors()
+				break
+			}
+
+			switch bytes {
+			case 1:
+				b = append(b, byte(value))
+			case 2:
+				b = append(b, []byte{byte(value), byte(value >> 8)}...)
+			case 4:
+				b = append(b, []byte{byte(value), byte(value >> 8), byte(value >> 16), byte(value >> 24)}...)
+			}
 		}
 
 		_, line = line.consumeWhile(func(c byte) bool { return c == ',' || whitespace(c) })
@@ -758,7 +773,7 @@ func (a *assembler) addError(l fstring, format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
 	a.errors = append(a.errors, asmerror{l, msg})
 	if a.verbose {
-		fmt.Printf("Syntax error: %s\n", msg)
+		fmt.Printf("Syntax error line %d, col %d: %s\n", l.row, l.column+1, msg)
 		fmt.Println(l.full)
 		for i := 0; i < l.column; i++ {
 			fmt.Printf("-")
@@ -868,8 +883,8 @@ func findMatchingInstruction(opcode fstring, operand operand) *go6502.Instructio
 // an indirect addressing mode substring is reached. Return
 // the candidate addressing mode and expression substring.
 func (l fstring) consumeIndirect() (mode go6502.Mode, expr fstring, remain fstring, err error) {
-	i := l.scanUntil(func(c byte) bool { return c == ',' || c == ')' })
-	expr, remain = l.trunc(i), l.consume(i)
+	expr, remain = l.consumeUntil(func(c byte) bool { return c == ',' || c == ')' })
+
 	switch {
 	case remain.startsWithString(",X)"):
 		mode, remain = go6502.IDX, remain.consume(3)
@@ -880,10 +895,12 @@ func (l fstring) consumeIndirect() (mode go6502.Mode, expr fstring, remain fstri
 	default:
 		err = errParse
 	}
+
 	remain = remain.consumeWhitespace()
 	if !remain.isEmpty() {
 		err = errParse
 	}
+
 	return
 }
 
@@ -891,8 +908,7 @@ func (l fstring) consumeIndirect() (mode go6502.Mode, expr fstring, remain fstri
 // addressing mode substring is reached. Guess the addressing mode,
 // and return the expression substring.
 func (l fstring) consumeAbsolute() (mode go6502.Mode, forceAbsolute bool, expr fstring, remain fstring, err error) {
-	i := l.scanUntil(func(c byte) bool { return c == ',' })
-	expr, remain = l.trunc(i), l.consume(i)
+	expr, remain = l.consumeUntilChar(',')
 
 	for _, p := range absolutePrefixes {
 		if expr.startsWithStringI(p) {
@@ -915,6 +931,7 @@ func (l fstring) consumeAbsolute() (mode go6502.Mode, forceAbsolute bool, expr f
 	if !remain.isEmpty() {
 		err = errParse
 	}
+
 	return
 }
 
