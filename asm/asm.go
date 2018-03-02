@@ -102,13 +102,13 @@ func (i *instruction) codeString() string {
 	switch {
 	case i.inst.Mode == go6502.REL:
 		offset, _ := relOffset(i.operand.expr.value, i.addr+int(i.inst.Length))
-		return fmt.Sprintf("%02X %02X   ", i.inst.Opcode, offset)
+		return byteString([]byte{i.inst.Opcode, offset})
 	case sz == 0:
-		return fmt.Sprintf("%02X      ", i.inst.Opcode)
+		return byteString([]byte{i.inst.Opcode})
 	case sz == 1:
-		return fmt.Sprintf("%02X %02X   ", i.inst.Opcode, i.operand.expr.value)
+		return byteString([]byte{i.inst.Opcode, byte(i.operand.expr.value)})
 	default:
-		return fmt.Sprintf("%02X %02X %02X", i.inst.Opcode, i.operand.expr.value&0xff, i.operand.expr.value>>8)
+		return byteString([]byte{i.inst.Opcode, byte(i.operand.expr.value), byte(i.operand.expr.value >> 8)})
 	}
 }
 
@@ -340,21 +340,21 @@ func (a *assembler) generateCode() {
 			a.code = append(a.code, ss.inst.Opcode)
 			switch {
 			case ss.inst.Length == 1:
-				a.log("%04X- %s  %s", ss.addr, ss.codeString(), ss.opcode.str)
+				a.log("%04X- %-8s  %s", ss.addr, ss.codeString(), ss.opcode.str)
 			case ss.inst.Mode == go6502.REL:
 				offset, err := relOffset(ss.operand.expr.value, ss.addr+int(ss.inst.Length))
 				if err != nil {
 					a.addError(ss.opcode, "branch offset out of bounds")
 				}
 				a.code = append(a.code, offset)
-				a.log("%04X- %s  %s  %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
+				a.log("%04X- %-8s  %s  %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
 			case ss.inst.Length == 2:
 				a.code = append(a.code, byte(ss.operand.expr.value))
-				a.log("%04X- %s  %s  %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
+				a.log("%04X- %-8s  %s  %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
 			case ss.inst.Length == 3:
 				a.code = append(a.code, byte(ss.operand.expr.value&0xff))
 				a.code = append(a.code, byte(ss.operand.expr.value>>8))
-				a.log("%04X- %s  %s  %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
+				a.log("%04X- %-8s  %s  %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
 			default:
 				panic("invalid operand")
 			}
@@ -724,7 +724,7 @@ func (a *assembler) parseInstruction(line fstring) (err error) {
 func (a *assembler) parseOperand(line fstring) (o operand, remain fstring, err error) {
 	switch {
 	case line.isEmpty():
-		// Handle immediate mode (no operand)
+		// Handle implied mode (no operand)
 		o.modeGuess, remain = go6502.IMP, line
 		return
 
@@ -862,7 +862,7 @@ func findMatchingInstruction(opcode fstring, operand operand) *go6502.Instructio
 		case inst.Mode == go6502.IMM:
 			match, qual = (operand.modeGuess == go6502.IMM) && (operand.size() == 1), 1
 		case inst.Mode == go6502.REL:
-			match, qual = (operand.modeGuess == go6502.ABS) && (operand.size() <= 2), 1
+			match, qual = (operand.modeGuess == go6502.ABS), 1
 		case inst.Mode == go6502.ZPG:
 			match, qual = (operand.modeGuess == go6502.ABS) && (operand.size() == 1), 1
 		case inst.Mode == go6502.ZPX:
@@ -870,22 +870,19 @@ func findMatchingInstruction(opcode fstring, operand operand) *go6502.Instructio
 		case inst.Mode == go6502.ZPY:
 			match, qual = (operand.modeGuess == go6502.ABY) && (operand.size() == 1), 1
 		case inst.Mode == go6502.ABS:
-			match, qual = (operand.modeGuess == go6502.ABS) && (operand.size() <= 2), 2
+			match, qual = (operand.modeGuess == go6502.ABS), 2
 		case inst.Mode == go6502.ABX:
-			match, qual = (operand.modeGuess == go6502.ABX) && (operand.size() <= 2), 2
+			match, qual = (operand.modeGuess == go6502.ABX), 2
 		case inst.Mode == go6502.ABY:
-			match, qual = (operand.modeGuess == go6502.ABY) && (operand.size() <= 2), 2
+			match, qual = (operand.modeGuess == go6502.ABY), 2
 		case inst.Mode == go6502.IND:
-			match, qual = (operand.modeGuess == go6502.IND) && (operand.size() <= 2), 2
+			match, qual = (operand.modeGuess == go6502.IND), 2
 		case inst.Mode == go6502.IDX:
 			match, qual = (operand.modeGuess == go6502.IDX) && (operand.size() == 1), 1
 		case inst.Mode == go6502.IDY:
 			match, qual = (operand.modeGuess == go6502.IDY) && (operand.size() == 1), 1
 		}
-		if !match {
-			continue
-		}
-		if qual < bestqual {
+		if match && qual < bestqual {
 			bestqual, found = qual, inst
 		}
 	}
