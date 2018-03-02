@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 
@@ -9,13 +10,28 @@ import (
 	"github.com/beevik/go6502/disasm"
 )
 
+var verbose = flag.Bool("v", false, "Verbose output")
+
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Syntax: test6502 [file.asm]")
+	flag.Parse()
+
+	args := flag.Args()
+	if len(args) < 1 {
+		fmt.Println("Syntax: test6502 [options] file")
+		fmt.Println("Options:")
+		flag.PrintDefaults()
 		os.Exit(0)
 	}
 
-	r, err := assemble(os.Args[1])
+	file, err := os.Open(args[0])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
+		os.Exit(1)
+	}
+	defer file.Close()
+
+	fmt.Printf("Assembling %s...\n", args[0])
+	r, err := asm.Assemble(file, *verbose)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
 		os.Exit(1)
@@ -29,17 +45,6 @@ func main() {
 	}
 
 	run(r.Code, r.Origin)
-}
-
-func assemble(filename string) (*asm.Result, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	fmt.Printf("Assembling %s...\n\n", filename)
-	return asm.Assemble(file, asm.Options{Verbose: true})
 }
 
 func run(code []byte, origin go6502.Address) {

@@ -19,7 +19,6 @@ import (
 // TODO:
 //  - Display addressing mode strings in debug output
 //  - High byte (/) and low byte(#) prefixes
-//  - Debug output options
 
 var (
 	errParse = errors.New("parse error")
@@ -30,6 +29,22 @@ var hex = "0123456789ABCDEF"
 var absolutePrefixes = []string{
 	"a:",
 	"abs:",
+}
+
+var modeName = []string{
+	"IMM",
+	"IMP",
+	"REL",
+	"ZPG",
+	"ZPX",
+	"ZPY",
+	"ABS",
+	"ABX",
+	"ABY",
+	"IND",
+	"IDX",
+	"IDY",
+	"ACC",
 }
 
 var modeFormat = []string{
@@ -167,19 +182,14 @@ type assembler struct {
 	code       []byte           // generated machine code
 	scanner    *bufio.Scanner   // scans the io reader
 	scopeLabel fstring          // label currently in scope
-	macros     map[string]*expr // .EQ macro -> expression
+	macros     map[string]*expr // macro -> expression
 	labels     map[string]int   // label -> segment index
 	exports    []Export         // exported addresses
 	segments   []segment        // segment of machine code
 	uneval     []*expr          // expressions requiring evaluation
-	verbose    bool             // verbose output for debugging
-	exprParser exprParser       // used to parse operand and macro expressions
+	verbose    bool             // verbose output
+	exprParser exprParser       // used to parse math expressions
 	errors     []asmerror       // errors encountered during assembly
-}
-
-// Options for Assemble function.
-type Options struct {
-	Verbose bool
 }
 
 // An Export describes an exported address.
@@ -197,7 +207,7 @@ type Result struct {
 
 // Assemble reads data from the provided stream and attempts to assemble
 // it into 6502 byte code.
-func Assemble(r io.Reader, o Options) (*Result, error) {
+func Assemble(r io.Reader, verbose bool) (*Result, error) {
 	a := &assembler{
 		origin:   0x600,
 		pc:       0x600,
@@ -206,7 +216,7 @@ func Assemble(r io.Reader, o Options) (*Result, error) {
 		labels:   make(map[string]int),
 		exports:  make([]Export, 0),
 		segments: make([]segment, 0, 32),
-		verbose:  o.Verbose,
+		verbose:  verbose,
 	}
 
 	// Assembly consists of the following steps
@@ -251,7 +261,7 @@ func (a *assembler) parse() {
 	}
 }
 
-// Evaluate all unevaluated expression trees using macros.
+// Evaluate all unevaluated expression trees using macros and labels.
 func (a *assembler) evaluateExpressions() {
 	a.logSection("Evaluating expressions")
 	for {
@@ -283,14 +293,14 @@ func (a *assembler) assignAddresses() {
 				a.addError(ss.opcode, "invalid addressing mode for opcode '%s'", ss.opcode.str)
 				return
 			}
-			a.log("%04X  %s Len:%d Mode:%d Opcode:%02X",
+			a.log("%04X  %s Len:%d Mode:%s Opcode:%02X",
 				ss.addr, ss.opcode.str, ss.inst.Length,
-				ss.inst.Mode, ss.inst.Opcode)
+				modeName[ss.inst.Mode], ss.inst.Opcode)
 			a.pc += int(ss.inst.Length)
 
 		case *data:
 			ss.addr = a.pc
-			a.log("%04X  bytedata Len:%d", ss.addr, len(ss.bytes))
+			a.log("%04X  .DB Len:%d", ss.addr, len(ss.bytes))
 			a.pc += len(ss.bytes)
 		}
 	}
@@ -760,7 +770,7 @@ func (a *assembler) parseOperand(line fstring) (o operand, remain fstring, err e
 		a.uneval = append(a.uneval, o.expr)
 	}
 	a.logLine(remain, "expr=%s", o.expr)
-	a.logLine(remain, "mode=%d", o.modeGuess)
+	a.logLine(remain, "mode=%s", modeName[o.modeGuess])
 	a.logLine(remain, "val=$%X", o.expr.value)
 
 	if !remain.isEmpty() && !remain.startsWith(whitespace) {
@@ -777,15 +787,13 @@ func (a *assembler) parseOperand(line fstring) (o operand, remain fstring, err e
 func (a *assembler) addError(l fstring, format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
 	a.errors = append(a.errors, asmerror{l, msg})
+	fmt.Fprintf(os.Stderr, "Syntax error line %d, col %d: %s\n", l.row, l.column+1, msg)
 	if a.verbose {
-		fmt.Printf("Syntax error line %d, col %d: %s\n", l.row, l.column+1, msg)
 		fmt.Println(l.full)
 		for i := 0; i < l.column; i++ {
 			fmt.Printf("-")
 		}
 		fmt.Println("^")
-	} else {
-		fmt.Fprintf(os.Stderr, "Syntax error line %d, col %d: %s\n", l.row, l.column+1, msg)
 	}
 }
 
