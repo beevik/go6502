@@ -25,7 +25,7 @@ START:
 		JSR LDA_TEST
 		JSR LDX_TEST
 		JSR LDY_TEST
-		LDA #$01
+		LDA #0
 		BEQ .1
 		LDX #'$'+$80
 .1		BRK
@@ -59,4 +59,5 @@ LDY_TEST	LDY #$20	; Immediate
 
 		.DB		"String  ", $00, $0102
 		.DB		$03040506, '<, '<'
+		.DB 		/String 2/
 END

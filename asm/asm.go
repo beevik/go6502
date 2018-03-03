@@ -101,20 +101,20 @@ func (i *instruction) codeString() string {
 	sz := i.inst.Length - 1
 	switch {
 	case i.inst.Mode == go6502.REL:
-		offset, _ := relOffset(i.operand.expr.value, i.addr+int(i.inst.Length))
+		offset, _ := relOffset(i.operand.getValue(), i.addr+int(i.inst.Length))
 		return byteString([]byte{i.inst.Opcode, offset})
 	case sz == 0:
 		return byteString([]byte{i.inst.Opcode})
 	case sz == 1:
-		return byteString([]byte{i.inst.Opcode, byte(i.operand.expr.value)})
+		return byteString([]byte{i.inst.Opcode, byte(i.operand.getValue())})
 	default:
-		return byteString([]byte{i.inst.Opcode, byte(i.operand.expr.value), byte(i.operand.expr.value >> 8)})
+		return byteString([]byte{i.inst.Opcode, byte(i.operand.getValue()), byte(i.operand.getValue() >> 8)})
 	}
 }
 
 // Format an operand string based on the instruction's addressing mode.
 func (i *instruction) operandString() string {
-	number := i.operand.expr.value
+	number := i.operand.getValue()
 
 	var n string
 	switch i.inst.Length {
@@ -129,10 +129,22 @@ func (i *instruction) operandString() string {
 
 // An operand represents the parameter(s) of an assembly instruction.
 type operand struct {
-	value         int         // resolved numeric value
 	modeGuess     go6502.Mode // addressing mode guesed based on operand string
 	expr          *expr       // expression tree, used to resolve value
 	forceAbsolute bool        // operand must use 2-byte absolute address
+	forceLSB      bool        // operand must use least significant byte
+	forceMSB      bool        // operand must use most significant byte
+}
+
+func (o *operand) getValue() int {
+	switch {
+	case o.forceLSB:
+		return o.expr.value & 0xff
+	case o.forceMSB:
+		return (o.expr.value >> 8) & 0xff
+	default:
+		return o.expr.value
+	}
 }
 
 // Return the size of the operand in bytes.
@@ -140,6 +152,8 @@ func (o *operand) size() int {
 	switch {
 	case o.modeGuess == go6502.IMP:
 		return 0
+	case o.forceLSB || o.forceMSB:
+		return 1
 	case o.expr.address || o.forceAbsolute || o.expr.value > 0xff:
 		return 2
 	default:
@@ -342,18 +356,18 @@ func (a *assembler) generateCode() {
 			case ss.inst.Length == 1:
 				a.log("%04X- %-8s  %s", ss.addr, ss.codeString(), ss.opcode.str)
 			case ss.inst.Mode == go6502.REL:
-				offset, err := relOffset(ss.operand.expr.value, ss.addr+int(ss.inst.Length))
+				offset, err := relOffset(ss.operand.getValue(), ss.addr+int(ss.inst.Length))
 				if err != nil {
 					a.addError(ss.opcode, "branch offset out of bounds")
 				}
 				a.code = append(a.code, offset)
 				a.log("%04X- %-8s  %s  %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
 			case ss.inst.Length == 2:
-				a.code = append(a.code, byte(ss.operand.expr.value))
+				a.code = append(a.code, byte(ss.operand.getValue()))
 				a.log("%04X- %-8s  %s  %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
 			case ss.inst.Length == 3:
-				a.code = append(a.code, byte(ss.operand.expr.value&0xff))
-				a.code = append(a.code, byte(ss.operand.expr.value>>8))
+				a.code = append(a.code, byte(ss.operand.getValue()&0xff))
+				a.code = append(a.code, byte(ss.operand.getValue()>>8))
 				a.log("%04X- %-8s  %s  %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
 			default:
 				panic("invalid operand")
@@ -529,7 +543,7 @@ func (a *assembler) parseMacro(line, label fstring) (err error) {
 
 	// Parse the macro expression.
 	var e *expr
-	e, line, err = a.exprParser.parse(line, a.scopeLabel, true)
+	e, line, err = a.exprParser.parse(line, a.scopeLabel, 0)
 	if err != nil {
 		a.addExprErrors()
 		return
@@ -559,7 +573,7 @@ func (a *assembler) parseOrigin(line, label fstring) (err error) {
 	a.logLine(line, "origin=")
 
 	var e *expr
-	e, line, err = a.exprParser.parse(line, a.scopeLabel, true)
+	e, line, err = a.exprParser.parse(line, a.scopeLabel, 0)
 	if err != nil {
 		a.addExprErrors()
 		return
@@ -585,11 +599,12 @@ func (a *assembler) parseBytes(line, label fstring) (err error) {
 	b := []byte{}
 	for !line.isEmpty() {
 		switch {
-		case line.startsWithChar('"'):
+		case line.startsWithChar('"') || line.startsWithChar('/'):
+			start := line.str[0]
 			var s fstring
 			line = line.consume(1)
-			s, line = line.consumeUntilChar('"')
-			if line.isEmpty() || line.str[0] != '"' {
+			s, line = line.consumeUntilChar(start)
+			if line.isEmpty() || line.str[0] != start {
 				a.addError(line, "invalid string")
 				break
 			}
@@ -637,7 +652,7 @@ func (a *assembler) parseAt(line, label fstring) (err error) {
 
 	// Parse the AT expression.
 	var e *expr
-	e, line, err = a.exprParser.parse(line, a.scopeLabel, true)
+	e, line, err = a.exprParser.parse(line, a.scopeLabel, 0)
 	if err != nil {
 		a.addExprErrors()
 		return
@@ -668,7 +683,7 @@ func (a *assembler) parseExport(line, label fstring) (err error) {
 
 	// Parse the EXPORT expression.
 	var e *expr
-	e, line, err = a.exprParser.parse(line, a.scopeLabel, true)
+	e, line, err = a.exprParser.parse(line, a.scopeLabel, 0)
 	if err != nil {
 		a.addExprErrors()
 		return
@@ -724,42 +739,48 @@ func (a *assembler) parseInstruction(line fstring) (err error) {
 func (a *assembler) parseOperand(line fstring) (o operand, remain fstring, err error) {
 	switch {
 	case line.isEmpty():
-		// Handle implied mode (no operand)
 		o.modeGuess, remain = go6502.IMP, line
 		return
 
 	case line.startsWithChar('('):
-		// Handle indirect addressing modes
 		var expr fstring
 		o.modeGuess, expr, remain, err = line.consume(1).consumeIndirect()
 		if err != nil {
 			a.addError(remain, "unknown addressing mode format")
 			return
 		}
-		o.expr, _, err = a.exprParser.parse(expr, a.scopeLabel, false)
+		o.expr, _, err = a.exprParser.parse(expr, a.scopeLabel, disallowParentheses)
 		if err != nil {
 			a.addExprErrors()
 			return
 		}
 
 	case line.startsWithChar('#'):
-		// Handle immediate addressing mode
 		o.modeGuess = go6502.IMM
-		o.expr, remain, err = a.exprParser.parse(line.consume(1), a.scopeLabel, false)
+		o.forceLSB = true
+		o.expr, remain, err = a.exprParser.parse(line.consume(1), a.scopeLabel, 0)
+		if err != nil {
+			a.addExprErrors()
+			return
+		}
+
+	case line.startsWithChar('/'):
+		o.modeGuess = go6502.IMM
+		o.forceMSB = true
+		o.expr, remain, err = a.exprParser.parse(line.consume(1), a.scopeLabel, 0)
 		if err != nil {
 			a.addExprErrors()
 			return
 		}
 
 	default:
-		// Handle absolute addressing modes (zero page and full absolute)
 		var expr fstring
 		o.modeGuess, o.forceAbsolute, expr, remain, err = line.consumeAbsolute()
 		if err != nil {
 			a.addError(remain, "unknown addressing mode format")
 			return
 		}
-		o.expr, _, err = a.exprParser.parse(expr, a.scopeLabel, false)
+		o.expr, _, err = a.exprParser.parse(expr, a.scopeLabel, disallowParentheses)
 		if err != nil {
 			a.addExprErrors()
 			return
@@ -771,7 +792,7 @@ func (a *assembler) parseOperand(line fstring) (o operand, remain fstring, err e
 	}
 	a.logLine(remain, "expr=%s", o.expr)
 	a.logLine(remain, "mode=%s", modeName[o.modeGuess])
-	a.logLine(remain, "val=$%X", o.expr.value)
+	a.logLine(remain, "val=$%X", o.getValue())
 
 	if !remain.isEmpty() && !remain.startsWith(whitespace) {
 		a.addError(remain, "operand expression")

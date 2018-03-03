@@ -103,6 +103,12 @@ func (op exprOp) collapses(other exprOp) bool {
 // expr
 //
 
+type parseFlags uint32
+
+const (
+	disallowParentheses parseFlags = 1 << iota
+)
+
 // An expr represents a single node in a binary expression tree.
 // The root node represents an entire expression.
 type expr struct {
@@ -214,15 +220,15 @@ type exprParser struct {
 	operandStack  exprStack
 	operatorStack opStack
 	parenCounter  int
-	allowParens   bool
+	flags         parseFlags
 	prevToken     token
 	errors        []asmerror
 }
 
 // Parse an expression from the line until it is exhausted.
-func (p *exprParser) parse(line, scopeLabel fstring, allowParens bool) (e *expr, remain fstring, err error) {
+func (p *exprParser) parse(line, scopeLabel fstring, flags parseFlags) (e *expr, remain fstring, err error) {
 	p.errors = nil
-	p.allowParens = allowParens
+	p.flags = flags
 	p.prevToken = token{}
 
 	orig := line
@@ -318,12 +324,12 @@ func (p *exprParser) parseToken(line fstring) (t token, out fstring, err error) 
 			err = errParse
 		}
 
-	case p.allowParens && line.startsWithChar('('):
+	case line.startsWithChar('(') && (p.flags&disallowParentheses) == 0:
 		p.parenCounter++
 		t.tt, t.op = tokenLeftParen, opLeftParen
 		out = line.consume(1)
 
-	case p.allowParens && line.startsWithChar(')'):
+	case line.startsWithChar(')') && (p.flags&disallowParentheses) == 0:
 		if p.parenCounter == 0 {
 			p.addError(line, "mismatched parentheses")
 			err = errParse
