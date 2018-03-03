@@ -1,6 +1,7 @@
 package go6502
 
 import (
+	"errors"
 	"io/ioutil"
 	"os"
 )
@@ -21,8 +22,13 @@ func NewMemory() *Memory {
 }
 
 // CopyBytes copies binary 'data' into memory at address 'addr'.
-func (m *Memory) CopyBytes(addr Address, data []byte) {
-	copy(m.data[int(addr):int(addr)+len(data)], data)
+func (m *Memory) CopyBytes(addr Address, data []byte) error {
+	if int(addr)+len(data) > len(m.data) {
+		return errors.New("memory address space exceeded")
+	}
+
+	copy(m.data[int(addr):], data)
+	return nil
 }
 
 // LoadFile loads binary data from the file at 'filename' into memory
@@ -40,14 +46,13 @@ func (m *Memory) LoadFile(addr Address, filename string) error {
 		return err
 	}
 
-	m.CopyBytes(addr, data)
-	return nil
+	return m.CopyBytes(addr, data)
 }
 
 // LoadAddress reads a 16-bit address from the memory at address 'addr'.
 func (m *Memory) LoadAddress(addr Address) Address {
-	if (addr & 0xff00) != ((addr + 1) & 0xff00) {
-		return Address(m.data[addr]) | Address(m.data[addr-255])<<8
+	if (addr & 0xff) == 0xff {
+		return Address(m.data[addr]) | Address(m.data[addr-0xff])<<8
 	}
 	return Address(m.data[addr]) | Address(m.data[addr+1])<<8
 }

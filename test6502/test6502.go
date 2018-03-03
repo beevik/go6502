@@ -51,7 +51,10 @@ func run(code []byte, origin go6502.Address) {
 	fmt.Printf("\nRunning assembled code...\n")
 
 	mem := go6502.NewMemory()
-	mem.CopyBytes(origin, code)
+	err := mem.CopyBytes(origin, code)
+	if err != nil {
+		panic(err)
+	}
 
 	cpu := go6502.NewCPU(mem)
 	cpu.SetPC(origin)
