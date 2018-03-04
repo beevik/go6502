@@ -33,6 +33,7 @@ const (
 
 	// value "operations"
 	opNumber
+	opString
 	opIdentifier
 	opHere
 
@@ -76,7 +77,8 @@ var ops = []opdata{
 	{1, 2, true, "|", func(a, b int) int { return a | b }},           // or
 
 	// value "operations"
-	{0, 0, false, "", nil}, // number
+	{0, 0, false, "", nil}, // numeric literal
+	{0, 0, false, "", nil}, // string literal
 	{0, 0, false, "", nil}, // identifier
 	{0, 0, false, "", nil}, // here
 
@@ -122,21 +124,25 @@ func (op exprOp) collapses(other exprOp) bool {
 type parseFlags uint32
 
 const (
-	disallowParentheses parseFlags = 1 << iota
+	allowParentheses parseFlags = 1 << iota
+	allowStrings
 )
 
 // An expr represents a single node in a binary expression tree.
 // The root node represents an entire expression.
 type expr struct {
-	line       fstring // start of expression line
-	value      int     // resolved value
-	identifier fstring // if expression is an identifier
-	scopeLabel fstring // active scope label when parsing began
-	op         exprOp  // if expression is an operation
-	evaluated  bool    // true if value has been evaluated
-	address    bool    // true if value is an address
-	child0     *expr   // first child in expression tree
-	child1     *expr   // second child in expression tree (parent must be binary op)
+	line          fstring // start of expression line
+	op            exprOp  // type of expression
+	value         int     // resolved value
+	bytes         int     // number of bytes to hold the value
+	address       bool    // true if value is an address
+	evaluated     bool    // true if value has been evaluated
+	isString      bool    // true if expr is a string literal (not a value)
+	stringLiteral fstring // if op == opString
+	identifier    fstring // if op == opIdentifier
+	scopeLabel    fstring // active scope label when parsing began
+	child0        *expr   // first child in expression tree
+	child1        *expr   // second child in expression tree (parent must be binary op)
 }
 
 // Return the expression as a postfix notation string.
@@ -144,6 +150,8 @@ func (e *expr) String() string {
 	switch {
 	case e.op == opNumber:
 		return fmt.Sprintf("%d", e.value)
+	case e.op == opString:
+		return e.stringLiteral.str
 	case e.op == opIdentifier:
 		if e.address && e.identifier.startsWithChar('.') {
 			return "~" + e.scopeLabel.str + e.identifier.str
@@ -167,6 +175,9 @@ func (e *expr) eval(addr int, macros map[string]*expr, labels map[string]int) bo
 		case e.op == opNumber:
 			e.evaluated = true
 
+		case e.op == opString:
+			e.evaluated = true
+
 		case e.op == opIdentifier:
 			var ident string
 			if e.identifier.startsWithChar('.') {
@@ -175,38 +186,49 @@ func (e *expr) eval(addr int, macros map[string]*expr, labels map[string]int) bo
 				ident = e.identifier.str
 			}
 			if m, ok := macros[ident]; ok && m.evaluated {
-				e.value, e.evaluated = m.value, true
+				e.value, e.bytes, e.evaluated = m.value, m.bytes, true
 			}
 			if _, ok := labels[ident]; ok {
-				e.address = true
+				e.address, e.bytes = true, 2
 			}
 
 		case e.op == opHere:
 			if addr != -1 {
-				e.value, e.address, e.evaluated = addr, true, true
+				e.value, e.bytes, e.address, e.evaluated = addr, 2, true, true
 			}
 
 		case e.op.isBinary():
 			e.child0.eval(addr, macros, labels)
 			e.child1.eval(addr, macros, labels)
 			if e.child0.evaluated && e.child1.evaluated {
-				e.value, e.evaluated = e.op.eval(e.child0.value, e.child1.value), true
+				e.value = e.op.eval(e.child0.value, e.child1.value)
+				e.bytes = maxInt(e.child0.bytes, e.child1.bytes)
+				e.evaluated = true
 			}
 			if e.child0.address || e.child1.address {
-				e.address = true
+				e.address, e.bytes = true, 2
 			}
 
 		default:
 			e.child0.eval(addr, macros, labels)
 			if e.child0.evaluated {
-				e.value, e.evaluated = e.op.eval(e.child0.value, 0), true
+				e.value = e.op.eval(e.child0.value, 0)
+				e.bytes = e.child0.bytes
+				e.evaluated = true
 			}
 			if e.child0.address {
-				e.address = true
+				e.address, e.bytes = true, 2
 			}
 		}
 	}
 	return e.evaluated
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 //
@@ -219,6 +241,7 @@ const (
 	tokenNil tokentype = iota
 	tokenOp
 	tokenNumber
+	tokenString
 	tokenIdentifier
 	tokenHere
 	tokenLeftParen
@@ -234,10 +257,12 @@ func (tt tokentype) canPrecedeUnaryOp() bool {
 }
 
 type token struct {
-	typ        tokentype
-	number     int
-	identifier fstring
-	op         exprOp
+	typ           tokentype
+	value         int
+	bytes         int
+	stringLiteral fstring
+	identifier    fstring
+	op            exprOp
 }
 
 //
@@ -282,8 +307,19 @@ func (p *exprParser) parse(line, scopeLabel fstring, flags parseFlags) (e *expr,
 		case tokenNumber:
 			e := &expr{
 				op:        opNumber,
-				value:     token.number,
+				value:     token.value,
+				bytes:     token.bytes,
 				evaluated: true,
+			}
+			p.operandStack.push(e)
+
+		case tokenString:
+			e := &expr{
+				op:            opString,
+				stringLiteral: token.stringLiteral,
+				isString:      true,
+				bytes:         token.bytes,
+				evaluated:     true,
 			}
 			p.operandStack.push(e)
 
@@ -296,7 +332,11 @@ func (p *exprParser) parse(line, scopeLabel fstring, flags parseFlags) (e *expr,
 			p.operandStack.push(e)
 
 		case tokenHere:
-			e := &expr{op: opHere}
+			e := &expr{
+				op:      opHere,
+				bytes:   2,
+				address: true,
+			}
 			p.operandStack.push(e)
 
 		case tokenOp:
@@ -360,9 +400,10 @@ func (p *exprParser) parseToken(line fstring) (t token, remain fstring, err erro
 	case line.startsWithChar('$') && (len(line.str) == 1 || !hexadecimal(line.str[1])):
 		remain = line.consume(1)
 		t.typ = tokenHere
+		t.bytes = 2
 
 	case line.startsWith(decimal) || line.startsWithChar('$'):
-		t.number, _, remain, err = p.parseNumber(line)
+		t.value, t.bytes, remain, err = p.parseNumber(line)
 		t.typ = tokenNumber
 		if p.prevTokenType.isValue() || p.prevTokenType == tokenRightParen {
 			p.addError(line, "invalid numeric literal")
@@ -370,19 +411,25 @@ func (p *exprParser) parseToken(line fstring) (t token, remain fstring, err erro
 		}
 
 	case line.startsWithChar('\''):
-		t.number, remain, err = p.parseCharLiteral(line)
+		t.value, remain, err = p.parseCharLiteral(line)
+		t.bytes = 1
 		t.typ = tokenNumber
 		if p.prevTokenType.isValue() || p.prevTokenType == tokenRightParen {
 			p.addError(line, "invalid character literal")
 			err = errParse
 		}
 
-	case line.startsWithChar('(') && (p.flags&disallowParentheses) == 0:
+	case line.startsWith(stringQuote) && (p.flags&allowStrings) != 0:
+		t.stringLiteral, remain, err = p.parseStringLiteral(line)
+		t.bytes = len(t.stringLiteral.str)
+		t.typ = tokenString
+
+	case line.startsWithChar('(') && (p.flags&allowParentheses) != 0:
 		p.parenCounter++
 		t.typ, t.op = tokenLeftParen, opLeftParen
 		remain = line.consume(1)
 
-	case line.startsWithChar(')') && (p.flags&disallowParentheses) == 0:
+	case line.startsWithChar(')') && (p.flags&allowParentheses) != 0:
 		if p.parenCounter == 0 {
 			p.addError(line, "mismatched parentheses")
 			err = errParse
@@ -410,7 +457,7 @@ func (p *exprParser) parseToken(line fstring) (t token, remain fstring, err erro
 			}
 		}
 		if t.typ != tokenOp {
-			p.addError(line, "invalid operation")
+			p.addError(line, "invalid token")
 			err = errParse
 		}
 	}

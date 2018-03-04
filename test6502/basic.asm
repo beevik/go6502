@@ -1385,7 +1385,7 @@ return_stmt:    LDY     #$4A
         STA     pline
         LDA     gstk_plineh-1,Y
         STA     pline+1
-        LDX     a:synpag+1,Y            ; force absolute addressing mode
+        LDX     ABS:synpag+1,Y         ; force absolute addressing mode
         LDA     gstk_pverbh-1,Y
 Le8be:  TAY
         TXA

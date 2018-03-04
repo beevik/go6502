@@ -31,16 +31,16 @@ func (l *fstring) advanceColumn(n int) int {
 	return c
 }
 
-func (l *fstring) consume(n int) fstring {
+func (l fstring) consume(n int) fstring {
 	col := l.advanceColumn(n)
 	return fstring{l.row, col, l.str[n:], l.full}
 }
 
-func (l *fstring) trunc(n int) fstring {
+func (l fstring) trunc(n int) fstring {
 	return fstring{l.row, l.column, l.str[:n], l.full}
 }
 
-func (l *fstring) substr(start, stop int) fstring {
+func (l fstring) substr(start, stop int) fstring {
 	col := l.advanceColumn(start)
 	return fstring{l.row, col, l.str[start:stop], l.full}
 }
@@ -65,7 +65,7 @@ func (l *fstring) startsWithStringI(lower string) bool {
 	return len(l.str) >= len(lower) && strings.ToLower(l.str[:len(lower)]) == lower
 }
 
-func (l *fstring) consumeWhitespace() fstring {
+func (l fstring) consumeWhitespace() fstring {
 	return l.consume(l.scanWhile(whitespace))
 }
 
@@ -108,11 +108,11 @@ func (l *fstring) consumeUntilChar(c byte) (consumed, remain fstring) {
 	return
 }
 
-func (l *fstring) peekNextWord() fstring {
+func (l fstring) peekNextWord() fstring {
 	return l.trunc(l.scanWhile(wordChar))
 }
 
-func (l *fstring) stripTrailingComment() fstring {
+func (l fstring) stripTrailingComment() fstring {
 	lastNonWs := 0
 	for i := 0; i < len(l.str); i++ {
 		if l.str[i] == ';' {
@@ -135,10 +135,6 @@ func whitespace(c byte) bool {
 
 func wordChar(c byte) bool {
 	return c != ' ' && c != '\t'
-}
-
-func bytesDelimiter(c byte) bool {
-	return whitespace(c) || c == ','
 }
 
 func alpha(c byte) bool {
@@ -175,6 +171,10 @@ func identifierStartChar(c byte) bool {
 
 func identifierChar(c byte) bool {
 	return alpha(c) || decimal(c) || c == '_' || c == '.' || c == ':'
+}
+
+func stringQuote(c byte) bool {
+	return c == '"' || c == '/'
 }
 
 func pseudoOpStartChar(c byte) bool {

@@ -25,7 +25,6 @@ START:
 		JSR LDA_TEST
 		JSR LDX_TEST
 		JSR LDY_TEST
-		LDX #DATA_LEN
 		BEQ .1
 		LDA /DATA
 .1		BRK
@@ -60,11 +59,12 @@ LDY_TEST	LDY #$20	; Immediate
 		RTS
 
 DATA		.DB		"String  ", $00
+		.DB		1+2+3+4, 5+6+7+8
 		.DB		$0102, $03040506
 		.DB		'<, '<'
 		.DB 		-$01, -$0001
 		.DB		-1, -129
 		.DB		0b01010101, -0b01010101
-DATA_LEN	.EQ		$ - DATA
+		.DB 		$ - DATA
 
 END

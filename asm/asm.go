@@ -17,7 +17,7 @@ import (
 )
 
 // TODO:
-//  - Allow expressions in .DB data declarations
+//  - Move # and / modifiers into expression parser
 
 var (
 	errParse = errors.New("parse error")
@@ -63,10 +63,8 @@ var pseudoOps = map[string]func(a *assembler, line, label fstring) error{
 	"=":       (*assembler).parseMacro,
 	".or":     (*assembler).parseOrigin,
 	".org":    (*assembler).parseOrigin,
-	".db":     (*assembler).parseBytes,
-	".byte":   (*assembler).parseBytes,
-	".at":     (*assembler).parseAt,
-	".addr":   (*assembler).parseAt,
+	".db":     (*assembler).parseData,
+	".byte":   (*assembler).parseData,
 	".ex":     (*assembler).parseExport,
 	".export": (*assembler).parseExport,
 }
@@ -162,13 +160,25 @@ func (o *operand) size() int {
 
 // A data segment contains one or more bytes of byte data.
 type data struct {
-	addr  int    // address assigned to the segment
-	bytes []byte // resolved byte data
-	expr  *expr  // expression used for .at
+	unit  int     // unit size (1 or 2 bytes)
+	addr  int     // address assigned to the segment
+	exprs []*expr // all expressions in the data segment
 }
 
 func (d *data) address() int {
 	return d.addr
+}
+
+func (d *data) bytes() int {
+	n := 0
+	for _, e := range d.exprs {
+		if e.isString {
+			n += len(e.stringLiteral.str)
+		} else {
+			n += d.unit
+		}
+	}
+	return n
 }
 
 // An export segment contains an exported address.
@@ -344,8 +354,9 @@ func (a *assembler) assignAddresses() error {
 
 		case *data:
 			ss.addr = a.pc
-			a.log("%04X  .DB Len:%d", ss.addr, len(ss.bytes))
-			a.pc += len(ss.bytes)
+			bytes := ss.bytes()
+			a.log("%04X  .DB Len:%d", ss.addr, bytes)
+			a.pc += bytes
 
 		case *export:
 			ss.addr = a.pc
@@ -405,17 +416,22 @@ func (a *assembler) generateCode() error {
 			}
 
 		case *data:
-			if ss.expr != nil {
-				v := ss.expr.value
-				ss.bytes = []byte{byte(v & 0xff), byte(v >> 8)}
+			start := len(a.code)
+			for _, e := range ss.exprs {
+				switch {
+				case e.isString:
+					a.code = append(a.code, []byte(e.stringLiteral.str)...)
+				default:
+					a.code = append(a.code, byte(e.value))
+				}
 			}
-			a.code = append(a.code, ss.bytes...)
-			for i, n := 0, len(ss.bytes); i < n; i += 3 {
+			b := a.code[start:]
+			for i, n := 0, len(b); i < n; i += 3 {
 				j := i + 3
 				if j > n {
 					j = n
 				}
-				a.log("%04X-*%s", ss.addr+i, byteString(ss.bytes[i:j]))
+				a.log("%04X-*%s", ss.addr+i, byteString(b[i:j]))
 			}
 
 		case *export:
@@ -569,7 +585,7 @@ func (a *assembler) parseMacro(line, label fstring) error {
 	a.logLine(line, "macro=%s", label.str)
 
 	// Parse the macro expression.
-	e, _, err := a.exprParser.parse(line, a.scopeLabel, 0)
+	e, _, err := a.exprParser.parse(line, a.scopeLabel, allowParentheses)
 	if err != nil {
 		a.addExprErrors()
 		return err
@@ -603,7 +619,7 @@ func (a *assembler) parseOrigin(line, label fstring) error {
 
 	a.logLine(line, "origin=")
 
-	e, _, err := a.exprParser.parse(line, a.scopeLabel, 0)
+	e, _, err := a.exprParser.parse(line, a.scopeLabel, allowParentheses)
 	if err != nil {
 		a.addExprErrors()
 		return errParse
@@ -621,54 +637,32 @@ func (a *assembler) parseOrigin(line, label fstring) error {
 	return nil
 }
 
-// Parse a bytes (.DB) pseudo-op.
-func (a *assembler) parseBytes(line, label fstring) error {
+// Parse a data pseudo-op.
+func (a *assembler) parseData(line, label fstring) error {
 	a.logLine(line, "bytes=")
 
-	var b []byte
-	var err error
+	seg := &data{unit: 1, addr: -1}
 
 	remain := line
 	for !remain.isEmpty() {
-		switch {
-		case remain.startsWithChar('"') || remain.startsWithChar('/'):
-			var s fstring
-			s, remain, err = a.exprParser.parseStringLiteral(remain)
-			if err != nil {
-				a.addExprErrors()
-				return err
-			}
-			b = append(b, []byte(s.str)...)
+		var expr fstring
+		expr, remain = remain.consumeUntilChar(',')
 
-		case remain.startsWithChar('\''):
-			var value int
-			value, remain, err = a.exprParser.parseCharLiteral(remain)
-			if err != nil {
-				a.addExprErrors()
-				return err
-			}
-			b = append(b, byte(value))
-
-		default:
-			var value int
-			var bytes int
-			value, bytes, remain, err = a.exprParser.parseNumber(remain)
-			if err != nil {
-				a.addExprErrors()
-				return err
-			}
-
-			switch bytes {
-			case 1:
-				b = append(b, byte(value))
-			case 2:
-				b = append(b, []byte{byte(value), byte(value >> 8)}...)
-			case 4:
-				b = append(b, []byte{byte(value), byte(value >> 8), byte(value >> 16), byte(value >> 24)}...)
-			}
+		if !remain.isEmpty() {
+			remain = remain.consume(1).consumeWhitespace()
 		}
 
-		_, remain = remain.consumeWhile(bytesDelimiter)
+		e, _, err := a.exprParser.parse(expr, a.scopeLabel, allowParentheses|allowStrings)
+		if err != nil {
+			a.addExprErrors()
+			return err
+		}
+
+		if !e.eval(-1, a.macros, a.labels) {
+			a.pushUnevaluated(e)
+		}
+
+		seg.exprs = append(seg.exprs, e)
 	}
 
 	if !label.isEmpty() {
@@ -678,43 +672,6 @@ func (a *assembler) parseBytes(line, label fstring) error {
 		}
 	}
 
-	seg := &data{addr: -1, bytes: b}
-	a.segments = append(a.segments, seg)
-	return nil
-}
-
-// Parse an .AT pseudo-op.
-func (a *assembler) parseAt(line, label fstring) error {
-	a.logLine(line, "at=")
-
-	// Parse the AT expression.
-	e, _, err := a.exprParser.parse(line, a.scopeLabel, 0)
-	if err != nil {
-		a.addExprErrors()
-		return err
-	}
-
-	// Attempt to evaluate the expression immediately.
-	if !e.eval(-1, a.macros, a.labels) {
-		a.pushUnevaluated(e)
-	}
-
-	if !label.isEmpty() {
-		err := a.storeLabel(label)
-		if err != nil {
-			return err
-		}
-	}
-
-	a.logLine(line, "expr=%s", e.String())
-	switch e.evaluated {
-	case true:
-		a.logLine(line, "val=$%X", e.value)
-	case false:
-		a.logLine(line, "val=(uneval)")
-	}
-
-	seg := &data{bytes: []byte{0, 0}, expr: e}
 	a.segments = append(a.segments, seg)
 	return nil
 }
@@ -723,7 +680,7 @@ func (a *assembler) parseExport(line, label fstring) error {
 	a.logLine(line, "export=")
 
 	// Parse the export expression.
-	e, _, err := a.exprParser.parse(line, a.scopeLabel, 0)
+	e, _, err := a.exprParser.parse(line, a.scopeLabel, allowParentheses)
 	if err != nil {
 		a.addExprErrors()
 		return err
@@ -794,7 +751,7 @@ func (a *assembler) parseOperand(line fstring) (o operand, remain fstring, err e
 			a.addError(remain, "unknown addressing mode format")
 			return
 		}
-		o.expr, _, err = a.exprParser.parse(expr, a.scopeLabel, disallowParentheses)
+		o.expr, _, err = a.exprParser.parse(expr, a.scopeLabel, 0)
 		if err != nil {
 			a.addExprErrors()
 			return
@@ -803,7 +760,7 @@ func (a *assembler) parseOperand(line fstring) (o operand, remain fstring, err e
 	case line.startsWithChar('#'):
 		o.modeGuess = go6502.IMM
 		o.forceLSB = true
-		o.expr, remain, err = a.exprParser.parse(line.consume(1), a.scopeLabel, 0)
+		o.expr, remain, err = a.exprParser.parse(line.consume(1), a.scopeLabel, allowParentheses)
 		if err != nil {
 			a.addExprErrors()
 			return
@@ -812,7 +769,7 @@ func (a *assembler) parseOperand(line fstring) (o operand, remain fstring, err e
 	case line.startsWithChar('/'):
 		o.modeGuess = go6502.IMM
 		o.forceMSB = true
-		o.expr, remain, err = a.exprParser.parse(line.consume(1), a.scopeLabel, 0)
+		o.expr, remain, err = a.exprParser.parse(line.consume(1), a.scopeLabel, allowParentheses)
 		if err != nil {
 			a.addExprErrors()
 			return
@@ -831,7 +788,7 @@ func (a *assembler) parseOperand(line fstring) (o operand, remain fstring, err e
 			a.addError(remain, "unknown addressing mode format")
 			return
 		}
-		o.expr, _, err = a.exprParser.parse(expr, a.scopeLabel, disallowParentheses)
+		o.expr, _, err = a.exprParser.parse(expr, a.scopeLabel, 0)
 		if err != nil {
 			a.addExprErrors()
 			return
