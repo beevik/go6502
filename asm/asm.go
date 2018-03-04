@@ -17,7 +17,8 @@ import (
 )
 
 // TODO:
-//  - Move # and / modifiers into expression parser
+//  - Add .PAD pseudo-op
+//  - Add .HS pseudo-op
 
 var (
 	errParse = errors.New("parse error")
@@ -57,16 +58,27 @@ var modeFormat = []string{
 	"%s",      // ACC
 }
 
-var pseudoOps = map[string]func(a *assembler, line, label fstring) error{
-	".eq":     (*assembler).parseMacro,
-	".equ":    (*assembler).parseMacro,
-	"=":       (*assembler).parseMacro,
-	".or":     (*assembler).parseOrigin,
-	".org":    (*assembler).parseOrigin,
-	".db":     (*assembler).parseData,
-	".byte":   (*assembler).parseData,
-	".ex":     (*assembler).parseExport,
-	".export": (*assembler).parseExport,
+type pseudoOpFunc = func(a *assembler, line, label fstring, param interface{}) error
+
+type pseudoOpData struct {
+	fn    pseudoOpFunc
+	param interface{}
+}
+
+var pseudoOps = map[string]pseudoOpData{
+	".eq":     pseudoOpData{fn: (*assembler).parseMacro, param: nil},
+	".equ":    pseudoOpData{fn: (*assembler).parseMacro, param: nil},
+	"=":       pseudoOpData{fn: (*assembler).parseMacro, param: nil},
+	".or":     pseudoOpData{fn: (*assembler).parseOrigin, param: nil},
+	".org":    pseudoOpData{fn: (*assembler).parseOrigin, param: nil},
+	".db":     pseudoOpData{fn: (*assembler).parseData, param: 1},
+	".byte":   pseudoOpData{fn: (*assembler).parseData, param: 1},
+	".dw":     pseudoOpData{fn: (*assembler).parseData, param: 2},
+	".word":   pseudoOpData{fn: (*assembler).parseData, param: 2},
+	".dd":     pseudoOpData{fn: (*assembler).parseData, param: 4},
+	".dword":  pseudoOpData{fn: (*assembler).parseData, param: 4},
+	".ex":     pseudoOpData{fn: (*assembler).parseExport, param: nil},
+	".export": pseudoOpData{fn: (*assembler).parseExport, param: nil},
 }
 
 // A segment is a small chunk of machine code that may represent a single
@@ -408,8 +420,7 @@ func (a *assembler) generateCode() error {
 				a.code = append(a.code, byte(ss.operand.getValue()))
 				a.log("%04X- %-8s  %s  %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
 			case ss.inst.Length == 3:
-				a.code = append(a.code, byte(ss.operand.getValue()&0xff))
-				a.code = append(a.code, byte(ss.operand.getValue()>>8))
+				a.code = append(a.code, toBytes(2, ss.operand.getValue())...)
 				a.log("%04X- %-8s  %s  %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
 			default:
 				panic("invalid operand")
@@ -422,7 +433,7 @@ func (a *assembler) generateCode() error {
 				case e.isString:
 					a.code = append(a.code, []byte(e.stringLiteral.str)...)
 				default:
-					a.code = append(a.code, byte(e.value))
+					a.code = append(a.code, toBytes(ss.unit, e.value)...)
 				}
 			}
 			b := a.code[start:]
@@ -567,16 +578,16 @@ func (a *assembler) parseLabel(line fstring) (label fstring, remain fstring, err
 
 // Parse a pseudo-op beginning with "." (such as ".EQ").
 func (a *assembler) parsePseudoOp(line, label, pseudoOp fstring) error {
-	fn, ok := pseudoOps[strings.ToLower(pseudoOp.str)]
+	op, ok := pseudoOps[strings.ToLower(pseudoOp.str)]
 	if !ok {
 		a.addError(pseudoOp, "invalid directive '%s'", pseudoOp.str)
 		return errParse
 	}
-	return fn(a, line, label)
+	return op.fn(a, line, label, op.param)
 }
 
 // Parse an ".EQ" macro definition.
-func (a *assembler) parseMacro(line, label fstring) error {
+func (a *assembler) parseMacro(line, label fstring, param interface{}) error {
 	if label.str == "" {
 		a.addError(line, "macro must begin with a label")
 		return errParse
@@ -611,7 +622,7 @@ func (a *assembler) parseMacro(line, label fstring) error {
 }
 
 // Parse an ".ORG" origin definition
-func (a *assembler) parseOrigin(line, label fstring) error {
+func (a *assembler) parseOrigin(line, label fstring, param interface{}) error {
 	if len(a.segments) > 0 {
 		a.addError(line, "origin directive must appear before first instruction")
 		return errParse
@@ -638,10 +649,13 @@ func (a *assembler) parseOrigin(line, label fstring) error {
 }
 
 // Parse a data pseudo-op.
-func (a *assembler) parseData(line, label fstring) error {
+func (a *assembler) parseData(line, label fstring, param interface{}) error {
 	a.logLine(line, "bytes=")
 
-	seg := &data{unit: 1, addr: -1}
+	seg := &data{
+		unit: param.(int),
+		addr: -1,
+	}
 
 	remain := line
 	for !remain.isEmpty() {
@@ -676,7 +690,7 @@ func (a *assembler) parseData(line, label fstring) error {
 	return nil
 }
 
-func (a *assembler) parseExport(line, label fstring) error {
+func (a *assembler) parseExport(line, label fstring, param interface{}) error {
 	a.logLine(line, "export=")
 
 	// Parse the export expression.
@@ -970,6 +984,19 @@ func (l fstring) consumeAbsolute() (mode go6502.Mode, expr fstring, remain fstri
 	}
 
 	return mode, expr, remain, err
+}
+
+// Return a little-endian representation of the value using the requested
+// number of bytes.
+func toBytes(bytes, value int) []byte {
+	switch bytes {
+	case 1:
+		return []byte{byte(value)}
+	case 2:
+		return []byte{byte(value), byte(value >> 8)}
+	default:
+		return []byte{byte(value), byte(value >> 8), byte(value >> 16), byte(value >> 24)}
+	}
 }
 
 // Return a hexadecimal string representation of a byte slice.
