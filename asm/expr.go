@@ -224,13 +224,6 @@ func (e *expr) eval(addr int, macros map[string]*expr, labels map[string]int) bo
 	return e.evaluated
 }
 
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 //
 // token
 //

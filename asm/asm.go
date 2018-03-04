@@ -18,13 +18,10 @@ import (
 
 // TODO:
 //  - Add .PAD pseudo-op
-//  - Add .HS pseudo-op
 
 var (
 	errParse = errors.New("parse error")
 )
-
-var hex = "0123456789ABCDEF"
 
 var modeName = []string{
 	"IMM",
@@ -58,10 +55,8 @@ var modeFormat = []string{
 	"%s",      // ACC
 }
 
-type pseudoOpFunc = func(a *assembler, line, label fstring, param interface{}) error
-
 type pseudoOpData struct {
-	fn    pseudoOpFunc
+	fn    func(a *assembler, line, label fstring, param interface{}) error
 	param interface{}
 }
 
@@ -77,6 +72,8 @@ var pseudoOps = map[string]pseudoOpData{
 	".word":   pseudoOpData{fn: (*assembler).parseData, param: 2},
 	".dd":     pseudoOpData{fn: (*assembler).parseData, param: 4},
 	".dword":  pseudoOpData{fn: (*assembler).parseData, param: 4},
+	".dh":     pseudoOpData{fn: (*assembler).parseHexString, param: nil},
+	".hs":     pseudoOpData{fn: (*assembler).parseHexString, param: nil},
 	".ex":     pseudoOpData{fn: (*assembler).parseExport, param: nil},
 	".export": pseudoOpData{fn: (*assembler).parseExport, param: nil},
 }
@@ -170,7 +167,8 @@ func (o *operand) size() int {
 	}
 }
 
-// A data segment contains one or more bytes of byte data.
+// A data segment contains 1 or more expressions that are evaluated to
+// produce binary data.
 type data struct {
 	unit  int     // unit size (1 or 2 bytes)
 	addr  int     // address assigned to the segment
@@ -191,6 +189,16 @@ func (d *data) bytes() int {
 		}
 	}
 	return n
+}
+
+// A bytes segment contains raw binary data.
+type bytedata struct {
+	addr int
+	b    []byte
+}
+
+func (b *bytedata) address() int {
+	return b.addr
 }
 
 // An export segment contains an exported address.
@@ -370,6 +378,11 @@ func (a *assembler) assignAddresses() error {
 			a.log("%04X  .DB Len:%d", ss.addr, bytes)
 			a.pc += bytes
 
+		case *bytedata:
+			ss.addr = a.pc
+			a.log("%04X  .HS Len:%d", ss.addr, len(ss.b))
+			a.pc += len(ss.b)
+
 		case *export:
 			ss.addr = a.pc
 		}
@@ -436,14 +449,11 @@ func (a *assembler) generateCode() error {
 					a.code = append(a.code, toBytes(ss.unit, e.value)...)
 				}
 			}
-			b := a.code[start:]
-			for i, n := 0, len(b); i < n; i += 3 {
-				j := i + 3
-				if j > n {
-					j = n
-				}
-				a.log("%04X-*%s", ss.addr+i, byteString(b[i:j]))
-			}
+			a.logBytes(ss.addr, a.code[start:])
+
+		case *bytedata:
+			a.code = append(a.code, ss.b...)
+			a.logBytes(ss.addr, ss.b)
 
 		case *export:
 			if ss.expr.op != opIdentifier || !ss.expr.address {
@@ -690,6 +700,32 @@ func (a *assembler) parseData(line, label fstring, param interface{}) error {
 	return nil
 }
 
+// Parse a hex-string pseudo-op.
+func (a *assembler) parseHexString(line, label fstring, param interface{}) error {
+	a.logLine(line, "hexstring=")
+
+	s, remain := line.consumeWhile(hexadecimal)
+	if !remain.isEmpty() {
+		a.addError(remain, "invalid hex string")
+		return errParse
+	}
+
+	if len(s.str)%2 != 0 {
+		a.addError(s, "hex-string has odd number of characters")
+		return errParse
+	}
+
+	seg := &bytedata{addr: -1}
+
+	for i := 0; i < len(s.str); i += 2 {
+		v := hexToByte(s.str[i:])
+		seg.b = append(seg.b, v)
+	}
+
+	a.segments = append(a.segments, seg)
+	return nil
+}
+
 func (a *assembler) parseExport(line, label fstring, param interface{}) error {
 	a.logLine(line, "export=")
 
@@ -871,6 +907,19 @@ func (a *assembler) logLine(line fstring, format string, args ...interface{}) {
 	}
 }
 
+// In verbose mode, log a series of bytes with starting address.
+func (a *assembler) logBytes(addr int, b []byte) {
+	if a.verbose {
+		for i, n := 0, len(b); i < n; i += 3 {
+			j := i + 3
+			if j > n {
+				j = n
+			}
+			a.log("%04X-*%s", addr+i, byteString(b[i:j]))
+		}
+	}
+}
+
 // In verbose mode, log a section header to the standard output.
 func (a *assembler) logSection(name string) {
 	if a.verbose {
@@ -984,35 +1033,4 @@ func (l fstring) consumeAbsolute() (mode go6502.Mode, expr fstring, remain fstri
 	}
 
 	return mode, expr, remain, err
-}
-
-// Return a little-endian representation of the value using the requested
-// number of bytes.
-func toBytes(bytes, value int) []byte {
-	switch bytes {
-	case 1:
-		return []byte{byte(value)}
-	case 2:
-		return []byte{byte(value), byte(value >> 8)}
-	default:
-		return []byte{byte(value), byte(value >> 8), byte(value >> 16), byte(value >> 24)}
-	}
-}
-
-// Return a hexadecimal string representation of a byte slice.
-func byteString(b []byte) string {
-	if len(b) < 1 {
-		return ""
-	}
-
-	s := make([]byte, len(b)*3-1)
-	i, j := 0, 0
-	for n := len(b) - 1; i < n; i, j = i+1, j+3 {
-		s[j+0] = hex[(b[i] >> 4)]
-		s[j+1] = hex[(b[i] & 0x0f)]
-		s[j+2] = ' '
-	}
-	s[j+0] = hex[(b[i] >> 4)]
-	s[j+1] = hex[(b[i] & 0x0f)]
-	return string(s)
 }

@@ -88,7 +88,7 @@ DATA:
 		.DB		-1, -129		; FF 7F
 		.DB		$12345678		; 78
 		.DB		0b01010101		; 55
-		.DB 		$ - .BYTES		; $ = curr line addr
+		.DB 		$ - .BYTES		; 12
 
 .WORDS		; .DW data works like .DB, except all numeric values are
 		; stored as 2-byte words. String literals are still stored
@@ -106,7 +106,7 @@ DATA:
 		.DW		-1, -129		; FF FF 7F FF
 		.DW		$12345678		; 78 56
 		.DW		0b11110101		; F5 00
-		.DW		$ - .WORDS		; $ = curr line addr
+		.DW		$ - .WORDS		; 20 00
 
 .DWORDS		; .DD data works like .DB and .DW, except all numeric values
 		; are stored as 4-byte double-words. String literals are still
@@ -124,6 +124,16 @@ DATA:
 		.DD		-1, -129		; FF FF FF FF 7F FF FF FF
 		.DD		$12345678		; 78 56 34 12
 		.DD		0b11110101		; F5 00 00 00
-		.DD		$ - .DWORDS		; $ = curr line addr
+		.DD		$ - .DWORDS		; 3E 00 00 00
+
+.DHEX		; .DH data is expressed as a chain of hexadecimal values,
+		; which are stored directly into the assembled data.
+
+		.DH		414200			; 41 42 00
+		.DH		4646			; 46 46
+		.DH		01			; 01
+		.DH		12345678		; 12 34 56 78
+		.DH		0123456789abcdef	; 01 23 45 67 89 AB CD EF
+		.DB		$ - .DHEX		; 12
 
 END
