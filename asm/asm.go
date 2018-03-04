@@ -17,7 +17,6 @@ import (
 )
 
 // TODO:
-//  - Handle negative values correctly
 //  - Introduce a "here" expression symbol
 
 var (
@@ -25,11 +24,6 @@ var (
 )
 
 var hex = "0123456789ABCDEF"
-
-var absolutePrefixes = []string{
-	"a:",
-	"abs:",
-}
 
 var modeName = []string{
 	"IMM",
@@ -137,13 +131,18 @@ type operand struct {
 }
 
 func (o *operand) getValue() int {
+	v := o.expr.value
+	if v < 0 {
+		v = 0x10000 + v
+	}
+
 	switch {
 	case o.forceLSB:
-		return o.expr.value & 0xff
+		return v & 0xff
 	case o.forceMSB:
-		return (o.expr.value >> 8) & 0xff
+		return (v >> 8) & 0xff
 	default:
-		return o.expr.value
+		return v
 	}
 }
 
@@ -154,7 +153,7 @@ func (o *operand) size() int {
 		return 0
 	case o.forceLSB || o.forceMSB:
 		return 1
-	case o.expr.address || o.forceAbsolute || o.expr.value > 0xff:
+	case o.expr.address || o.forceAbsolute || o.expr.value > 0xff || o.expr.value < -128:
 		return 2
 	default:
 		return 1
@@ -798,9 +797,15 @@ func (a *assembler) parseOperand(line fstring) (o operand, remain fstring, err e
 			return
 		}
 
+	case line.startsWithChar('A') && (line.startsWithString("A:") || line.startsWithString("ABS:")):
+		o.forceAbsolute = true
+		_, line = line.consumeUntilChar(':')
+		line = line.consume(1)
+		fallthrough
+
 	default:
 		var expr fstring
-		o.modeGuess, o.forceAbsolute, expr, remain, err = line.consumeAbsolute()
+		o.modeGuess, expr, remain, err = line.consumeAbsolute()
 		if err != nil {
 			a.addError(remain, "unknown addressing mode format")
 			return
@@ -968,16 +973,8 @@ func (l fstring) consumeIndirect() (mode go6502.Mode, expr fstring, remain fstri
 // Consume an absolute operand expression until an absolute
 // addressing mode substring is reached. Guess the addressing mode,
 // and return the expression substring.
-func (l fstring) consumeAbsolute() (mode go6502.Mode, forceAbsolute bool, expr fstring, remain fstring, err error) {
+func (l fstring) consumeAbsolute() (mode go6502.Mode, expr fstring, remain fstring, err error) {
 	expr, remain = l.consumeUntilChar(',')
-
-	for _, p := range absolutePrefixes {
-		if expr.startsWithStringI(p) {
-			expr = expr.consume(len(p))
-			forceAbsolute = true
-			break
-		}
-	}
 
 	switch {
 	case remain.startsWithString(",X"):
@@ -993,7 +990,7 @@ func (l fstring) consumeAbsolute() (mode go6502.Mode, forceAbsolute bool, expr f
 		err = errParse
 	}
 
-	return mode, forceAbsolute, expr, remain, err
+	return mode, expr, remain, err
 }
 
 // Return a hexadecimal string representation of a byte slice.

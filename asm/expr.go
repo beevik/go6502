@@ -79,8 +79,8 @@ var ops = []opdata{
 	{0, 0, false, "", nil}, // identifier
 
 	// pseudo-operations
-	{0, 1, false, "", nil}, // lparen
-	{0, 1, false, "", nil}, // rparen
+	{0, 0, false, "", nil}, // lparen
+	{0, 0, false, "", nil}, // rparen
 }
 
 func (op exprOp) isBinary() bool {
@@ -223,7 +223,7 @@ func (tt tokentype) isValue() bool {
 }
 
 func (tt tokentype) canPrecedeUnaryOp() bool {
-	return tt == tokenOp || tt == tokenLeftParen
+	return tt == tokenOp || tt == tokenLeftParen || tt == tokenNil
 }
 
 type token struct {
@@ -387,7 +387,7 @@ func (p *exprParser) parseToken(line fstring) (t token, remain fstring, err erro
 
 	default:
 		for i, o := range ops {
-			if o.symbol != "" && line.startsWithString(o.symbol) {
+			if o.children > 0 && line.startsWithString(o.symbol) {
 				if o.isBinary() || (o.isUnary() && p.prevTokenType.canPrecedeUnaryOp()) {
 					t.typ, t.op, remain = tokenOp, exprOp(i), line.consume(len(o.symbol))
 					break
