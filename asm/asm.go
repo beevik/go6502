@@ -17,7 +17,7 @@ import (
 )
 
 // TODO:
-//  - Introduce a "here" expression symbol
+//  - Allow expressions in .DB data declarations
 
 var (
 	errParse = errors.New("parse error")
@@ -173,11 +173,12 @@ func (d *data) address() int {
 
 // An export segment contains an exported address.
 type export struct {
+	addr int
 	expr *expr
 }
 
 func (e *export) address() int {
-	return 0
+	return e.addr
 }
 
 // An asmerror is used to keep track of errors encountered
@@ -187,22 +188,28 @@ type asmerror struct {
 	msg  string  // error message
 }
 
+// An unevaluated expression
+type uneval struct {
+	expr  *expr
+	segno int // The expression's segment index
+}
+
 // The assembler is a state object used during the assembly of
 // machine code from assembly code.
 type assembler struct {
-	origin     int              // requested origin
-	pc         int              // the program counter
-	code       []byte           // generated machine code
-	scanner    *bufio.Scanner   // scans the io reader
-	scopeLabel fstring          // label currently in scope
-	macros     map[string]*expr // macro -> expression
-	labels     map[string]int   // label -> segment index
-	exports    []Export         // exported addresses
-	segments   []segment        // segment of machine code
-	uneval     []*expr          // expressions requiring evaluation
-	verbose    bool             // verbose output
-	exprParser exprParser       // used to parse math expressions
-	errors     []asmerror       // errors encountered during assembly
+	origin      int              // requested origin
+	pc          int              // the program counter
+	code        []byte           // generated machine code
+	scanner     *bufio.Scanner   // scans the io reader
+	scopeLabel  fstring          // label currently in scope
+	macros      map[string]*expr // macro -> expression
+	labels      map[string]int   // label -> segment index
+	exports     []Export         // exported addresses
+	segments    []segment        // segment of machine code
+	unevaluated []uneval         // expressions requiring evaluation
+	verbose     bool             // verbose output
+	exprParser  exprParser       // used to parse math expressions
+	errors      []asmerror       // errors encountered during assembly
 }
 
 // An Export describes an exported address.
@@ -223,7 +230,7 @@ type Result struct {
 func Assemble(r io.Reader, verbose bool) (*Result, error) {
 	a := &assembler{
 		origin:   0x600,
-		pc:       0x600,
+		pc:       -1,
 		scanner:  bufio.NewScanner(r),
 		macros:   make(map[string]*expr),
 		labels:   make(map[string]int),
@@ -281,23 +288,38 @@ func (a *assembler) parse() error {
 	return nil
 }
 
+// Add an expression to the "unevaluated" list.
+func (a *assembler) pushUnevaluated(e *expr) {
+	a.unevaluated = append(a.unevaluated, uneval{expr: e, segno: len(a.segments)})
+}
+
+// Return the address assigned to the requested segment.
+func (a *assembler) segaddr(segno int) int {
+	switch {
+	case segno < len(a.segments):
+		return a.segments[segno].address()
+	default:
+		return a.pc
+	}
+}
+
 // Evaluate all unevaluated expression trees using macros and labels.
 func (a *assembler) evaluateExpressions() error {
 	a.logSection("Evaluating expressions")
 	for {
-		var uneval []*expr
-		for _, e := range a.uneval {
-			if e.eval(a.macros, a.labels) {
-				a.log("%-25s Val:$%X", e.String(), e.value)
+		var unevaluated []uneval
+		for _, u := range a.unevaluated {
+			if u.expr.eval(a.segaddr(u.segno), a.macros, a.labels) {
+				a.log("%-25s Val:$%X", u.expr.String(), u.expr.value)
 			} else {
-				a.log("%-25s Val:????? isaddr:%v", e.String(), e.address)
-				uneval = append(uneval, e)
+				a.log("%-25s Val:????? isaddr:%v", u.expr.String(), u.expr.address)
+				unevaluated = append(unevaluated, u)
 			}
 		}
-		if len(uneval) == len(a.uneval) {
+		if len(unevaluated) == len(a.unevaluated) {
 			break
 		}
-		a.uneval = uneval
+		a.unevaluated = unevaluated
 	}
 	return nil
 }
@@ -305,6 +327,7 @@ func (a *assembler) evaluateExpressions() error {
 // Determine addresses of all code segments.
 func (a *assembler) assignAddresses() error {
 	a.logSection("Assigning addresses")
+	a.pc = a.origin
 	for _, s := range a.segments {
 		switch ss := s.(type) {
 		case *instruction:
@@ -323,22 +346,19 @@ func (a *assembler) assignAddresses() error {
 			ss.addr = a.pc
 			a.log("%04X  .DB Len:%d", ss.addr, len(ss.bytes))
 			a.pc += len(ss.bytes)
+
+		case *export:
+			ss.addr = a.pc
 		}
 	}
 	return nil
 }
 
-// Resolve all address labels.
+// Resolve all labels to addresses.
 func (a *assembler) resolveLabels() error {
 	a.logSection("Resolving labels")
 	for label, segno := range a.labels {
-		var addr int
-		switch {
-		case segno < len(a.segments):
-			addr = a.segments[segno].address()
-		default:
-			addr = a.pc
-		}
+		addr := a.segaddr(segno)
 		a.log("%-15s Seg:%-3d Addr:$%04X", label, segno, addr)
 		a.macros[label] = &expr{op: opNumber, value: addr, evaluated: true}
 	}
@@ -347,16 +367,16 @@ func (a *assembler) resolveLabels() error {
 
 // Cause an error if there are any unevaluated expressions.
 func (a *assembler) handleUnevaluatedExpressions() error {
-	if len(a.uneval) > 0 {
-		for _, e := range a.uneval {
-			a.addError(e.line, "unresolved expression")
+	if len(a.unevaluated) > 0 {
+		for _, u := range a.unevaluated {
+			a.addError(u.expr.line, "unresolved expression")
 		}
 		return errParse
 	}
 	return nil
 }
 
-// Generate code
+// Generate machine code.
 func (a *assembler) generateCode() error {
 	a.logSection("Generating code")
 	for _, s := range a.segments {
@@ -491,8 +511,10 @@ func (a *assembler) storeLabel(label fstring) error {
 	}
 
 	// Associate the label with its segment number.
-	a.labels[label.str] = len(a.segments)
-	a.logLine(label, "label=%s [%d]", label.str, len(a.segments))
+	segno := len(a.segments)
+	a.labels[label.str] = segno
+	a.logLine(label, "label=%s", label.str)
+	a.logLine(label, "seg=%d", segno)
 	return nil
 }
 
@@ -555,8 +577,8 @@ func (a *assembler) parseMacro(line, label fstring) error {
 
 	// Attempt to evaluate the macro expression immediately. If not possible,
 	// add it to a list of unevaluated expressions.
-	if !e.eval(a.macros, a.labels) {
-		a.uneval = append(a.uneval, e)
+	if !e.eval(-1, a.macros, a.labels) {
+		a.pushUnevaluated(e)
 	}
 
 	a.logLine(line, "expr=%s", e.String())
@@ -587,7 +609,7 @@ func (a *assembler) parseOrigin(line, label fstring) error {
 		return errParse
 	}
 
-	if !e.eval(a.macros, a.labels) {
+	if !e.eval(-1, a.macros, a.labels) {
 		a.addError(e.identifier, "unable to evaluate expression")
 		return errParse
 	}
@@ -596,11 +618,10 @@ func (a *assembler) parseOrigin(line, label fstring) error {
 	a.logLine(line, "val=$%04X", e.value)
 
 	a.origin = e.value
-	a.pc = e.value
 	return nil
 }
 
-// Parse a .BYTES pseudo-op
+// Parse a bytes (.DB) pseudo-op.
 func (a *assembler) parseBytes(line, label fstring) error {
 	a.logLine(line, "bytes=")
 
@@ -657,7 +678,7 @@ func (a *assembler) parseBytes(line, label fstring) error {
 		}
 	}
 
-	seg := &data{bytes: b}
+	seg := &data{addr: -1, bytes: b}
 	a.segments = append(a.segments, seg)
 	return nil
 }
@@ -674,8 +695,8 @@ func (a *assembler) parseAt(line, label fstring) error {
 	}
 
 	// Attempt to evaluate the expression immediately.
-	if !e.eval(a.macros, a.labels) {
-		a.uneval = append(a.uneval, e)
+	if !e.eval(-1, a.macros, a.labels) {
+		a.pushUnevaluated(e)
 	}
 
 	if !label.isEmpty() {
@@ -709,8 +730,8 @@ func (a *assembler) parseExport(line, label fstring) error {
 	}
 
 	// Attempt to evaluate the expression immediately.
-	if !e.eval(a.macros, a.labels) {
-		a.uneval = append(a.uneval, e)
+	if !e.eval(-1, a.macros, a.labels) {
+		a.pushUnevaluated(e)
 	}
 
 	a.logLine(line, "expr=%s", e.String())
@@ -721,7 +742,7 @@ func (a *assembler) parseExport(line, label fstring) error {
 		a.logLine(line, "val=(uneval)")
 	}
 
-	seg := &export{expr: e}
+	seg := &export{addr: -1, expr: e}
 	a.segments = append(a.segments, seg)
 	return nil
 }
@@ -754,7 +775,7 @@ func (a *assembler) parseInstruction(line fstring) error {
 	}
 
 	// Create a code segment for the instruction
-	seg := &instruction{opcode: opcode, operand: operand}
+	seg := &instruction{addr: -1, opcode: opcode, operand: operand}
 	a.segments = append(a.segments, seg)
 	return nil
 }
@@ -817,9 +838,10 @@ func (a *assembler) parseOperand(line fstring) (o operand, remain fstring, err e
 		}
 	}
 
-	if !o.expr.eval(a.macros, a.labels) {
-		a.uneval = append(a.uneval, o.expr)
+	if !o.expr.eval(-1, a.macros, a.labels) {
+		a.pushUnevaluated(o.expr)
 	}
+
 	a.logLine(remain, "expr=%s", o.expr)
 	a.logLine(remain, "mode=%s", modeName[o.modeGuess])
 	switch o.expr.evaluated {

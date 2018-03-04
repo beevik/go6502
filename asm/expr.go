@@ -34,6 +34,7 @@ const (
 	// value "operations"
 	opNumber
 	opIdentifier
+	opHere
 
 	// pseudo-operations (used only during parsing but not stored in expr's)
 	opLeftParen
@@ -77,6 +78,7 @@ var ops = []opdata{
 	// value "operations"
 	{0, 0, false, "", nil}, // number
 	{0, 0, false, "", nil}, // identifier
+	{0, 0, false, "", nil}, // here
 
 	// pseudo-operations
 	{0, 0, false, "", nil}, // lparen
@@ -147,6 +149,8 @@ func (e *expr) String() string {
 			return "~" + e.scopeLabel.str + e.identifier.str
 		}
 		return e.identifier.str
+	case e.op == opHere:
+		return "$"
 	case e.op.isBinary():
 		return fmt.Sprintf("%s %s %s", e.child0.String(), e.child1.String(), e.op.symbol())
 	case !e.op.isBinary():
@@ -157,7 +161,7 @@ func (e *expr) String() string {
 }
 
 // Evaluate the expression tree.
-func (e *expr) eval(macros map[string]*expr, labels map[string]int) bool {
+func (e *expr) eval(addr int, macros map[string]*expr, labels map[string]int) bool {
 	if !e.evaluated {
 		switch {
 		case e.op == opNumber:
@@ -171,29 +175,31 @@ func (e *expr) eval(macros map[string]*expr, labels map[string]int) bool {
 				ident = e.identifier.str
 			}
 			if m, ok := macros[ident]; ok && m.evaluated {
-				e.value = m.value
-				e.evaluated = true
+				e.value, e.evaluated = m.value, true
 			}
 			if _, ok := labels[ident]; ok {
 				e.address = true
 			}
 
+		case e.op == opHere:
+			if addr != -1 {
+				e.value, e.address, e.evaluated = addr, true, true
+			}
+
 		case e.op.isBinary():
-			e.child0.eval(macros, labels)
-			e.child1.eval(macros, labels)
+			e.child0.eval(addr, macros, labels)
+			e.child1.eval(addr, macros, labels)
 			if e.child0.evaluated && e.child1.evaluated {
-				e.value = e.op.eval(e.child0.value, e.child1.value)
-				e.evaluated = true
+				e.value, e.evaluated = e.op.eval(e.child0.value, e.child1.value), true
 			}
 			if e.child0.address || e.child1.address {
 				e.address = true
 			}
 
 		default:
-			e.child0.eval(macros, labels)
+			e.child0.eval(addr, macros, labels)
 			if e.child0.evaluated {
-				e.value = e.op.eval(e.child0.value, 0)
-				e.evaluated = true
+				e.value, e.evaluated = e.op.eval(e.child0.value, 0), true
 			}
 			if e.child0.address {
 				e.address = true
@@ -214,12 +220,13 @@ const (
 	tokenOp
 	tokenNumber
 	tokenIdentifier
+	tokenHere
 	tokenLeftParen
 	tokenRightParen
 )
 
 func (tt tokentype) isValue() bool {
-	return tt == tokenNumber || tt == tokenIdentifier
+	return tt == tokenNumber || tt == tokenIdentifier || tt == tokenHere
 }
 
 func (tt tokentype) canPrecedeUnaryOp() bool {
@@ -288,6 +295,10 @@ func (p *exprParser) parse(line, scopeLabel fstring, flags parseFlags) (e *expr,
 			}
 			p.operandStack.push(e)
 
+		case tokenHere:
+			e := &expr{op: opHere}
+			p.operandStack.push(e)
+
 		case tokenOp:
 			for err == nil && !p.operatorStack.empty() && token.op.collapses(p.operatorStack.peek()) {
 				err = p.operandStack.collapse(p.operatorStack.pop())
@@ -346,6 +357,10 @@ func (p *exprParser) parseToken(line fstring) (t token, remain fstring, err erro
 	}
 
 	switch {
+	case line.startsWithChar('$') && (len(line.str) == 1 || !hexadecimal(line.str[1])):
+		remain = line.consume(1)
+		t.typ = tokenHere
+
 	case line.startsWith(decimal) || line.startsWithChar('$'):
 		t.number, _, remain, err = p.parseNumber(line)
 		t.typ = tokenNumber
