@@ -5,10 +5,11 @@
 ; -------
 
 		.EX	START
-		.EX	START.1
 		.EX	LDA_TEST
 		.EX	LDX_TEST
 		.EX	END
+		.EX	DATA
+		.EX	DATA_END
 
 
 ; ---------
@@ -25,10 +26,11 @@ START:
 		JSR LDA_TEST
 		JSR LDX_TEST
 		JSR LDY_TEST
-		LDA #0
 		BEQ .1
 		LDX /('$'+LDY_TEST)
 .1		BRK
+
+START.1:
 
 LDA_TEST	LDA #$20	; Immediate
 		LDA $20		; Zero page
@@ -56,8 +58,13 @@ LDY_TEST	LDY #$20	; Immediate
 		LDY $0200	; Absolute
 		LDY $0200,X	; Absolute + X
 		RTS
-
-		.DB		"String  ", $00, $0102
-		.DB		$03040506, '<, '<'
-		.DB 		/String 2/
 END
+
+DATA:
+		.DB		"String  ", $00
+		.DB		$0102, $03040506
+		.DB		'<, '<'
+		.DB 		-$01, -$0001
+		.DB		-1, -129
+		.DB		0b01010101, -0b01010101
+DATA_END

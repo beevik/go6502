@@ -144,7 +144,7 @@ func (e *expr) String() string {
 		return fmt.Sprintf("%d", e.value)
 	case e.op == opIdentifier:
 		if e.address && e.identifier.startsWithChar('.') {
-			return e.scopeLabel.str + e.identifier.str
+			return "~" + e.scopeLabel.str + e.identifier.str
 		}
 		return e.identifier.str
 	case e.op.isBinary():
@@ -166,7 +166,7 @@ func (e *expr) eval(macros map[string]*expr, labels map[string]int) bool {
 		case e.op == opIdentifier:
 			var ident string
 			if e.identifier.startsWithChar('.') {
-				ident = e.scopeLabel.str + e.identifier.str
+				ident = "~" + e.scopeLabel.str + e.identifier.str
 			} else {
 				ident = e.identifier.str
 			}
@@ -426,7 +426,12 @@ func (p *exprParser) parseToken(line fstring) (t token, remain fstring, err erro
 // and the minimum number of bytes required to hold the value is returned.
 func (p *exprParser) parseNumber(line fstring) (value, bytes int, remain fstring, err error) {
 	// Select decimal, hexadecimal or binary depending on the prefix.
-	base, fn, bitsPerChar := 10, decimal, 0
+	base, fn, bitsPerChar, negative := 10, decimal, 0, false
+	if line.startsWithChar('-') {
+		negative = true
+		line = line.consume(1)
+	}
+
 	switch {
 	case line.startsWithChar('$'):
 		line = line.consume(1)
@@ -448,23 +453,37 @@ func (p *exprParser) parseNumber(line fstring) (value, bytes int, remain fstring
 	}
 
 	value = int(num64)
-	bytes = len(numstr.str)
 
-	switch bitsPerChar {
-	case 0:
-		switch {
-		case value < 0x100:
-			bytes = 1
-		case value < 0x10000:
-			bytes = 2
-		default:
-			bytes = 4
+	if base == 10 {
+		switch negative {
+		case true:
+			switch {
+			case value <= 0x80:
+				return 0x100 - value, 1, remain, err
+			case value <= 0x8000:
+				return 0x10000 - value, 2, remain, err
+			default:
+				return 0x100000000 - value, 4, remain, err
+			}
+		case false:
+			switch {
+			case value <= 0xff:
+				return value, 1, remain, err
+			case value <= 0xffff:
+				return value, 2, remain, err
+			default:
+				return value, 4, remain, err
+			}
 		}
-	default:
-		bytes = (bytes*bitsPerChar + 7) / 8
-		if bytes > 2 {
-			bytes = 4
-		}
+	}
+
+	bytes = (len(numstr.str)*bitsPerChar + 7) / 8
+	if bytes > 2 {
+		bytes = 4
+	}
+
+	if negative {
+		value = -value
 	}
 
 	return value, bytes, remain, err

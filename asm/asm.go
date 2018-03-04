@@ -480,7 +480,7 @@ func (a *assembler) storeLabel(label fstring) error {
 			a.addError(label, "no global label '%s' previously defined", label.str)
 			return errParse
 		}
-		label.str = a.scopeLabel.str + label.str
+		label.str = "~" + a.scopeLabel.str + label.str
 	} else {
 		a.scopeLabel = label
 	}
