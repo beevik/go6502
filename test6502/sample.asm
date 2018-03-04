@@ -27,7 +27,7 @@ START:
 		JSR LDY_TEST
 		LDA #0
 		BEQ .1
-		LDX #'$'+$80
+		LDX /('$'+LDY_TEST)
 .1		BRK
 
 LDA_TEST	LDA #$20	; Immediate

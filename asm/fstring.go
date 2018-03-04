@@ -137,6 +137,10 @@ func wordChar(c byte) bool {
 	return c != ' ' && c != '\t'
 }
 
+func bytesDelimiter(c byte) bool {
+	return whitespace(c) || c == ','
+}
+
 func alpha(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }

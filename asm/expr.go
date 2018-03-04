@@ -42,39 +42,53 @@ const (
 
 type opdata struct {
 	precedence      byte
-	binary          bool
+	children        int
 	leftAssociative bool
 	symbol          string
 	eval            func(a, b int) int
 }
 
-var ops = []opdata{
-	// unary and binary operations
-	{7, false, false, "-", func(a, b int) int { return -a }},             // uminus
-	{7, false, false, "+", func(a, b int) int { return -a }},             // uplus
-	{7, false, false, "~", func(a, b int) int { return 0xffffffff ^ a }}, // bitneg
-	{6, true, true, "*", func(a, b int) int { return a * b }},            // multiply
-	{6, true, true, "/", func(a, b int) int { return a / b }},            // divide
-	{6, true, true, "%", func(a, b int) int { return a % b }},            // modulo
-	{5, true, true, "+", func(a, b int) int { return a + b }},            // add
-	{5, true, true, "-", func(a, b int) int { return a - b }},            // subtract
-	{4, true, true, "<<", func(a, b int) int { return a << uint32(b) }},  // shift_left
-	{4, true, true, ">>", func(a, b int) int { return a >> uint32(b) }},  // shift_right
-	{3, true, true, "&", func(a, b int) int { return a & b }},            // and
-	{2, true, true, "^", func(a, b int) int { return a ^ b }},            // xor
-	{1, true, true, "|", func(a, b int) int { return a | b }},            // or
+func (o *opdata) isBinary() bool {
+	return o.children == 2
+}
 
-	// value operations
-	{0, false, false, "", nil}, // number
-	{0, false, false, "", nil}, // identifier
+func (o *opdata) isUnary() bool {
+	return o.children == 1
+}
+
+var ops = []opdata{
+	// unary operations
+	{7, 1, false, "-", func(a, b int) int { return -a }},             // uminus
+	{7, 1, false, "+", func(a, b int) int { return a }},              // uplus
+	{7, 1, false, "~", func(a, b int) int { return 0xffffffff ^ a }}, // bitneg
+
+	// binary operations
+	{6, 2, true, "*", func(a, b int) int { return a * b }},           // multiply
+	{6, 2, true, "/", func(a, b int) int { return a / b }},           // divide
+	{6, 2, true, "%", func(a, b int) int { return a % b }},           // modulo
+	{5, 2, true, "+", func(a, b int) int { return a + b }},           // add
+	{5, 2, true, "-", func(a, b int) int { return a - b }},           // subtract
+	{4, 2, true, "<<", func(a, b int) int { return a << uint32(b) }}, // shift_left
+	{4, 2, true, ">>", func(a, b int) int { return a >> uint32(b) }}, // shift_right
+	{3, 2, true, "&", func(a, b int) int { return a & b }},           // and
+	{2, 2, true, "^", func(a, b int) int { return a ^ b }},           // xor
+	{1, 2, true, "|", func(a, b int) int { return a | b }},           // or
+
+	// value "operations"
+	{0, 0, false, "", nil}, // number
+	{0, 0, false, "", nil}, // identifier
 
 	// pseudo-operations
-	{0, false, false, "", nil}, // lparen
-	{0, false, false, "", nil}, // rparen
+	{0, 1, false, "", nil}, // lparen
+	{0, 1, false, "", nil}, // rparen
 }
 
 func (op exprOp) isBinary() bool {
-	return ops[op].binary
+	return ops[op].isBinary()
+}
+
+func (op exprOp) isUnary() bool {
+	return ops[op].isUnary()
 }
 
 func (op exprOp) eval(a, b int) int {
@@ -148,6 +162,7 @@ func (e *expr) eval(macros map[string]*expr, labels map[string]int) bool {
 		switch {
 		case e.op == opNumber:
 			e.evaluated = true
+
 		case e.op == opIdentifier:
 			var ident string
 			if e.identifier.startsWithChar('.') {
@@ -162,6 +177,7 @@ func (e *expr) eval(macros map[string]*expr, labels map[string]int) bool {
 			if _, ok := labels[ident]; ok {
 				e.address = true
 			}
+
 		case e.op.isBinary():
 			e.child0.eval(macros, labels)
 			e.child1.eval(macros, labels)
@@ -172,6 +188,7 @@ func (e *expr) eval(macros map[string]*expr, labels map[string]int) bool {
 			if e.child0.address || e.child1.address {
 				e.address = true
 			}
+
 		default:
 			e.child0.eval(macros, labels)
 			if e.child0.evaluated {
@@ -205,8 +222,12 @@ func (tt tokentype) isValue() bool {
 	return tt == tokenNumber || tt == tokenIdentifier
 }
 
+func (tt tokentype) canPrecedeUnaryOp() bool {
+	return tt == tokenOp || tt == tokenLeftParen
+}
+
 type token struct {
-	tt         tokentype
+	typ        tokentype
 	number     int
 	identifier fstring
 	op         exprOp
@@ -221,7 +242,7 @@ type exprParser struct {
 	operatorStack opStack
 	parenCounter  int
 	flags         parseFlags
-	prevToken     token
+	prevTokenType tokentype
 	errors        []asmerror
 }
 
@@ -229,7 +250,7 @@ type exprParser struct {
 func (p *exprParser) parse(line, scopeLabel fstring, flags parseFlags) (e *expr, remain fstring, err error) {
 	p.errors = nil
 	p.flags = flags
-	p.prevToken = token{}
+	p.prevTokenType = tokenNil
 
 	orig := line
 
@@ -244,24 +265,34 @@ func (p *exprParser) parse(line, scopeLabel fstring, flags parseFlags) (e *expr,
 		}
 
 		// We're done when the token parser returns the nil token
-		if token.tt == tokenNil {
+		if token.typ == tokenNil {
 			break
 		}
 
 		// Handle each possible token type
-		switch token.tt {
+		switch token.typ {
 
 		case tokenNumber:
-			p.operandStack.push(&expr{op: opNumber, value: token.number, evaluated: true})
+			e := &expr{
+				op:        opNumber,
+				value:     token.number,
+				evaluated: true,
+			}
+			p.operandStack.push(e)
 
 		case tokenIdentifier:
-			p.operandStack.push(&expr{op: opIdentifier, identifier: token.identifier, scopeLabel: scopeLabel})
+			e := &expr{
+				op:         opIdentifier,
+				identifier: token.identifier,
+				scopeLabel: scopeLabel,
+			}
+			p.operandStack.push(e)
 
 		case tokenOp:
 			for err == nil && !p.operatorStack.empty() && token.op.collapses(p.operatorStack.peek()) {
 				err = p.operandStack.collapse(p.operatorStack.pop())
 				if err != nil {
-					p.addError(line, "expression parse failure")
+					p.addError(line, "invalid expression")
 				}
 			}
 			p.operatorStack.push(token.op)
@@ -282,7 +313,7 @@ func (p *exprParser) parse(line, scopeLabel fstring, flags parseFlags) (e *expr,
 				}
 				err = p.operandStack.collapse(op)
 				if err != nil {
-					p.addError(line, "expression parse failure")
+					p.addError(line, "invalid expression")
 				}
 			}
 
@@ -294,7 +325,7 @@ func (p *exprParser) parse(line, scopeLabel fstring, flags parseFlags) (e *expr,
 	for err == nil && !p.operatorStack.empty() {
 		err = p.operandStack.collapse(p.operatorStack.pop())
 		if err != nil {
-			p.addError(line, "expression parse failure")
+			p.addError(line, "invalid expression")
 			err = errParse
 		}
 	}
@@ -305,74 +336,80 @@ func (p *exprParser) parse(line, scopeLabel fstring, flags parseFlags) (e *expr,
 	}
 
 	p.reset()
-	return
+	return e, remain, err
 }
 
 // Attempt to parse the next token from the line.
-func (p *exprParser) parseToken(line fstring) (t token, out fstring, err error) {
+func (p *exprParser) parseToken(line fstring) (t token, remain fstring, err error) {
 	if line.isEmpty() {
-		t.tt, out = tokenNil, line
-		return
+		return token{typ: tokenNil}, line, nil
 	}
-	switch {
 
-	case line.startsWith(decimal) || line.startsWithChar('$') || line.startsWithChar('\''):
-		t.number, _, out, err = p.parseNumber(line)
-		t.tt = tokenNumber
-		if p.prevToken.tt.isValue() || p.prevToken.tt == tokenRightParen {
-			p.addError(line, "expression parse failure")
+	switch {
+	case line.startsWith(decimal) || line.startsWithChar('$'):
+		t.number, _, remain, err = p.parseNumber(line)
+		t.typ = tokenNumber
+		if p.prevTokenType.isValue() || p.prevTokenType == tokenRightParen {
+			p.addError(line, "invalid numeric literal")
+			err = errParse
+		}
+
+	case line.startsWithChar('\''):
+		t.number, remain, err = p.parseCharLiteral(line)
+		t.typ = tokenNumber
+		if p.prevTokenType.isValue() || p.prevTokenType == tokenRightParen {
+			p.addError(line, "invalid character literal")
 			err = errParse
 		}
 
 	case line.startsWithChar('(') && (p.flags&disallowParentheses) == 0:
 		p.parenCounter++
-		t.tt, t.op = tokenLeftParen, opLeftParen
-		out = line.consume(1)
+		t.typ, t.op = tokenLeftParen, opLeftParen
+		remain = line.consume(1)
 
 	case line.startsWithChar(')') && (p.flags&disallowParentheses) == 0:
 		if p.parenCounter == 0 {
 			p.addError(line, "mismatched parentheses")
 			err = errParse
-			out = line.consume(1)
+			remain = line.consume(1)
 		} else {
 			p.parenCounter--
-			t.tt, t.op, out = tokenRightParen, opRightParen, line.consume(1)
+			t.typ, t.op, remain = tokenRightParen, opRightParen, line.consume(1)
 		}
 
 	case line.startsWith(identifierStartChar):
-		t.tt = tokenIdentifier
-		t.identifier, out = line.consumeWhile(identifierChar)
-		if p.prevToken.tt.isValue() || p.prevToken.tt == tokenRightParen {
-			p.addError(line, "expression parse failure")
+		t.typ = tokenIdentifier
+		t.identifier, remain = line.consumeWhile(identifierChar)
+		if p.prevTokenType.isValue() || p.prevTokenType == tokenRightParen {
+			p.addError(line, "invalid identifier")
 			err = errParse
 		}
 
 	default:
 		for i, o := range ops {
 			if o.symbol != "" && line.startsWithString(o.symbol) {
-				if o.binary || (!o.binary && !p.prevToken.tt.isValue() && p.prevToken.tt != tokenRightParen) {
-					t.tt, t.op, out = tokenOp, exprOp(i), line.consume(len(o.symbol))
+				if o.isBinary() || (o.isUnary() && p.prevTokenType.canPrecedeUnaryOp()) {
+					t.typ, t.op, remain = tokenOp, exprOp(i), line.consume(len(o.symbol))
 					break
 				}
 			}
 		}
-		if t.tt != tokenOp {
-			p.addError(line, "expression parse failure")
+		if t.typ != tokenOp {
+			p.addError(line, "invalid operation")
 			err = errParse
 		}
 	}
 
-	p.prevToken = t
-	out = out.consumeWhitespace()
-	return
+	p.prevTokenType = t.typ
+	remain = remain.consumeWhitespace()
+	return t, remain, err
 }
 
 // Parse a number from the line. The following numeric formats are allowed:
-//   [0-9]+   			Decimal number
-//   $[0-9a-fA-F]+		Hexadecimal number
-//	 0x[0-9a-fA-F]+ 	Hexadecimal number
-//	 0b[01]+ 			Binary number
-//   '[any-char]'		ASCII character
+//   [0-9]+           Decimal number
+//   $[0-9a-fA-F]+    Hexadecimal number
+//   0x[0-9a-fA-F]+   Hexadecimal number
+//   0b[01]+          Binary number
 //
 // The function returns the parsed value, the number of bytes used to
 // hold the value, the remainder of the line, and any parsing error
@@ -388,14 +425,12 @@ func (p *exprParser) parseToken(line fstring) (t token, out fstring, err error) 
 // If a decimal number if parsed, the length of the parsed string is ignored,
 // and the minimum number of bytes required to hold the value is returned.
 func (p *exprParser) parseNumber(line fstring) (value, bytes int, remain fstring, err error) {
-	// Select decimal, hexadecimal or binary depending on the prefix
+	// Select decimal, hexadecimal or binary depending on the prefix.
 	base, fn, bitsPerChar := 10, decimal, 0
 	switch {
 	case line.startsWithChar('$'):
 		line = line.consume(1)
 		base, fn, bitsPerChar = 16, hexadecimal, 4
-	case line.startsWithChar('\''):
-		return p.parseCharLiteral(line)
 	case line.startsWithString("0x"):
 		line = line.consume(2)
 		base, fn, bitsPerChar = 16, hexadecimal, 4
@@ -404,19 +439,17 @@ func (p *exprParser) parseNumber(line fstring) (value, bytes int, remain fstring
 		base, fn, bitsPerChar = 2, binary, 1
 	}
 
-	// Consume the number and update the remaining line
 	numstr, remain := line.consumeWhile(fn)
 
-	// Convert the string to an integer
 	num64, converr := strconv.ParseInt(numstr.str, base, 32)
 	if converr != nil {
-		p.addError(numstr, "integer parse failure")
+		p.addError(numstr, "invalid numeric literal")
 		err = errParse
 	}
 
 	value = int(num64)
+	bytes = len(numstr.str)
 
-	l := len(numstr.str)
 	switch bitsPerChar {
 	case 0:
 		switch {
@@ -428,31 +461,44 @@ func (p *exprParser) parseNumber(line fstring) (value, bytes int, remain fstring
 			bytes = 4
 		}
 	default:
-		bytes = (l*bitsPerChar + 7) / 8
+		bytes = (bytes*bitsPerChar + 7) / 8
 		if bytes > 2 {
 			bytes = 4
 		}
 	}
 
-	return
+	return value, bytes, remain, err
 }
 
-func (p *exprParser) parseCharLiteral(line fstring) (value, bytes int, remain fstring, err error) {
+func (p *exprParser) parseStringLiteral(line fstring) (s, remain fstring, err error) {
+	quote := line.str[0]
+	remain = line.consume(1)
+
+	s, remain = remain.consumeUntilChar(quote)
+	if remain.isEmpty() {
+		p.addError(remain, "string literal missing closing quote")
+		return fstring{}, remain, errParse
+	}
+
+	remain = remain.consume(1)
+	return s, remain, nil
+}
+
+func (p *exprParser) parseCharLiteral(line fstring) (value int, remain fstring, err error) {
 	if len(line.str) < 2 {
 		p.addError(line, "invalid character literal")
-		err = errParse
-		return
+		return 0, fstring{}, errParse
 	}
 
 	value = int(line.str[1])
-	bytes = 1
 	switch {
 	case len(line.str) > 2 && line.str[2] == '\'':
 		remain = line.consume(3)
 	default:
 		remain = line.consume(2)
 	}
-	return
+
+	return value, remain, nil
 }
 
 func (p *exprParser) addError(line fstring, msg string) {
@@ -501,18 +547,30 @@ func (s *exprStack) collapse(op exprOp) error {
 	switch {
 	case !op.isCollapsible():
 		return errParse
+
 	case op.isBinary():
 		if len(s.data) < 2 {
 			return errParse
 		}
-		s.push(&expr{op: op, child1: s.pop(), child0: s.pop()})
+		e := &expr{
+			op:     op,
+			child1: s.pop(),
+			child0: s.pop(),
+		}
+		s.push(e)
+		return nil
+
 	default:
 		if s.empty() {
 			return errParse
 		}
-		s.push(&expr{op: op, child0: s.pop()})
+		e := &expr{
+			op:     op,
+			child0: s.pop(),
+		}
+		s.push(e)
+		return nil
 	}
-	return nil
 }
 
 //
