@@ -1,8 +1,14 @@
-		.ORG		$0600
+; Sample program illustrating some of the features of the go6502 macro
+; assembler.
+
+		.ORG		$0600	; origin address for machine code
 
 ; -------
 ; Exports
 ; -------
+
+		; Exported labels are reported by the assembler with
+		; their assigned addresses.
 
 		.EX		START
 		.EX		DATA
@@ -13,20 +19,25 @@
 ; Constants
 ; ---------
 
+		; .EQ defines a macro. A macro may be a literal (numeric or
+		; character). Or it may be an expression including literals,
+		; address labels, and other macros. Such macros may appear in
+		; expressions anywhere else in the source code.
+
 STORE		.EQ		$0200
 
 ; -------
 ; Program
 ; -------
 
-START:				; Labels can end with ':'
+START:				; Labels may end in ':', which is ignored.
 		JSR LDA_TEST
 		JSR LDX_TEST
 		JSR LDY_TEST
-		BEQ .1		; Branch to local label ('.' prefix)
+		BEQ .1		; Branch to a local label ('.' prefix)
 		LDA /DATA	; Upper byte of DATA
                 LDX #DATA	; Lower byte of DATA
-.1		BRK
+.1		BRK		; .1 label is valid only within START scope.
 
 LDA_TEST	LDA #$20	; Immediate
 		LDA $20		; Zero page
@@ -37,7 +48,7 @@ LDA_TEST	LDA #$20	; Immediate
 		LDA ABS:$20	; Absolute (forced)
 		LDA $0200,X	; Absolute + X
 		LDA $0200,Y	; Absolute + Y
-.1		RTS
+		RTS
 
 LDX_TEST	LDX #$20	; Immediate
 		LDX $20		; Zero page
@@ -45,9 +56,7 @@ LDX_TEST	LDX #$20	; Immediate
 		LDX $0200	; Absolute
 		LDX ABS:$20	; Absolute (forced)
 		LDX $0200,Y	; Absolute + Y
-.1		RTS
-
-START.1:			; Shouldn't conflict with .1 under START
+		RTS
 
 LDY_TEST	LDY #$20	; Immediate
 		LDY $20		; Zero page
@@ -55,51 +64,66 @@ LDY_TEST	LDY #$20	; Immediate
 		LDY $0200	; Absolute
 		LDY ABS:$20	; Absolute (forced)
 		LDY $0200,X	; Absolute + X
-.1		RTS
+		RTS
 
 ; ----
 ; Data
 ; ----
 
 DATA:
-		; .DB data can include literals (string, character and
+
+.BYTES		; .DB data can include literals (string, character and
 		; numeric) and math expressions using labels and macros. For
 		; numeric values, only the least significant byte is stored.
 
-.BYTES		.DB		"AB", $00		; $41, $42, $00
-		.DB		$0102, 0x03040506	; $02, $06
-		.DB		1+2+3+4, 5+6+7+8	; $0A, $1A
+		.DB		"AB", $00		; 41 42 00
+		.DB		'F, 'F'			; 46 46
+		.DB		$01			; 01
+		.DB		$ABCD			; CD
+		.DB		$ABCD >> 8		; AB
+		.DB		$0102			; 02
+		.DB		0x03040506		; 06
+		.DB		1+2+3+4, 5+6+7+8	; 0A 1A
 		.DB		LDA_TEST, LDA_TEST>>8	; addr of LDA_TEST
-		.DB		'<, '<'			; $3C, $3C
-		.DB 		-$01, -$0001		; $FF, $FF
-		.DB		$ABCD >> 8		; $AB
-		.DB		-1, -129		; $FF, $7F
-		.DB		0b01010101, -0b01010101 ; $55, $AB
+		.DB		-1, -129		; FF 7F
+		.DB		$12345678		; 78
+		.DB		0b01010101		; 55
 		.DB 		$ - .BYTES		; $ = curr line addr
 
 .WORDS		; .DW data works like .DB, except all numeric values are
-		; stored as 2-byte words. String characters are still stored
-		; with only one byte each.
+		; stored as 2-byte words. String literals are still stored
+		; with one byte per character.
 
-		.DW		"AB"			; $41, $42
-		.DW		'F'			; $46, $00
-		.DW		$01			; $01, $00
-		.DW		$ABCD			; $CD, $AB
-		.DW		$ABCD >> 8		; $AB, $00
-		.DW		LDA_TEST		; addr of LDA_TEST
-		.DW		$12345678		; $78, $56
-		.DW		0b11110101		; $F5, $00
-		.DW		-1			; $FF, $FF
+		.DW		"AB", $00		; 41 42 00 00
+		.DW		'F, 'F'			; 46 00 46 00
+		.DW		$01			; 01 00
+		.DW		$ABCD			; CD AB
+		.DW		$ABCD >> 8		; AB 00
+		.DW		$0102			; 02 01
+		.DW		0x03040506		; 06 05
+		.DW		1+2+3+4, 5+6+7+8	; 0A 00 1A 00
+		.DW		LDA_TEST		; 2-byte addr of LDA_TEST
+		.DW		-1, -129		; FF FF 7F FF
+		.DW		$12345678		; 78 56
+		.DW		0b11110101		; F5 00
 		.DW		$ - .WORDS		; $ = curr line addr
 
 .DWORDS		; .DD data works like .DB and .DW, except all numeric values
-		; are stored as 4-byte double-words. String characters are
-		; still stored with only one byte each.
+		; are stored as 4-byte double-words. String literals are still
+		; stored with one byte per character.
 
-		.DD		"AB"			; $41, $42
-		.DD		'F'			; $46, $00, $00, $00
-		.DD		-1			; $FF, $FF, $FF, $FF
-		.DD		$12345678		; $78, $56, $34, $12
+		.DD		"AB", $00		; 41 42 00 00 00 00
+		.DD		'F, 'F'			; 46 00 00 00 46 00 00 00
+		.DD		$01			; 01 00 00 00
+		.DD		$ABCD			; CD AB 00 00
+		.DD		$ABCD >> 8		; AB 00 00 00
+		.DD		$0102			; 02 01 00 00
+		.DD		0x03040506		; 06 05 04 03
+		.DD		1+2+3+4, 5+6+7+8	; 0A 00 00 00 1A 00 00 00
+		.DD		LDA_TEST		; 4-byte addr of LDA_TEST
+		.DD		-1, -129		; FF FF FF FF 7F FF FF FF
+		.DD		$12345678		; 78 56 34 12
+		.DD		0b11110101		; F5 00 00 00
 		.DD		$ - .DWORDS		; $ = curr line addr
 
 END
