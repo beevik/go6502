@@ -581,15 +581,12 @@ func (a *assembler) storeLabel(label fstring) error {
 
 // Parse a label string at the beginning of a line of assembly code.
 func (a *assembler) parseLabel(line fstring) (label fstring, remain fstring, err error) {
-	// Make sure label starts with a valid label character.
 	if !line.startsWith(labelStartChar) {
 		s, _ := line.consumeUntil(whitespace)
 		a.addError(line, "invalid label '%s'", s.str)
-		err = errParse
-		return
+		return fstring{}, line, errParse
 	}
 
-	// Grab the label and advance the line past it.
 	label, line = line.consumeWhile(labelChar)
 
 	// Skip colon after label.
@@ -597,17 +594,14 @@ func (a *assembler) parseLabel(line fstring) (label fstring, remain fstring, err
 		line = line.consume(1)
 	}
 
-	// If the next character isn't whitespace, we encountered an invalid label character
 	if !line.isEmpty() && !line.startsWith(whitespace) {
 		s, _ := line.consumeUntil(whitespace)
 		a.addError(line, "invalid label '%s%s'", label.str, s.str)
-		err = errParse
-		return
+		return fstring{}, line, errParse
 	}
 
-	// Skip trailing whitespace
 	remain = line.consumeWhitespace()
-	return
+	return label, remain, nil
 }
 
 // Parse a pseudo-op beginning with "." (such as ".EQ").
