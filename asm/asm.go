@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/beevik/go6502"
@@ -74,6 +75,7 @@ var pseudoOps = map[string]pseudoOpData{
 	".dword":  pseudoOpData{fn: (*assembler).parseData, param: 4},
 	".dh":     pseudoOpData{fn: (*assembler).parseHexString, param: nil},
 	".hs":     pseudoOpData{fn: (*assembler).parseHexString, param: nil},
+	".align":  pseudoOpData{fn: (*assembler).parseAlign, param: nil},
 	".ex":     pseudoOpData{fn: (*assembler).parseExport, param: nil},
 	".export": pseudoOpData{fn: (*assembler).parseExport, param: nil},
 }
@@ -170,8 +172,8 @@ func (o *operand) size() int {
 // A data segment contains 1 or more expressions that are evaluated to
 // produce binary data.
 type data struct {
-	unit  int     // unit size (1 or 2 bytes)
 	addr  int     // address assigned to the segment
+	unit  int     // unit size (1 or 2 bytes)
 	exprs []*expr // all expressions in the data segment
 }
 
@@ -199,6 +201,17 @@ type bytedata struct {
 
 func (b *bytedata) address() int {
 	return b.addr
+}
+
+// An alignment segment contains alignment data.
+type alignment struct {
+	addr  int
+	align int
+	pad   int
+}
+
+func (a *alignment) address() int {
+	return a.addr
 }
 
 // An export segment contains an exported address.
@@ -383,6 +396,12 @@ func (a *assembler) assignAddresses() error {
 			a.log("%04X  .HS Len:%d", ss.addr, len(ss.b))
 			a.pc += len(ss.b)
 
+		case *alignment:
+			ss.addr = a.pc
+			ss.pad = ss.align*((a.pc+ss.align-1)/ss.align) - a.pc
+			a.log("%04X  .ALIGN Len:%d", ss.addr, ss.pad)
+			a.pc += ss.pad
+
 		case *export:
 			ss.addr = a.pc
 		}
@@ -454,6 +473,11 @@ func (a *assembler) generateCode() error {
 		case *bytedata:
 			a.code = append(a.code, ss.b...)
 			a.logBytes(ss.addr, ss.b)
+
+		case *alignment:
+			pad := make([]byte, ss.pad)
+			a.code = append(a.code, pad...)
+			a.logBytes(ss.addr, pad)
 
 		case *export:
 			if ss.expr.op != opIdentifier || !ss.expr.address {
@@ -726,6 +750,28 @@ func (a *assembler) parseHexString(line, label fstring, param interface{}) error
 	return nil
 }
 
+func (a *assembler) parseAlign(line, label fstring, param interface{}) error {
+	a.logLine(line, "align=")
+
+	s, remain := line.consumeWhile(decimal)
+	if !remain.isEmpty() {
+		a.addError(remain, "invalid alignment")
+		return errParse
+	}
+
+	v, _ := strconv.ParseInt(s.str, 10, 32)
+	if (v&(v-1)) != 0 || v > 0x100 {
+		a.addError(s, "alignment must be power of 2")
+		return errParse
+	}
+
+	seg := &alignment{addr: -1, align: int(v)}
+
+	a.segments = append(a.segments, seg)
+	return nil
+}
+
+// Parse an export pseudo-op
 func (a *assembler) parseExport(line, label fstring, param interface{}) error {
 	a.logLine(line, "export=")
 

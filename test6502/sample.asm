@@ -41,6 +41,7 @@ START:				; Labels may end in ':', which is ignored.
 
 LDA_TEST	LDA #$20	; Immediate
 		LDA $20		; Zero page
+
 		LDA $20,X	; Zero page + X
 		LDA ($20,X)	; Indirect + X
 		LDA ($20),Y	; Indirect + Y
@@ -72,6 +73,8 @@ LDY_TEST	LDY #$20	; Immediate
 
 DATA:
 
+		.ALIGN 		16	; align next addr on 16-byte boundary
+
 .BYTES		; .DB data can include literals (string, character and
 		; numeric) and math expressions using labels and macros. For
 		; numeric values, only the least significant byte is stored.
@@ -89,6 +92,8 @@ DATA:
 		.DB		$12345678		; 78
 		.DB		0b01010101		; 55
 		.DB 		$ - .BYTES		; 12
+
+		.ALIGN		2
 
 .WORDS		; .DW data works like .DB, except all numeric values are
 		; stored as 2-byte words. String literals are still stored
@@ -108,6 +113,8 @@ DATA:
 		.DW		0b11110101		; F5 00
 		.DW		$ - .WORDS		; 20 00
 
+		.ALIGN		2
+
 .DWORDS		; .DD data works like .DB and .DW, except all numeric values
 		; are stored as 4-byte double-words. String literals are still
 		; stored with one byte per character.
@@ -126,6 +133,8 @@ DATA:
 		.DD		0b11110101		; F5 00 00 00
 		.DD		$ - .DWORDS		; 3E 00 00 00
 
+		.ALIGN		2
+
 .DHEX		; .DH data is expressed as a chain of hexadecimal values,
 		; which are stored directly into the assembled data.
 
@@ -135,5 +144,4 @@ DATA:
 		.DH		12345678		; 12 34 56 78
 		.DH		0123456789abcdef	; 01 23 45 67 89 AB CD EF
 		.DB		$ - .DHEX		; 12
-
 END
