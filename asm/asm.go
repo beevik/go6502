@@ -18,6 +18,7 @@ import (
 )
 
 // TODO:
+// 	- Add high-bit terminated string pseudo-op (.DT?)
 //  - Add .PAD pseudo-op
 
 var (
@@ -75,6 +76,7 @@ var pseudoOps = map[string]pseudoOpData{
 	".dword":  pseudoOpData{fn: (*assembler).parseData, param: 4},
 	".dh":     pseudoOpData{fn: (*assembler).parseHexString, param: nil},
 	".hs":     pseudoOpData{fn: (*assembler).parseHexString, param: nil},
+	".al":     pseudoOpData{fn: (*assembler).parseAlign, param: nil},
 	".align":  pseudoOpData{fn: (*assembler).parseAlign, param: nil},
 	".ex":     pseudoOpData{fn: (*assembler).parseExport, param: nil},
 	".export": pseudoOpData{fn: (*assembler).parseExport, param: nil},
