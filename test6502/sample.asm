@@ -35,6 +35,7 @@ START:				; Labels may end in ':', which is ignored.
 		JSR LDX_TEST
 		JSR LDY_TEST
 		BEQ .1		; Branch to a local label ('.' prefix)
+		LDY #';'
 		LDA /DATA	; Upper byte of DATA
                 LDX #DATA	; Lower byte of DATA
 .1		BRK		; .1 label is valid only within START scope.
@@ -80,7 +81,7 @@ DATA:
 		; numeric values, only the least significant byte is stored.
 
 		.DB		"AB", $00		; 41 42 00
-		.DB		'F, 'F'			; 46 46
+		.DB		'F', 'F'		; 46 46
 		.DB		$01			; 01
 		.DB		$ABCD			; CD
 		.DB		$ABCD >> 8		; AB
@@ -100,7 +101,7 @@ DATA:
 		; with one byte per character.
 
 		.DW		"AB", $00		; 41 42 00 00
-		.DW		'F, 'F'			; 46 00 46 00
+		.DW		'F', 'F'		; 46 00 46 00
 		.DW		$01			; 01 00
 		.DW		$ABCD			; CD AB
 		.DW		$ABCD >> 8		; AB 00
@@ -120,7 +121,7 @@ DATA:
 		; stored with one byte per character.
 
 		.DD		"AB", $00		; 41 42 00 00 00 00
-		.DD		'F, 'F'			; 46 00 00 00 46 00 00 00
+		.DD		'F', 'F'		; 46 00 00 00 46 00 00 00
 		.DD		$01			; 01 00 00 00
 		.DD		$ABCD			; CD AB 00 00
 		.DD		$ABCD >> 8		; AB 00 00 00

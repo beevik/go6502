@@ -752,6 +752,13 @@ func (a *assembler) parseHexString(line, label fstring, param interface{}) error
 		seg.b = append(seg.b, v)
 	}
 
+	if !label.isEmpty() {
+		err := a.storeLabel(label)
+		if err != nil {
+			return err
+		}
+	}
+
 	a.segments = append(a.segments, seg)
 	return nil
 }

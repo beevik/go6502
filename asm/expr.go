@@ -559,19 +559,13 @@ func (p *exprParser) parseStringLiteral(line fstring) (s, remain fstring, err er
 }
 
 func (p *exprParser) parseCharLiteral(line fstring) (value int, remain fstring, err error) {
-	if len(line.str) < 2 {
+	if len(line.str) < 3 || line.str[2] != '\'' {
 		p.addError(line, "invalid character literal")
 		return 0, fstring{}, errParse
 	}
 
 	value = int(line.str[1])
-	switch {
-	case len(line.str) > 2 && line.str[2] == '\'':
-		remain = line.consume(3)
-	default:
-		remain = line.consume(2)
-	}
-
+	remain = line.consume(3)
 	return value, remain, nil
 }
 

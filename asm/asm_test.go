@@ -172,7 +172,7 @@ func TestAddressingIND(t *testing.T) {
 func TestDataBytes(t *testing.T) {
 	asm := `
 	.DB "AB", $00
-	.DB 'f, 'f'
+	.DB 'f', 'f'
 	.DB $ABCD
 	.DB $ABCD >> 8
 	.DB $0102
@@ -189,7 +189,7 @@ func TestDataBytes(t *testing.T) {
 func TestDataWords(t *testing.T) {
 	asm := `
 	.DW "AB", $00
-	.DW 'f, 'f'
+	.DW 'f', 'f'
 	.DW $ABCD
 	.DW $ABCD >> 8
 	.DW $0102
@@ -206,7 +206,7 @@ func TestDataWords(t *testing.T) {
 func TestDataDwords(t *testing.T) {
 	asm := `
 	.DD "AB", $00
-	.DD 'f, 'f'
+	.DD 'f', 'f'
 	.DD $ABCD
 	.DD $ABCD >> 8
 	.DD $0102

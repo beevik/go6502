@@ -113,16 +113,26 @@ func (l fstring) peekNextWord() fstring {
 }
 
 func (l fstring) stripTrailingComment() fstring {
-	lastNonWs := 0
+	lastNonWS := 0
 	for i := 0; i < len(l.str); i++ {
-		if l.str[i] == ';' {
+		if comment(l.str[i]) {
 			break
 		}
-		if l.str[i] != ' ' && l.str[i] != '\t' {
-			lastNonWs = i + 1
+		if stringQuote(l.str[i]) {
+			q := l.str[i]
+			i++
+			for ; i < len(l.str) && l.str[i] != q; i++ {
+			}
+			lastNonWS = i
+			if i == len(l.str) {
+				break
+			}
+		}
+		if !whitespace(l.str[i]) {
+			lastNonWS = i + 1
 		}
 	}
-	return l.trunc(lastNonWs)
+	return l.trunc(lastNonWS)
 }
 
 //
@@ -143,6 +153,10 @@ func alpha(c byte) bool {
 
 func decimal(c byte) bool {
 	return (c >= '0' && c <= '9')
+}
+
+func comment(c byte) bool {
+	return c == ';'
 }
 
 func hexadecimal(c byte) bool {
@@ -174,7 +188,7 @@ func identifierChar(c byte) bool {
 }
 
 func stringQuote(c byte) bool {
-	return c == '"' || c == '/'
+	return c == '"' || c == '\''
 }
 
 func pseudoOpStartChar(c byte) bool {
