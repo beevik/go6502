@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/beevik/go6502"
@@ -44,10 +45,42 @@ func main() {
 		}
 	}
 
-	run(r.Code, r.Origin)
+	run(r.Code, r.Origin, r.Exports)
 }
 
-func run(code []byte, origin go6502.Address) {
+func findExport(exports []asm.Export, origin go6502.Address, names ...string) go6502.Address {
+	table := make(map[string]go6502.Address)
+	for _, e := range exports {
+		table[e.Label] = e.Addr
+	}
+	for _, n := range names {
+		if a, ok := table[n]; ok {
+			return a
+		}
+	}
+	return origin
+}
+
+func loadMonitor(mem *go6502.Memory) {
+	file, err := os.Open("monitor.bin")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
+		os.Exit(1)
+	}
+	defer file.Close()
+
+	b := make([]byte, 0x800)
+	_, err = io.ReadFull(file, b)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
+		os.Exit(1)
+	}
+
+	mem.CopyBytes(go6502.Address(0xf800), b)
+}
+
+func run(code []byte, origin go6502.Address, exports []asm.Export) {
+
 	fmt.Printf("\nRunning assembled code...\n")
 
 	mem := go6502.NewMemory()
@@ -56,8 +89,12 @@ func run(code []byte, origin go6502.Address) {
 		panic(err)
 	}
 
+	loadMonitor(mem)
+
+	pc := findExport(exports, origin, "START", "COLD.START", "RESTART")
+
 	cpu := go6502.NewCPU(mem)
-	cpu.SetPC(origin)
+	cpu.SetPC(pc)
 
 	// Output initial state.
 	fmt.Printf("                             A=%02X X=%02X Y=%02X PS=[%s] SP=%02X PC=%04X C=%d\n",

@@ -185,8 +185,14 @@ func (e *expr) eval(addr int, macros map[string]*expr, labels map[string]int) bo
 			} else {
 				ident = e.identifier.str
 			}
-			if m, ok := macros[ident]; ok && m.evaluated {
-				e.value, e.bytes, e.evaluated = m.value, m.bytes, true
+			if m, ok := macros[ident]; ok {
+				e.bytes = maxInt(e.bytes, m.bytes)
+				if m.address {
+					e.address = true
+				}
+				if m.evaluated {
+					e.value, e.bytes, e.evaluated = m.value, m.bytes, true
+				}
 			}
 			if _, ok := labels[ident]; ok {
 				e.address, e.bytes = true, 2

@@ -254,3 +254,31 @@ func TestAlign(t *testing.T) {
 
 	checkASM(t, asm, "FF00FF0000000000FFFF")
 }
+
+func TestHereExpression1(t *testing.T) {
+	asm := `
+	.OR $0600
+X	.EQ	FOO
+	BIT X
+FOO	.EQ $`
+
+	checkASM(t, asm, "2C0306")
+}
+
+func TestHereExpression2(t *testing.T) {
+	asm := `
+	.OR $0600
+X	.EQ	$ - 1
+	BIT X`
+
+	checkASM(t, asm, "2CFF05")
+}
+
+func TestHereExpression3(t *testing.T) {
+	asm := `
+	.OR $0600
+	BIT X
+X	.EQ	$ - 1`
+
+	checkASM(t, asm, "2C0206")
+}
