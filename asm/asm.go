@@ -62,24 +62,28 @@ type pseudoOpData struct {
 	param interface{}
 }
 
+const hiBitTerm = 1 << 16
+
 var pseudoOps = map[string]pseudoOpData{
-	".eq":     pseudoOpData{fn: (*assembler).parseMacro, param: nil},
-	".equ":    pseudoOpData{fn: (*assembler).parseMacro, param: nil},
-	"=":       pseudoOpData{fn: (*assembler).parseMacro, param: nil},
-	".or":     pseudoOpData{fn: (*assembler).parseOrigin, param: nil},
-	".org":    pseudoOpData{fn: (*assembler).parseOrigin, param: nil},
-	".db":     pseudoOpData{fn: (*assembler).parseData, param: 1},
-	".byte":   pseudoOpData{fn: (*assembler).parseData, param: 1},
-	".dw":     pseudoOpData{fn: (*assembler).parseData, param: 2},
-	".word":   pseudoOpData{fn: (*assembler).parseData, param: 2},
-	".dd":     pseudoOpData{fn: (*assembler).parseData, param: 4},
-	".dword":  pseudoOpData{fn: (*assembler).parseData, param: 4},
-	".dh":     pseudoOpData{fn: (*assembler).parseHexString, param: nil},
-	".hs":     pseudoOpData{fn: (*assembler).parseHexString, param: nil},
-	".al":     pseudoOpData{fn: (*assembler).parseAlign, param: nil},
-	".align":  pseudoOpData{fn: (*assembler).parseAlign, param: nil},
-	".ex":     pseudoOpData{fn: (*assembler).parseExport, param: nil},
-	".export": pseudoOpData{fn: (*assembler).parseExport, param: nil},
+	".eq":      pseudoOpData{fn: (*assembler).parseMacro, param: nil},
+	".equ":     pseudoOpData{fn: (*assembler).parseMacro, param: nil},
+	"=":        pseudoOpData{fn: (*assembler).parseMacro, param: nil},
+	".or":      pseudoOpData{fn: (*assembler).parseOrigin, param: nil},
+	".org":     pseudoOpData{fn: (*assembler).parseOrigin, param: nil},
+	".db":      pseudoOpData{fn: (*assembler).parseData, param: 1},
+	".byte":    pseudoOpData{fn: (*assembler).parseData, param: 1},
+	".dw":      pseudoOpData{fn: (*assembler).parseData, param: 2},
+	".word":    pseudoOpData{fn: (*assembler).parseData, param: 2},
+	".dd":      pseudoOpData{fn: (*assembler).parseData, param: 4},
+	".dword":   pseudoOpData{fn: (*assembler).parseData, param: 4},
+	".dh":      pseudoOpData{fn: (*assembler).parseHexString, param: nil},
+	".hex":     pseudoOpData{fn: (*assembler).parseHexString, param: nil},
+	".ds":      pseudoOpData{fn: (*assembler).parseData, param: 1 | hiBitTerm},
+	".tstring": pseudoOpData{fn: (*assembler).parseData, param: 1 | hiBitTerm},
+	".al":      pseudoOpData{fn: (*assembler).parseAlign, param: nil},
+	".align":   pseudoOpData{fn: (*assembler).parseAlign, param: nil},
+	".ex":      pseudoOpData{fn: (*assembler).parseExport, param: nil},
+	".export":  pseudoOpData{fn: (*assembler).parseExport, param: nil},
 }
 
 // A segment is a small chunk of machine code that may represent a single
@@ -174,9 +178,10 @@ func (o *operand) size() int {
 // A data segment contains 1 or more expressions that are evaluated to
 // produce binary data.
 type data struct {
-	addr  int     // address assigned to the segment
-	unit  int     // unit size (1 or 2 bytes)
-	exprs []*expr // all expressions in the data segment
+	addr      int     // address assigned to the segment
+	unit      int     // unit size (1 or 2 bytes)
+	hiBitTerm bool    // terminate last char of string by setting hi bit
+	exprs     []*expr // all expressions in the data segment
 }
 
 func (d *data) address() int {
@@ -465,7 +470,11 @@ func (a *assembler) generateCode() error {
 			for _, e := range ss.exprs {
 				switch {
 				case e.isString:
-					a.code = append(a.code, []byte(e.stringLiteral.str)...)
+					s := []byte(e.stringLiteral.str)
+					if ss.hiBitTerm && len(s) > 0 {
+						s[len(s)-1] = s[len(s)-1] | 0x80
+					}
+					a.code = append(a.code, s...)
 				default:
 					a.code = append(a.code, toBytes(ss.unit, e.value)...)
 				}
@@ -683,8 +692,9 @@ func (a *assembler) parseData(line, label fstring, param interface{}) error {
 	a.logLine(line, "bytes=")
 
 	seg := &data{
-		unit: param.(int),
-		addr: -1,
+		unit:      param.(int) & 7,
+		hiBitTerm: (param.(int) & hiBitTerm) != 0,
+		addr:      -1,
 	}
 
 	remain := line

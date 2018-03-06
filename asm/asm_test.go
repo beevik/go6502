@@ -168,3 +168,89 @@ func TestAddressingIND(t *testing.T) {
 
 	checkASM(t, asm, "6C20006C0020")
 }
+
+func TestDataBytes(t *testing.T) {
+	asm := `
+	.DB "AB", $00
+	.DB 'f, 'f'
+	.DB $ABCD
+	.DB $ABCD >> 8
+	.DB $0102
+	.DB $03040506
+	.DB 1+2+3+4
+	.DB -1
+	.DB -129
+	.DB 0b0101010101010101
+	.DB 0b01010101`
+
+	checkASM(t, asm, "4142006666CDAB02060AFF7F5555")
+}
+
+func TestDataWords(t *testing.T) {
+	asm := `
+	.DW "AB", $00
+	.DW 'f, 'f'
+	.DW $ABCD
+	.DW $ABCD >> 8
+	.DW $0102
+	.DW $03040506
+	.DW 1+2+3+4
+	.DW -1
+	.DW -129
+	.DW 0b01010101
+	.DW 0b0101010101010101`
+
+	checkASM(t, asm, "4142000066006600CDABAB00020106050A00FFFF7FFF55005555")
+}
+
+func TestDataDwords(t *testing.T) {
+	asm := `
+	.DD "AB", $00
+	.DD 'f, 'f'
+	.DD $ABCD
+	.DD $ABCD >> 8
+	.DD $0102
+	.DD $03040506
+	.DD 1+2+3+4
+	.DD -1
+	.DD -129
+	.DD 0b01010101
+	.DD 0b0101010101010101`
+
+	checkASM(t, asm, "4142000000006600000066000000CDAB0000AB000000020100000"+
+		"60504030A000000FFFFFFFF7FFFFFFF5500000055550000")
+}
+
+func TestDataHexStrings(t *testing.T) {
+	asm := `
+	.DH 0102030405060708
+	.DH aabbcc
+	.DH dd
+	.DH ee
+	.DH ff`
+
+	checkASM(t, asm, "0102030405060708AABBCCDDEEFF")
+}
+
+func TestDataTermStrings(t *testing.T) {
+	asm := `
+	.DS "AAA"
+	.DS "a", 0
+	.DS ""`
+
+	checkASM(t, asm, "4141C1E100")
+}
+
+func TestAlign(t *testing.T) {
+	asm := `
+	.ALIGN 4
+	.DB $ff
+	.ALIGN 2
+	.DB $ff
+	.ALIGN 8
+	.DB $ff
+	.ALIGN 1
+	.DB $ff`
+
+	checkASM(t, asm, "FF00FF0000000000FFFF")
+}

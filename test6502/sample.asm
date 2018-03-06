@@ -135,7 +135,7 @@ DATA:
 
 		.ALIGN		2
 
-.DHEX		; .DH data is expressed as a chain of hexadecimal values,
+.HEXSTRINGS	; .DH data is expressed as a chain of hexadecimal values,
 		; which are stored directly into the assembled data.
 
 		.DH		414200			; 41 42 00
@@ -143,5 +143,15 @@ DATA:
 		.DH		01			; 01
 		.DH		12345678		; 12 34 56 78
 		.DH		0123456789abcdef	; 01 23 45 67 89 AB CD EF
-		.DB		$ - .DHEX		; 12
+		.DB		$ - .HEXSTRINGS		; 12
+
+		.ALIGN		2
+
+.TSTRINGS	; .DS data works the same way as .DB, except the last byte
+		; in a string literal has its most significant bit set.
+
+		.DS		"AAA"			; 41 41 C1
+		.DS		"A", 0			; C1 00
+		.DB		$ - .TSTRINGS		; 04
+		
 END
