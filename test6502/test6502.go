@@ -103,8 +103,9 @@ func run(code []byte, origin go6502.Address, exports []asm.Export) {
 		cpu.Cycles)
 
 	// Step each instruction and output state after.
-	for i := 0; !cpu.Reg.Break; i++ {
+	for {
 		pcStart := cpu.Reg.PC
+		opcode := cpu.Mem.LoadByte(pcStart)
 		line, pcNext := disasm.Disassemble(cpu.Mem, pcStart)
 		cpu.Step()
 		bc := cpu.Mem.LoadBytes(pcStart, int(pcNext-pcStart))
@@ -113,6 +114,9 @@ func run(code []byte, origin go6502.Address, exports []asm.Export) {
 			cpu.Reg.A, cpu.Reg.X, cpu.Reg.Y, psString(&cpu.Reg),
 			cpu.Reg.SP, cpu.Reg.PC,
 			cpu.Cycles)
+		if opcode == 0 {
+			break
+		}
 	}
 }
 
