@@ -21,6 +21,14 @@ type CPU struct {
 	extraCycles uint32
 }
 
+// Interrupt vectors
+const (
+	vectorNMI   = 0xfffa
+	vectorReset = 0xfffc
+	vectorIRQ   = 0xfffe
+	vectorBRK   = 0xfffe
+)
+
 // NewCPU creates a new 65C02 CPU object bound to the specified memory.
 func NewCPU(m *Memory) *CPU {
 	cpu := &CPU{Mem: m, CMOS: true}
@@ -196,17 +204,40 @@ func (cpu *CPU) pop() byte {
 // Update the Zero and Negative flags based on the value of 'v'.
 func (cpu *CPU) updateNZ(v byte) {
 	cpu.Reg.Zero = (v == 0)
-	cpu.Reg.Negative = ((v & 0x80) != 0)
+	cpu.Reg.Sign = ((v & 0x80) != 0)
 }
 
-// Handle an interrupt by storing the program counter and status
-// flags on the stack. Then go to the subroutine at address 0xfffe.
-func (cpu *CPU) interrupt() {
+// Handle an handleInterrupt by storing the program counter and status
+// flags on the stack. Then switch the program counter to the requested
+// address.
+func (cpu *CPU) handleInterrupt(brk bool, addr Address) {
 	cpu.push(byte(cpu.Reg.PC >> 8))
 	cpu.push(byte(cpu.Reg.PC & 0xff))
-	cpu.push(cpu.Reg.GetPS())
+	cpu.push(cpu.Reg.SavePS(brk))
+
 	cpu.Reg.InterruptDisable = true
-	cpu.Reg.PC = cpu.Mem.LoadAddress(Address(0xfffe))
+	if cpu.CMOS {
+		cpu.Reg.Decimal = false
+	}
+
+	cpu.Reg.PC = cpu.Mem.LoadAddress(addr)
+}
+
+// Generate a maskable IRQ (hardware) interrupt request.
+func (cpu *CPU) irq() {
+	if !cpu.Reg.InterruptDisable {
+		cpu.handleInterrupt(false, vectorIRQ)
+	}
+}
+
+// Generate a non-maskable interrupt.
+func (cpu *CPU) nmi() {
+	cpu.handleInterrupt(false, vectorNMI)
+}
+
+// Generate a reset signal.
+func (cpu *CPU) reset() {
+	cpu.Reg.PC = cpu.Mem.LoadAddress(vectorReset)
 }
 
 // Add with carry (CMOS)
@@ -351,7 +382,7 @@ func (cpu *CPU) bit(inst *Instruction, operand []byte) {
 
 // Branch if MInus (negative)
 func (cpu *CPU) bmi(inst *Instruction, operand []byte) {
-	if cpu.Reg.Negative {
+	if cpu.Reg.Sign {
 		cpu.branch(operand)
 	}
 }
@@ -365,7 +396,7 @@ func (cpu *CPU) bne(inst *Instruction, operand []byte) {
 
 // Branch if PLus (positive)
 func (cpu *CPU) bpl(inst *Instruction, operand []byte) {
-	if !cpu.Reg.Negative {
+	if !cpu.Reg.Sign {
 		cpu.branch(operand)
 	}
 }
@@ -373,8 +404,7 @@ func (cpu *CPU) bpl(inst *Instruction, operand []byte) {
 // Break
 func (cpu *CPU) brk(inst *Instruction, operand []byte) {
 	cpu.Reg.PC++
-	cpu.interrupt()
-	cpu.Reg.Break = true
+	cpu.handleInterrupt(true, vectorBRK)
 }
 
 // Branch if oVerflow Clear
@@ -535,7 +565,7 @@ func (cpu *CPU) pha(inst *Instruction, operand []byte) {
 
 // push Processor flags
 func (cpu *CPU) php(inst *Instruction, operand []byte) {
-	cpu.push(cpu.Reg.GetPS())
+	cpu.push(cpu.Reg.SavePS(true))
 }
 
 // Pull (pop) Accumulator
@@ -546,9 +576,7 @@ func (cpu *CPU) pla(inst *Instruction, operand []byte) {
 
 // Pull (pop) Processor flags
 func (cpu *CPU) plp(inst *Instruction, operand []byte) {
-	brk := cpu.Reg.Break
-	cpu.Reg.SetPS(cpu.pop())
-	cpu.Reg.Break = brk
+	cpu.Reg.RestorePS(cpu.pop())
 }
 
 // Rotate left
@@ -571,9 +599,8 @@ func (cpu *CPU) ror(inst *Instruction, operand []byte) {
 
 // Return from interrupt
 func (cpu *CPU) rti(inst *Instruction, operand []byte) {
-	brk := cpu.Reg.Break
-	cpu.Reg.SetPS(cpu.pop())
-	cpu.Reg.Break = brk
+	cpu.Reg.RestorePS(cpu.pop())
+	cpu.Reg.Break = false
 	cpu.Reg.PC = Address(cpu.pop()) | (Address(cpu.pop()) << 8)
 }
 

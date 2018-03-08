@@ -1,7 +1,7 @@
 ; Sample program illustrating some of the features of the go6502 macro
 ; assembler.
 
-		.ORG		$0600	; origin address for machine code
+		.ORG		$1000	; origin address for machine code
 
 ; -------
 ; Exports

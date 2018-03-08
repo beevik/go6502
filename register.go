@@ -13,45 +13,57 @@ type Registers struct {
 	Decimal          bool    // PS: Decimal bit
 	Break            bool    // PS: Break bit
 	Overflow         bool    // PS: Overflow bit
-	Negative         bool    // PS: Negative bit
+	Sign             bool    // PS: Sign bit
 }
 
-// GetPS returns the CPU processor status byte value.
-func (r *Registers) GetPS() byte {
-	var ps byte
+// Bits assigned to the processor status byte
+const (
+	CarryBit            = 1 << 0
+	ZeroBit             = 1 << 1
+	InterruptDisableBit = 1 << 2
+	DecimalBit          = 1 << 3
+	BreakBit            = 1 << 4
+	ReservedBit         = 1 << 5
+	OverflowBit         = 1 << 6
+	SignBit             = 1 << 7
+)
+
+// SavePS saves the CPU processor status into a byte value. The break bit
+// is set if requested.
+func (r *Registers) SavePS(brk bool) byte {
+	var ps byte = ReservedBit // always saved as on
 	if r.Carry {
-		ps |= (1 << 0)
+		ps |= CarryBit
 	}
 	if r.Zero {
-		ps |= (1 << 1)
+		ps |= ZeroBit
 	}
 	if r.InterruptDisable {
-		ps |= (1 << 2)
+		ps |= InterruptDisableBit
 	}
 	if r.Decimal {
-		ps |= (1 << 3)
+		ps |= DecimalBit
 	}
-	if r.Break {
-		ps |= (1 << 4)
+	if brk {
+		ps |= BreakBit
 	}
 	if r.Overflow {
-		ps |= (1 << 6)
+		ps |= OverflowBit
 	}
-	if r.Negative {
-		ps |= (1 << 7)
+	if r.Sign {
+		ps |= SignBit
 	}
 	return ps
 }
 
-// SetPS updates the CPU processor status byte.
-func (r *Registers) SetPS(ps byte) {
-	r.Carry = ((ps & (1 << 0)) != 0)
-	r.Zero = ((ps & (1 << 1)) != 0)
-	r.InterruptDisable = ((ps & (1 << 2)) != 0)
-	r.Decimal = ((ps & (1 << 3)) != 0)
-	r.Break = ((ps & (1 << 4)) != 0)
-	r.Overflow = ((ps & (1 << 6)) != 0)
-	r.Negative = ((ps & (1 << 7)) != 0)
+// RestorePS restores the CPU processor status from a byte.
+func (r *Registers) RestorePS(ps byte) {
+	r.Carry = ((ps & CarryBit) != 0)
+	r.Zero = ((ps & ZeroBit) != 0)
+	r.InterruptDisable = ((ps & InterruptDisableBit) != 0)
+	r.Decimal = ((ps & DecimalBit) != 0)
+	r.Overflow = ((ps & OverflowBit) != 0)
+	r.Sign = ((ps & SignBit) != 0)
 }
 
 func boolToUint32(v bool) uint32 {
@@ -75,5 +87,5 @@ func (r *Registers) Init() {
 	r.Y = 0
 	r.SP = 0xff
 	r.PC = 0
-	r.SetPS(0)
+	r.RestorePS(0)
 }

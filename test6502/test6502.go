@@ -137,13 +137,12 @@ func psString(r *go6502.Registers) string {
 		return '-'
 	}
 	b := []byte{
-		v(r.Carry, 'C'),
+		v(r.Sign, 'N'),
 		v(r.Zero, 'Z'),
+		v(r.Carry, 'C'),
 		v(r.InterruptDisable, 'I'),
 		v(r.Decimal, 'D'),
-		v(r.Break, 'B'),
-		v(r.Overflow, 'O'),
-		v(r.Negative, 'N'),
+		v(r.Overflow, 'V'),
 	}
 	return string(b)
 }
