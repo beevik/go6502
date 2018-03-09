@@ -534,21 +534,23 @@ func (cpu *CPU) iny(inst *Instruction, operand []byte) {
 
 // Jump to memory address (NMOS 6502)
 func (cpu *CPU) jmpn(inst *Instruction, operand []byte) {
-	if inst.Mode == IND && operand[0] == 0xff {
-		// Bug in NMOS 6502, where JMP $(12FF) would load LSB of jmp
-		// target from $12FF and MSB from $1200.
-		addr0 := Address(operand[1])<<8 | 0xff
-		addr1 := Address(operand[1])<<8 | 0x00
-		lo := cpu.Mem.LoadByte(addr0)
-		hi := cpu.Mem.LoadByte(addr1)
-		cpu.Reg.PC = Address(lo) | Address(hi)<<8
-		return
-	}
 	cpu.Reg.PC = cpu.loadAddress(inst.Mode, operand)
 }
 
 // Jump to memory address (CMOS 65c02)
 func (cpu *CPU) jmpc(inst *Instruction, operand []byte) {
+	if inst.Mode == IND && operand[0] == 0xff {
+		// Fix bug in NMOS 6502 address loading. In NMOS 6502, a JMP ($12FF)
+		// would load LSB of jmp target from $12FF and MSB from $1200.
+		// In CMOS, it loads the MSB from $1300.
+		addr0 := Address(operand[1])<<8 | 0xff
+		addr1 := addr0 + 1
+		lo := cpu.Mem.LoadByte(addr0)
+		hi := cpu.Mem.LoadByte(addr1)
+		cpu.Reg.PC = Address(lo) | Address(hi)<<8
+		cpu.deltaCycles++
+		return
+	}
 	cpu.Reg.PC = cpu.loadAddress(inst.Mode, operand)
 }
 
