@@ -89,7 +89,7 @@ func (m *Memory) StoreBytes(addr Address, b []byte) {
 func offsetAddress(addr Address, offset byte) (newAddr Address, pageCrossed bool) {
 	newAddr = addr + Address(offset)
 	pageCrossed = ((newAddr & 0xff00) != (addr & 0xff00))
-	return
+	return newAddr, pageCrossed
 }
 
 // Offset a zero-page address 'addr' by 'offset'. If the address
