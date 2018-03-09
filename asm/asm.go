@@ -1032,8 +1032,10 @@ func findMatchingInstruction(opcode fstring, operand operand) *go6502.Instructio
 			match, qual = (operand.modeGuess == go6502.ABX), 2
 		case inst.Mode == go6502.ABY:
 			match, qual = (operand.modeGuess == go6502.ABY), 2
-		case inst.Mode == go6502.IND:
+		case inst.Mode == go6502.IND && inst.Length == 3:
 			match, qual = (operand.modeGuess == go6502.IND), 2
+		case inst.Mode == go6502.IND && inst.Length == 2:
+			match, qual = (operand.modeGuess == go6502.IND) && (operand.size() == 1), 1
 		case inst.Mode == go6502.IDX:
 			match, qual = (operand.modeGuess == go6502.IDX) && (operand.size() == 1), 1
 		case inst.Mode == go6502.IDY:

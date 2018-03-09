@@ -37,7 +37,7 @@ START:				; Labels may end in ':', which is ignored.
 		BEQ .1		; Branch to a local label ('.' prefix)
 		LDY #';'
 		LDA /DATA	; Upper byte of DATA
-                LDX #DATA	; Lower byte of DATA
+		LDX #DATA	; Lower byte of DATA
 .1		BRK		; .1 label is valid only within START scope.
 
 LDA_TEST	LDA #$20	; Immediate

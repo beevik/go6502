@@ -43,7 +43,6 @@ func (cpu *CPU) SetPC(addr Address) {
 
 // Step the cpu by one instruction.
 func (cpu *CPU) Step() {
-
 	// Grab the next opcode at the current PC
 	opcode := cpu.Mem.LoadByte(cpu.Reg.PC)
 
@@ -376,7 +375,8 @@ func (cpu *CPU) beq(inst *Instruction, operand []byte) {
 // Bit Test
 func (cpu *CPU) bit(inst *Instruction, operand []byte) {
 	v := cpu.load(inst.Mode, operand)
-	cpu.updateNZ(v)
+	cpu.Reg.Zero = ((v & cpu.Reg.A) == 0)
+	cpu.Reg.Sign = ((v & 0x80) != 0)
 	cpu.Reg.Overflow = ((v & 0x40) != 0)
 }
 
@@ -399,6 +399,11 @@ func (cpu *CPU) bpl(inst *Instruction, operand []byte) {
 	if !cpu.Reg.Sign {
 		cpu.branch(operand)
 	}
+}
+
+// Branch always (65c02 only)
+func (cpu *CPU) bra(inst *Instruction, operand []byte) {
+	cpu.branch(operand)
 }
 
 // Break
@@ -558,14 +563,24 @@ func (cpu *CPU) ora(inst *Instruction, operand []byte) {
 	cpu.updateNZ(cpu.Reg.A)
 }
 
-// push Accumulator
+// Push Accumulator
 func (cpu *CPU) pha(inst *Instruction, operand []byte) {
 	cpu.push(cpu.Reg.A)
 }
 
-// push Processor flags
+// Push Processor flags
 func (cpu *CPU) php(inst *Instruction, operand []byte) {
 	cpu.push(cpu.Reg.SavePS(true))
+}
+
+// Push X register (65c02 only)
+func (cpu *CPU) phx(inst *Instruction, operand []byte) {
+	cpu.push(cpu.Reg.X)
+}
+
+// Push Y register (65c02 only)
+func (cpu *CPU) phy(inst *Instruction, operand []byte) {
+	cpu.push(cpu.Reg.Y)
 }
 
 // Pull (pop) Accumulator
@@ -577,6 +592,18 @@ func (cpu *CPU) pla(inst *Instruction, operand []byte) {
 // Pull (pop) Processor flags
 func (cpu *CPU) plp(inst *Instruction, operand []byte) {
 	cpu.Reg.RestorePS(cpu.pop())
+}
+
+// Pull (pop) X register (65c02 only)
+func (cpu *CPU) plx(inst *Instruction, operand []byte) {
+	cpu.Reg.X = cpu.pop()
+	cpu.updateNZ(cpu.Reg.X)
+}
+
+// Pull (pop) Y register (65c02 only)
+func (cpu *CPU) ply(inst *Instruction, operand []byte) {
+	cpu.Reg.Y = cpu.pop()
+	cpu.updateNZ(cpu.Reg.Y)
 }
 
 // Rotate left
@@ -744,6 +771,11 @@ func (cpu *CPU) sty(inst *Instruction, operand []byte) {
 	cpu.store(inst.Mode, operand, cpu.Reg.Y)
 }
 
+// store zero (65c02 only)
+func (cpu *CPU) stz(inst *Instruction, operand []byte) {
+	cpu.store(inst.Mode, operand, 0)
+}
+
 // Transfer Accumulator to X register
 func (cpu *CPU) tax(inst *Instruction, operand []byte) {
 	cpu.Reg.X = cpu.Reg.A
@@ -754,6 +786,22 @@ func (cpu *CPU) tax(inst *Instruction, operand []byte) {
 func (cpu *CPU) tay(inst *Instruction, operand []byte) {
 	cpu.Reg.Y = cpu.Reg.A
 	cpu.updateNZ(cpu.Reg.Y)
+}
+
+// Test and reset bits (65c02 only)
+func (cpu *CPU) trb(inst *Instruction, operand []byte) {
+	v := cpu.load(inst.Mode, operand)
+	cpu.Reg.Zero = ((v & cpu.Reg.A) == 0)
+	nv := (v & (cpu.Reg.A ^ 0xff))
+	cpu.store(inst.Mode, operand, nv)
+}
+
+// Test and set bits (65c02 only)
+func (cpu *CPU) tsb(inst *Instruction, operand []byte) {
+	v := cpu.load(inst.Mode, operand)
+	cpu.Reg.Zero = ((v & cpu.Reg.A) == 0)
+	nv := (v | cpu.Reg.A)
+	cpu.store(inst.Mode, operand, nv)
 }
 
 // Transfer Stack pointer to X register
