@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 
@@ -18,7 +17,7 @@ import (
 )
 
 // TODO:
-// 	- Add high-bit terminated string pseudo-op (.DT?)
+// 	- Return error slice on fail
 //  - Add .PAD pseudo-op
 
 var (
@@ -65,6 +64,8 @@ type pseudoOpData struct {
 const hiBitTerm = 1 << 16
 
 var pseudoOps = map[string]pseudoOpData{
+	".ar":      pseudoOpData{fn: (*assembler).parseArch, param: nil},
+	".arch":    pseudoOpData{fn: (*assembler).parseArch, param: nil},
 	".eq":      pseudoOpData{fn: (*assembler).parseMacro, param: nil},
 	".equ":     pseudoOpData{fn: (*assembler).parseMacro, param: nil},
 	"=":        pseudoOpData{fn: (*assembler).parseMacro, param: nil},
@@ -234,7 +235,7 @@ func (e *export) address() int {
 // An asmerror is used to keep track of errors encountered
 // during assembly.
 type asmerror struct {
-	line fstring // row & column of assembly code causing the error
+	line fstring // line causing the error
 	msg  string  // error message
 }
 
@@ -247,19 +248,21 @@ type uneval struct {
 // The assembler is a state object used during the assembly of
 // machine code from assembly code.
 type assembler struct {
-	origin      int              // requested origin
-	pc          int              // the program counter
-	code        []byte           // generated machine code
-	scanner     *bufio.Scanner   // scans the io reader
-	scopeLabel  fstring          // label currently in scope
-	macros      map[string]*expr // macro -> expression
-	labels      map[string]int   // label -> segment index
-	exports     []Export         // exported addresses
-	segments    []segment        // segment of machine code
-	unevaluated []uneval         // expressions requiring evaluation
-	verbose     bool             // verbose output
-	exprParser  exprParser       // used to parse math expressions
-	errors      []asmerror       // errors encountered during assembly
+	arch        go6502.Architecture    // requested architecture
+	instSet     *go6502.InstructionSet // instructions on current arch
+	origin      int                    // requested origin
+	pc          int                    // the program counter
+	code        []byte                 // generated machine code
+	scanner     *bufio.Scanner         // scans the io reader
+	scopeLabel  fstring                // label currently in scope
+	macros      map[string]*expr       // macro -> expression
+	labels      map[string]int         // label -> segment index
+	exports     []Export               // exported addresses
+	segments    []segment              // segment of machine code
+	unevaluated []uneval               // expressions requiring evaluation
+	verbose     bool                   // verbose output
+	exprParser  exprParser             // used to parse math expressions
+	errors      []asmerror             // errors encountered during assembly
 }
 
 // An Export describes an exported address.
@@ -279,6 +282,8 @@ type Result struct {
 // it into 6502 byte code.
 func Assemble(r io.Reader, verbose bool) (*Result, error) {
 	a := &assembler{
+		arch:     go6502.NMOS,
+		instSet:  go6502.GetInstructionSet(go6502.NMOS),
 		origin:   0x600,
 		pc:       -1,
 		scanner:  bufio.NewScanner(r),
@@ -382,7 +387,7 @@ func (a *assembler) assignAddresses() error {
 		switch ss := s.(type) {
 		case *instruction:
 			ss.addr = a.pc
-			ss.inst = findMatchingInstruction(ss.opcode, ss.operand)
+			ss.inst = a.findMatchingInstruction(ss.opcode, ss.operand)
 			if ss.inst == nil {
 				a.addError(ss.opcode, "invalid addressing mode for opcode '%s'", ss.opcode.str)
 				return errParse
@@ -625,6 +630,25 @@ func (a *assembler) parsePseudoOp(line, label, pseudoOp fstring) error {
 	return op.fn(a, line, label, op.param)
 }
 
+// Parse an architecture pseudo-op.
+func (a *assembler) parseArch(line, label fstring, param interface{}) error {
+	archl, _ := line.consumeWhile(labelChar)
+	arch := strings.ToLower(archl.str)
+
+	switch {
+	case arch == "6502" || arch == "nmos":
+		a.arch = go6502.NMOS
+	case arch == "65c02" || arch == "cmos":
+		a.arch = go6502.CMOS
+	default:
+		a.addError(line, "invalid architecture '%s'", archl.str)
+		return errParse
+	}
+
+	a.instSet = go6502.GetInstructionSet(a.arch)
+	return nil
+}
+
 // Parse an ".EQ" macro definition.
 func (a *assembler) parseMacro(line, label fstring, param interface{}) error {
 	if label.str == "" {
@@ -825,7 +849,7 @@ func (a *assembler) parseInstruction(line fstring) error {
 	}
 
 	// Validate the opcode
-	instructions := go6502.GetInstructions(opcode.str)
+	instructions := a.instSet.GetVariants(opcode.str)
 	if instructions == nil {
 		a.addError(opcode, "invalid opcode '%s'", opcode.str)
 		return errParse
@@ -931,8 +955,8 @@ func (a *assembler) parseOperand(line fstring) (o operand, remain fstring, err e
 func (a *assembler) addError(l fstring, format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
 	a.errors = append(a.errors, asmerror{l, msg})
-	fmt.Fprintf(os.Stderr, "Syntax error line %d, col %d: %s\n", l.row, l.column+1, msg)
 	if a.verbose {
+		fmt.Printf("Syntax error line %d, col %d: %s\n", l.row, l.column+1, msg)
 		fmt.Println(l.full)
 		for i := 0; i < l.column; i++ {
 			fmt.Printf("-")
@@ -1006,10 +1030,10 @@ func relOffset(addr1, addr2 int) (byte, error) {
 // Given an opcode and operand data, select the best 6502
 // instruction match. Prefer the instruction with the shortest
 // total length.
-func findMatchingInstruction(opcode fstring, operand operand) *go6502.Instruction {
+func (a *assembler) findMatchingInstruction(opcode fstring, operand operand) *go6502.Instruction {
 	bestqual := 3
 	var found *go6502.Instruction
-	for _, inst := range go6502.GetInstructions(opcode.str) {
+	for _, inst := range a.instSet.GetVariants(opcode.str) {
 		match, qual := false, 0
 		switch {
 		case inst.Mode == go6502.IMP || inst.Mode == go6502.ACC:

@@ -75,77 +75,76 @@ type instfunc func(c *CPU, inst *Instruction, operand []byte)
 
 // Opcode name and function implementation
 type opcodeImpl struct {
-	sym    opsym
-	name   string
-	fnCMOS instfunc
-	fnNMOS instfunc
+	sym  opsym
+	name string
+	fn   [2]instfunc // NMOS=0, CMOS=1
 }
 
 var impl = []opcodeImpl{
-	{symADC, "ADC", (*CPU).adcc, (*CPU).adcn},
-	{symAND, "AND", (*CPU).and, (*CPU).and},
-	{symASL, "ASL", (*CPU).asl, (*CPU).asl},
-	{symBCC, "BCC", (*CPU).bcc, (*CPU).bcc},
-	{symBCS, "BCS", (*CPU).bcs, (*CPU).bcs},
-	{symBEQ, "BEQ", (*CPU).beq, (*CPU).beq},
-	{symBIT, "BIT", (*CPU).bit, (*CPU).bit},
-	{symBMI, "BMI", (*CPU).bmi, (*CPU).bmi},
-	{symBNE, "BNE", (*CPU).bne, (*CPU).bne},
-	{symBPL, "BPL", (*CPU).bpl, (*CPU).bpl},
-	{symBRA, "BRA", (*CPU).bra, nil},
-	{symBRK, "BRK", (*CPU).brk, (*CPU).brk},
-	{symBVC, "BVC", (*CPU).bvc, (*CPU).bvc},
-	{symBVS, "BVS", (*CPU).bvs, (*CPU).bvs},
-	{symCLC, "CLC", (*CPU).clc, (*CPU).clc},
-	{symCLD, "CLD", (*CPU).cld, (*CPU).cld},
-	{symCLI, "CLI", (*CPU).cli, (*CPU).cli},
-	{symCLV, "CLV", (*CPU).clv, (*CPU).clv},
-	{symCMP, "CMP", (*CPU).cmp, (*CPU).cmp},
-	{symCPX, "CPX", (*CPU).cpx, (*CPU).cpx},
-	{symCPY, "CPY", (*CPU).cpy, (*CPU).cpy},
-	{symDEC, "DEC", (*CPU).dec, (*CPU).dec},
-	{symDEX, "DEX", (*CPU).dex, (*CPU).dex},
-	{symDEY, "DEY", (*CPU).dey, (*CPU).dey},
-	{symEOR, "EOR", (*CPU).eor, (*CPU).eor},
-	{symINC, "INC", (*CPU).inc, (*CPU).inc},
-	{symINX, "INX", (*CPU).inx, (*CPU).inx},
-	{symINY, "INY", (*CPU).iny, (*CPU).iny},
-	{symJMP, "JMP", (*CPU).jmp, (*CPU).jmp},
-	{symJSR, "JSR", (*CPU).jsr, (*CPU).jsr},
-	{symLDA, "LDA", (*CPU).lda, (*CPU).lda},
-	{symLDX, "LDX", (*CPU).ldx, (*CPU).ldx},
-	{symLDY, "LDY", (*CPU).ldy, (*CPU).ldy},
-	{symLSR, "LSR", (*CPU).lsr, (*CPU).lsr},
-	{symNOP, "NOP", (*CPU).nop, (*CPU).nop},
-	{symORA, "ORA", (*CPU).ora, (*CPU).ora},
-	{symPHA, "PHA", (*CPU).pha, (*CPU).pha},
-	{symPHP, "PHP", (*CPU).php, (*CPU).php},
-	{symPHX, "PHX", (*CPU).phx, nil},
-	{symPHY, "PHY", (*CPU).phy, nil},
-	{symPLA, "PLA", (*CPU).pla, (*CPU).pla},
-	{symPLP, "PLP", (*CPU).plp, (*CPU).plp},
-	{symPLX, "PLX", (*CPU).plx, nil},
-	{symPLY, "PLY", (*CPU).ply, nil},
-	{symROL, "ROL", (*CPU).rol, (*CPU).rol},
-	{symROR, "ROR", (*CPU).ror, (*CPU).ror},
-	{symRTI, "RTI", (*CPU).rti, (*CPU).rti},
-	{symRTS, "RTS", (*CPU).rts, (*CPU).rts},
-	{symSBC, "SBC", (*CPU).sbcc, (*CPU).sbcn},
-	{symSEC, "SEC", (*CPU).sec, (*CPU).sec},
-	{symSED, "SED", (*CPU).sed, (*CPU).sed},
-	{symSEI, "SEI", (*CPU).sei, (*CPU).sei},
-	{symSTA, "STA", (*CPU).sta, (*CPU).sta},
-	{symSTX, "STX", (*CPU).stx, (*CPU).stx},
-	{symSTY, "STY", (*CPU).sty, (*CPU).sty},
-	{symSTZ, "STZ", (*CPU).stz, nil},
-	{symTAX, "TAX", (*CPU).tax, (*CPU).tax},
-	{symTAY, "TAY", (*CPU).tay, (*CPU).tay},
-	{symTRB, "TRB", (*CPU).trb, nil},
-	{symTSB, "TSB", (*CPU).tsb, nil},
-	{symTSX, "TSX", (*CPU).tsx, (*CPU).tsx},
-	{symTXA, "TXA", (*CPU).txa, (*CPU).txa},
-	{symTXS, "TXS", (*CPU).txs, (*CPU).txs},
-	{symTYA, "TYA", (*CPU).tya, (*CPU).tya},
+	{symADC, "ADC", [2]instfunc{(*CPU).adcn, (*CPU).adcc}},
+	{symAND, "AND", [2]instfunc{(*CPU).and, (*CPU).and}},
+	{symASL, "ASL", [2]instfunc{(*CPU).asl, (*CPU).asl}},
+	{symBCC, "BCC", [2]instfunc{(*CPU).bcc, (*CPU).bcc}},
+	{symBCS, "BCS", [2]instfunc{(*CPU).bcs, (*CPU).bcs}},
+	{symBEQ, "BEQ", [2]instfunc{(*CPU).beq, (*CPU).beq}},
+	{symBIT, "BIT", [2]instfunc{(*CPU).bit, (*CPU).bit}},
+	{symBMI, "BMI", [2]instfunc{(*CPU).bmi, (*CPU).bmi}},
+	{symBNE, "BNE", [2]instfunc{(*CPU).bne, (*CPU).bne}},
+	{symBPL, "BPL", [2]instfunc{(*CPU).bpl, (*CPU).bpl}},
+	{symBRA, "BRA", [2]instfunc{nil, (*CPU).bra}},
+	{symBRK, "BRK", [2]instfunc{(*CPU).brk, (*CPU).brk}},
+	{symBVC, "BVC", [2]instfunc{(*CPU).bvc, (*CPU).bvc}},
+	{symBVS, "BVS", [2]instfunc{(*CPU).bvs, (*CPU).bvs}},
+	{symCLC, "CLC", [2]instfunc{(*CPU).clc, (*CPU).clc}},
+	{symCLD, "CLD", [2]instfunc{(*CPU).cld, (*CPU).cld}},
+	{symCLI, "CLI", [2]instfunc{(*CPU).cli, (*CPU).cli}},
+	{symCLV, "CLV", [2]instfunc{(*CPU).clv, (*CPU).clv}},
+	{symCMP, "CMP", [2]instfunc{(*CPU).cmp, (*CPU).cmp}},
+	{symCPX, "CPX", [2]instfunc{(*CPU).cpx, (*CPU).cpx}},
+	{symCPY, "CPY", [2]instfunc{(*CPU).cpy, (*CPU).cpy}},
+	{symDEC, "DEC", [2]instfunc{(*CPU).dec, (*CPU).dec}},
+	{symDEX, "DEX", [2]instfunc{(*CPU).dex, (*CPU).dex}},
+	{symDEY, "DEY", [2]instfunc{(*CPU).dey, (*CPU).dey}},
+	{symEOR, "EOR", [2]instfunc{(*CPU).eor, (*CPU).eor}},
+	{symINC, "INC", [2]instfunc{(*CPU).inc, (*CPU).inc}},
+	{symINX, "INX", [2]instfunc{(*CPU).inx, (*CPU).inx}},
+	{symINY, "INY", [2]instfunc{(*CPU).iny, (*CPU).iny}},
+	{symJMP, "JMP", [2]instfunc{(*CPU).jmp, (*CPU).jmp}},
+	{symJSR, "JSR", [2]instfunc{(*CPU).jsr, (*CPU).jsr}},
+	{symLDA, "LDA", [2]instfunc{(*CPU).lda, (*CPU).lda}},
+	{symLDX, "LDX", [2]instfunc{(*CPU).ldx, (*CPU).ldx}},
+	{symLDY, "LDY", [2]instfunc{(*CPU).ldy, (*CPU).ldy}},
+	{symLSR, "LSR", [2]instfunc{(*CPU).lsr, (*CPU).lsr}},
+	{symNOP, "NOP", [2]instfunc{(*CPU).nop, (*CPU).nop}},
+	{symORA, "ORA", [2]instfunc{(*CPU).ora, (*CPU).ora}},
+	{symPHA, "PHA", [2]instfunc{(*CPU).pha, (*CPU).pha}},
+	{symPHP, "PHP", [2]instfunc{(*CPU).php, (*CPU).php}},
+	{symPHX, "PHX", [2]instfunc{nil, (*CPU).phx}},
+	{symPHY, "PHY", [2]instfunc{nil, (*CPU).phy}},
+	{symPLA, "PLA", [2]instfunc{(*CPU).pla, (*CPU).pla}},
+	{symPLP, "PLP", [2]instfunc{(*CPU).plp, (*CPU).plp}},
+	{symPLX, "PLX", [2]instfunc{nil, (*CPU).plx}},
+	{symPLY, "PLY", [2]instfunc{nil, (*CPU).ply}},
+	{symROL, "ROL", [2]instfunc{(*CPU).rol, (*CPU).rol}},
+	{symROR, "ROR", [2]instfunc{(*CPU).ror, (*CPU).ror}},
+	{symRTI, "RTI", [2]instfunc{(*CPU).rti, (*CPU).rti}},
+	{symRTS, "RTS", [2]instfunc{(*CPU).rts, (*CPU).rts}},
+	{symSBC, "SBC", [2]instfunc{(*CPU).sbcn, (*CPU).sbcc}},
+	{symSEC, "SEC", [2]instfunc{(*CPU).sec, (*CPU).sec}},
+	{symSED, "SED", [2]instfunc{(*CPU).sed, (*CPU).sed}},
+	{symSEI, "SEI", [2]instfunc{(*CPU).sei, (*CPU).sei}},
+	{symSTA, "STA", [2]instfunc{(*CPU).sta, (*CPU).sta}},
+	{symSTX, "STX", [2]instfunc{(*CPU).stx, (*CPU).stx}},
+	{symSTY, "STY", [2]instfunc{(*CPU).sty, (*CPU).sty}},
+	{symSTZ, "STZ", [2]instfunc{nil, (*CPU).stz}},
+	{symTAX, "TAX", [2]instfunc{(*CPU).tax, (*CPU).tax}},
+	{symTAY, "TAY", [2]instfunc{(*CPU).tay, (*CPU).tay}},
+	{symTRB, "TRB", [2]instfunc{nil, (*CPU).trb}},
+	{symTSB, "TSB", [2]instfunc{nil, (*CPU).tsb}},
+	{symTSX, "TSX", [2]instfunc{(*CPU).tsx, (*CPU).tsx}},
+	{symTXA, "TXA", [2]instfunc{(*CPU).txa, (*CPU).txa}},
+	{symTXS, "TXS", [2]instfunc{(*CPU).txs, (*CPU).txs}},
+	{symTYA, "TYA", [2]instfunc{(*CPU).tya, (*CPU).tya}},
 }
 
 // Mode describes a memory addressing mode.
@@ -403,20 +402,32 @@ type Instruction struct {
 	Length   byte     // number of machine code bytes required, including opcode
 	Cycles   byte     // number of CPU cycles to execute the instruction
 	BPCycles byte     // additional cycles required by instruction if a boundary page is crossed
-	fnCMOS   instfunc // implementing function for CMOS (65C02)
-	fnNMOS   instfunc // implementing function for NMOS (6502)
+	fn       instfunc // emulator implementation of the function
 }
 
-// Instructions is an array of all possible 6502 instructions indexed by
-// opcode value.
-var Instructions [256]Instruction
+// An InstructionSet defines the set of all possible instructions that
+// can run on the emulated CPU.
+type InstructionSet struct {
+	Arch         Architecture
+	instructions [256]Instruction          // all instructions by opcode
+	variants     map[string][]*Instruction // variants of each instruction
+}
 
-var variants map[string][]*Instruction
+// Lookup retrieves a CPU instruction corresponding to the requested opcode.
+func (s *InstructionSet) Lookup(opcode byte) *Instruction {
+	return &s.instructions[opcode]
+}
 
-// Build the Instructions table.
-func init() {
+// GetVariants returns all available variants of an istruction.
+func (s *InstructionSet) GetVariants(instName string) []*Instruction {
+	return s.variants[instName]
+}
 
-	// Create a map from symbol to implementation
+// Create an instruction set for a CPU architecture.
+func newInstructionSet(arch Architecture) *InstructionSet {
+	set := &InstructionSet{Arch: arch}
+
+	// Create a map from symbol to implementation for fast lookups.
 	symToImpl := make(map[opsym]*opcodeImpl, len(impl))
 	for i := range impl {
 		symToImpl[impl[i].sym] = &impl[i]
@@ -424,26 +435,43 @@ func init() {
 
 	// Create a map from instruction name string to the list of
 	// all instruction variants matching that name
-	variants = make(map[string][]*Instruction)
+	set.variants = make(map[string][]*Instruction)
 
-	// Build a full array impl comprehensive instruction data
+	// For each instruction, create a list of opcode variants valid for
+	// the architecture.
 	for _, d := range data {
+		if d.cmos && arch != CMOS {
+			continue // ignore CMOS-only instructions on NMOS CPUs
+		}
+
 		impl := symToImpl[d.sym]
-		inst := &Instructions[d.opcode]
+		if impl.fn[arch] == nil {
+			continue // some opcodes have no architeture implementation
+		}
+
+		inst := &set.instructions[d.opcode]
 		inst.Name = impl.name
 		inst.Mode = d.mode
 		inst.Opcode = d.opcode
 		inst.Length = d.length
 		inst.Cycles = d.cycles
 		inst.BPCycles = d.bpcycles
-		inst.fnCMOS = impl.fnCMOS
-		inst.fnNMOS = impl.fnNMOS
+		inst.fn = impl.fn[arch]
 
-		variants[inst.Name] = append(variants[inst.Name], inst)
+		set.variants[inst.Name] = append(set.variants[inst.Name], inst)
 	}
+
+	return set
 }
 
-// GetInstructions returns all instructions matching the opcode name.
-func GetInstructions(opcode string) []*Instruction {
-	return variants[opcode]
+var instructionSets [2]*InstructionSet
+
+// GetInstructionSet returns an instruction set for the requested CPU
+// architecture.
+func GetInstructionSet(arch Architecture) *InstructionSet {
+	if instructionSets[arch] == nil {
+		// Lazy-create the instruction set.
+		instructionSets[arch] = newInstructionSet(arch)
+	}
+	return instructionSets[arch]
 }

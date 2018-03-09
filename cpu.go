@@ -10,15 +10,27 @@ const (
 	interruptPeriod = 60
 )
 
+// Architecture selects the CPU chip: 6502 or 65c02
+type Architecture byte
+
+const (
+	// NMOS 6502 CPU
+	NMOS Architecture = iota
+
+	// CMOS 65c02 CPU
+	CMOS
+)
+
 // CPU represents a single 6502 CPU. It contains a pointer to the
 // memory associated with the CPU.
 type CPU struct {
-	Reg         Registers // CPU registers
-	Mem         *Memory   // assigned memory
-	Cycles      uint64    // total executed CPU cycles
-	CMOS        bool      // true if 65C02
-	pageCrossed bool
-	extraCycles uint32
+	Arch         Architecture // CPU architecture
+	Reg          Registers    // CPU registers
+	Mem          *Memory      // assigned memory
+	Cycles       uint64       // total executed CPU cycles
+	instructions *InstructionSet
+	pageCrossed  bool
+	extraCycles  uint32
 }
 
 // Interrupt vectors
@@ -29,9 +41,14 @@ const (
 	vectorBRK   = 0xfffe
 )
 
-// NewCPU creates a new 65C02 CPU object bound to the specified memory.
-func NewCPU(m *Memory) *CPU {
-	cpu := &CPU{Mem: m, CMOS: true}
+// NewCPU creates an emulated 6502 CPU bound to the specified memory.
+func NewCPU(arch Architecture, m *Memory) *CPU {
+	cpu := &CPU{
+		Arch:         arch,
+		Mem:          m,
+		instructions: GetInstructionSet(arch),
+	}
+
 	cpu.Reg.Init()
 	return cpu
 }
@@ -47,7 +64,13 @@ func (cpu *CPU) Step() {
 	opcode := cpu.Mem.LoadByte(cpu.Reg.PC)
 
 	// Look up the instruction data for the opcode
-	inst := &Instructions[opcode]
+	inst := cpu.instructions.Lookup(opcode)
+
+	// If the instruction is undefined, reset the CPU (for now).
+	if inst.fn == nil {
+		cpu.reset()
+		return
+	}
 
 	// Fetch the operand (if any) and advance the PC
 	operand := cpu.Mem.LoadBytes(cpu.Reg.PC+1, int(inst.Length)-1)
@@ -56,12 +79,7 @@ func (cpu *CPU) Step() {
 	// Execute the instruction
 	cpu.pageCrossed = false
 	cpu.extraCycles = 0
-	switch {
-	case cpu.CMOS && inst.fnCMOS != nil:
-		inst.fnCMOS(cpu, inst, operand)
-	case !cpu.CMOS && inst.fnNMOS != nil:
-		inst.fnNMOS(cpu, inst, operand)
-	}
+	inst.fn(cpu, inst, operand)
 
 	// Update the CPU cycle counter, with special-case logic
 	// to handle a page boundary crossing
@@ -215,7 +233,7 @@ func (cpu *CPU) handleInterrupt(brk bool, addr Address) {
 	cpu.push(cpu.Reg.SavePS(brk))
 
 	cpu.Reg.InterruptDisable = true
-	if cpu.CMOS {
+	if cpu.Arch == CMOS {
 		cpu.Reg.Decimal = false
 	}
 

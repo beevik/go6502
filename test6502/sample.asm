@@ -1,6 +1,7 @@
 ; Sample program illustrating some of the features of the go6502 macro
 ; assembler.
 
+		.ARCH		65c02	; select CMOS 65c02 chip
 		.ORG		$1000	; origin address for machine code
 
 ; -------
@@ -31,6 +32,7 @@ STORE		.EQ		$0200
 ; -------
 
 START:				; Labels may end in ':', which is ignored.
+		PHX
 		JSR LDA_TEST
 		JSR LDX_TEST
 		JSR LDY_TEST

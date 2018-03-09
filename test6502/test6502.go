@@ -93,7 +93,7 @@ func run(code []byte, origin go6502.Address, exports []asm.Export) {
 
 	pc := findExport(exports, origin, "START", "COLD.START", "RESTART")
 
-	cpu := go6502.NewCPU(mem)
+	cpu := go6502.NewCPU(go6502.CMOS, mem)
 	cpu.SetPC(pc)
 
 	// Output initial state.

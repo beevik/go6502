@@ -2,17 +2,17 @@ package asm
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
 
-func assemble(t *testing.T, code string) []byte {
+func assemble(t *testing.T, code string) ([]byte, error) {
 	r := bytes.NewReader([]byte(code))
 	result, err := Assemble(r, false)
 	if err != nil {
-		t.Error(err)
-		return []byte{}
+		return []byte{}, err
 	}
-	return result.Code
+	return result.Code, nil
 }
 
 func fromHex(c byte) byte {
@@ -29,7 +29,11 @@ func fromHex(c byte) byte {
 }
 
 func checkASM(t *testing.T, asm string, expected string) {
-	code := assemble(t, asm)
+	code, err := assemble(t, asm)
+	if err != nil {
+		t.Error(err)
+		return
+	}
 
 	b := make([]byte, len(code)*2)
 	for i, j := 0, 0; i < len(code); i, j = i+1, j+2 {
@@ -43,6 +47,17 @@ func checkASM(t *testing.T, asm string, expected string) {
 		t.Error("code doesn't match expected")
 		t.Errorf("got: %s\n", s)
 		t.Errorf("exp: %s\n", expected)
+	}
+}
+
+func checkASMError(t *testing.T, asm string, errString string) {
+	_, err := assemble(t, asm)
+	if err == nil {
+		t.Errorf("Expected error on %s, didn't get one\n", asm)
+		return
+	}
+	if errString != err.Error() {
+		t.Errorf("Expected '%s', got '%v'\n", errString, err)
 	}
 }
 
@@ -281,4 +296,53 @@ func TestHereExpression3(t *testing.T) {
 X	.EQ	$ - 1`
 
 	checkASM(t, asm, "2C0206")
+}
+
+var asm65c02 = `	PHX
+	PHY
+	PLX
+	PLY
+	BRA $1000
+	STZ $01
+	STZ $1234
+	STZ ABS:$01
+	STZ $01,X
+	STZ $1234,X
+	INC
+	DEC
+	JMP $1234,X
+	BIT #$12
+	BIT $12,X
+	BIT $1234,X
+	TRB $01
+	TRB $1234
+	TSB $01
+	TSB $1234
+	ADC ($01)
+	SBC ($01)
+	CMP ($01)
+	AND ($01)
+	ORA ($01)
+	EOR ($01)
+	LDA ($01)
+	STA ($01)`
+
+func Test65c02(t *testing.T) {
+	prefix := `
+	.ARCH 65c02
+	.ORG $1000
+`
+	checkASM(t, prefix+asm65c02, "DA5AFA7A80FA64019C34129C010074019E3412"+
+		"1A3A7C3412891234123C341214011C341204010C34127201F201D201320112015201B2019201")
+}
+
+func Test65c02FailOn6502(t *testing.T) {
+	lines := strings.Split(asm65c02, "\n")
+	prefix := `
+	.ARCH 6502
+	.ORG $1000
+`
+	for _, line := range lines {
+		checkASMError(t, prefix+line, "parse error")
+	}
 }
