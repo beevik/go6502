@@ -30,7 +30,7 @@ type CPU struct {
 	Cycles       uint64       // total executed CPU cycles
 	instructions *InstructionSet
 	pageCrossed  bool
-	extraCycles  uint32
+	deltaCycles  int8
 }
 
 // Interrupt vectors
@@ -78,12 +78,12 @@ func (cpu *CPU) Step() {
 
 	// Execute the instruction
 	cpu.pageCrossed = false
-	cpu.extraCycles = 0
+	cpu.deltaCycles = 0
 	inst.fn(cpu, inst, operand)
 
 	// Update the CPU cycle counter, with special-case logic
 	// to handle a page boundary crossing
-	cpu.Cycles += uint64(inst.Cycles) + uint64(cpu.extraCycles)
+	cpu.Cycles += uint64(int8(inst.Cycles) + cpu.deltaCycles)
 	if cpu.pageCrossed {
 		cpu.Cycles += uint64(inst.BPCycles)
 	}
@@ -200,9 +200,9 @@ func (cpu *CPU) branch(operand []byte) {
 	} else {
 		cpu.Reg.PC -= Address(0x100 - offset)
 	}
-	cpu.extraCycles++
+	cpu.deltaCycles++
 	if ((cpu.Reg.PC ^ oldPC) & 0xff00) != 0 {
-		cpu.extraCycles++
+		cpu.deltaCycles++
 	}
 }
 
@@ -268,7 +268,7 @@ func (cpu *CPU) adcc(inst *Instruction, operand []byte) {
 
 	switch cpu.Reg.Decimal {
 	case true:
-		cpu.extraCycles++
+		cpu.deltaCycles++
 
 		lo := (acc & 0x0f) + (add & 0x0f) + carry
 
@@ -367,6 +367,9 @@ func (cpu *CPU) asl(inst *Instruction, operand []byte) {
 	v = v << 1
 	cpu.store(inst.Mode, operand, v)
 	cpu.updateNZ(v)
+	if cpu.Arch == CMOS && inst.Mode == ABX && !cpu.pageCrossed {
+		cpu.deltaCycles--
+	}
 }
 
 // Branch if Carry Clear
@@ -529,8 +532,23 @@ func (cpu *CPU) iny(inst *Instruction, operand []byte) {
 	cpu.updateNZ(cpu.Reg.Y)
 }
 
-// Jump to memory address
-func (cpu *CPU) jmp(inst *Instruction, operand []byte) {
+// Jump to memory address (NMOS 6502)
+func (cpu *CPU) jmpn(inst *Instruction, operand []byte) {
+	if inst.Mode == IND && operand[0] == 0xff {
+		// Bug in NMOS 6502, where JMP $(12FF) would load LSB of jmp
+		// target from $12FF and MSB from $1200.
+		addr0 := Address(operand[1])<<8 | 0xff
+		addr1 := Address(operand[1])<<8 | 0x00
+		lo := cpu.Mem.LoadByte(addr0)
+		hi := cpu.Mem.LoadByte(addr1)
+		cpu.Reg.PC = Address(lo) | Address(hi)<<8
+		return
+	}
+	cpu.Reg.PC = cpu.loadAddress(inst.Mode, operand)
+}
+
+// Jump to memory address (CMOS 65c02)
+func (cpu *CPU) jmpc(inst *Instruction, operand []byte) {
 	cpu.Reg.PC = cpu.loadAddress(inst.Mode, operand)
 }
 
@@ -568,6 +586,9 @@ func (cpu *CPU) lsr(inst *Instruction, operand []byte) {
 	v = v >> 1
 	cpu.store(inst.Mode, operand, v)
 	cpu.updateNZ(v)
+	if cpu.Arch == CMOS && inst.Mode == ABX && !cpu.pageCrossed {
+		cpu.deltaCycles--
+	}
 }
 
 // No-operation
@@ -631,6 +652,9 @@ func (cpu *CPU) rol(inst *Instruction, operand []byte) {
 	cpu.Reg.Carry = ((tmp & 0x80) != 0)
 	cpu.store(inst.Mode, operand, v)
 	cpu.updateNZ(v)
+	if cpu.Arch == CMOS && inst.Mode == ABX && !cpu.pageCrossed {
+		cpu.deltaCycles--
+	}
 }
 
 // Rotate right
@@ -640,6 +664,9 @@ func (cpu *CPU) ror(inst *Instruction, operand []byte) {
 	cpu.Reg.Carry = ((tmp & 1) != 0)
 	cpu.store(inst.Mode, operand, v)
 	cpu.updateNZ(v)
+	if cpu.Arch == CMOS && inst.Mode == ABX && !cpu.pageCrossed {
+		cpu.deltaCycles--
+	}
 }
 
 // Return from interrupt
@@ -665,7 +692,7 @@ func (cpu *CPU) sbcc(inst *Instruction, operand []byte) {
 
 	switch cpu.Reg.Decimal {
 	case true:
-		cpu.extraCycles++
+		cpu.deltaCycles++
 
 		lo := 0x0f + (acc & 0x0f) - (sub & 0x0f) + carry
 
@@ -843,4 +870,14 @@ func (cpu *CPU) txs(inst *Instruction, operand []byte) {
 func (cpu *CPU) tya(inst *Instruction, operand []byte) {
 	cpu.Reg.A = cpu.Reg.Y
 	cpu.updateNZ(cpu.Reg.A)
+}
+
+// Unused instruction (6502)
+func (cpu *CPU) unusedn(inst *Instruction, operand []byte) {
+	// Do nothing
+}
+
+// Unused instruction (65c02)
+func (cpu *CPU) unusedc(inst *Instruction, operand []byte) {
+	// Do nothing
 }

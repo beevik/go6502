@@ -849,7 +849,7 @@ func (a *assembler) parseInstruction(line fstring) error {
 	}
 
 	// Validate the opcode
-	instructions := a.instSet.GetVariants(opcode.str)
+	instructions := a.instSet.GetInstructions(opcode.str)
 	if instructions == nil {
 		a.addError(opcode, "invalid opcode '%s'", opcode.str)
 		return errParse
@@ -1033,7 +1033,7 @@ func relOffset(addr1, addr2 int) (byte, error) {
 func (a *assembler) findMatchingInstruction(opcode fstring, operand operand) *go6502.Instruction {
 	bestqual := 3
 	var found *go6502.Instruction
-	for _, inst := range a.instSet.GetVariants(opcode.str) {
+	for _, inst := range a.instSet.GetInstructions(opcode.str) {
 		match, qual := false, 0
 		switch {
 		case inst.Mode == go6502.IMP || inst.Mode == go6502.ACC:

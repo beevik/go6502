@@ -1,7 +1,7 @@
 package go6502
 
-// An opsym is an internal symbol used to associate opcode data
-// with its implementation.
+// An opsym is an internal symbol used to associate an opcode's data
+// with its instructions.
 type opsym byte
 
 const (
@@ -73,7 +73,7 @@ const (
 
 type instfunc func(c *CPU, inst *Instruction, operand []byte)
 
-// Opcode name and function implementation
+// Emulator implementation for each opcode
 type opcodeImpl struct {
 	sym  opsym
 	name string
@@ -109,7 +109,7 @@ var impl = []opcodeImpl{
 	{symINC, "INC", [2]instfunc{(*CPU).inc, (*CPU).inc}},
 	{symINX, "INX", [2]instfunc{(*CPU).inx, (*CPU).inx}},
 	{symINY, "INY", [2]instfunc{(*CPU).iny, (*CPU).iny}},
-	{symJMP, "JMP", [2]instfunc{(*CPU).jmp, (*CPU).jmp}},
+	{symJMP, "JMP", [2]instfunc{(*CPU).jmpn, (*CPU).jmpc}},
 	{symJSR, "JSR", [2]instfunc{(*CPU).jsr, (*CPU).jsr}},
 	{symLDA, "LDA", [2]instfunc{(*CPU).lda, (*CPU).lda}},
 	{symLDX, "LDX", [2]instfunc{(*CPU).ldx, (*CPU).ldx}},
@@ -153,7 +153,7 @@ type Mode byte
 // All possible memory addressing modes
 const (
 	IMM Mode = iota // Immediate
-	IMP             // Implied
+	IMP             // Implied (no operand)
 	REL             // Relative
 	ZPG             // Zero Page
 	ZPX             // Zero Page,X
@@ -164,12 +164,12 @@ const (
 	IND             // (Indirect)
 	IDX             // (Indirect,X)
 	IDY             // (Indirect),Y
-	ACC             // Accumulator
+	ACC             // Accumulator (no operand)
 )
 
 // Opcode data for an (opcode, mode) pair
 type opcodeData struct {
-	sym      opsym // internal opcode key value
+	sym      opsym // internal opcode symbol
 	mode     Mode  // addressing mode
 	opcode   byte  // opcode hex value
 	length   byte  // length of opcode + operand in bytes
@@ -393,15 +393,102 @@ var data = []opcodeData{
 	{symROR, ABX, 0x7e, 3, 7, 0, false},
 }
 
-// An Instruction describes a 6502 CPU instruction, including its name,
-// its function implementation, and other metadata.
+// Unused opcodes
+type unused struct {
+	opcode byte
+	length byte
+	cycles byte
+}
+
+var unusedData = []unused{
+	{0x02, 2, 2},
+	{0x22, 2, 2},
+	{0x42, 2, 2},
+	{0x62, 2, 2},
+	{0x82, 2, 2},
+	{0xc2, 2, 2},
+	{0xe2, 2, 2},
+	{0x03, 1, 1},
+	{0x13, 1, 1},
+	{0x23, 1, 1},
+	{0x33, 1, 1},
+	{0x43, 1, 1},
+	{0x53, 1, 1},
+	{0x63, 1, 1},
+	{0x73, 1, 1},
+	{0x83, 1, 1},
+	{0x93, 1, 1},
+	{0xa3, 1, 1},
+	{0xb3, 1, 1},
+	{0xc3, 1, 1},
+	{0xd3, 1, 1},
+	{0xe3, 1, 1},
+	{0xf3, 1, 1},
+	{0x44, 2, 3},
+	{0x54, 2, 4},
+	{0x07, 1, 1},
+	{0x17, 1, 1},
+	{0x27, 1, 1},
+	{0x37, 1, 1},
+	{0x47, 1, 1},
+	{0x57, 1, 1},
+	{0x67, 1, 1},
+	{0x77, 1, 1},
+	{0x87, 1, 1},
+	{0x97, 1, 1},
+	{0xa7, 1, 1},
+	{0xb7, 1, 1},
+	{0xc7, 1, 1},
+	{0xd7, 1, 1},
+	{0xe7, 1, 1},
+	{0xf7, 1, 1},
+	{0x0b, 1, 1},
+	{0x1b, 1, 1},
+	{0x2b, 1, 1},
+	{0x3b, 1, 1},
+	{0x4b, 1, 1},
+	{0x5b, 1, 1},
+	{0x6b, 1, 1},
+	{0x7b, 1, 1},
+	{0x8b, 1, 1},
+	{0x9b, 1, 1},
+	{0xab, 1, 1},
+	{0xbb, 1, 1},
+	{0xcb, 1, 1},
+	{0xdb, 1, 1},
+	{0xeb, 1, 1},
+	{0xfb, 1, 1},
+	{0x5c, 3, 8},
+	{0xdc, 3, 4},
+	{0xfc, 3, 4},
+	{0x0f, 1, 1},
+	{0x1f, 1, 1},
+	{0x2f, 1, 1},
+	{0x3f, 1, 1},
+	{0x4f, 1, 1},
+	{0x5f, 1, 1},
+	{0x6f, 1, 1},
+	{0x7f, 1, 1},
+	{0x8f, 1, 1},
+	{0x9f, 1, 1},
+	{0xaf, 1, 1},
+	{0xbf, 1, 1},
+	{0xcf, 1, 1},
+	{0xdf, 1, 1},
+	{0xef, 1, 1},
+	{0xff, 1, 1},
+}
+
+// An Instruction describes a CPU instruction, including its name,
+// its addressing mode, its opcode value, its operand size, and its CPU cycle
+// cost.
 type Instruction struct {
-	Name     string   // string representation of the opcode
+	Name     string   // all-caps name of the instruction
 	Mode     Mode     // addressing mode
 	Opcode   byte     // hexadecimal opcode value
-	Length   byte     // number of machine code bytes required, including opcode
+	Length   byte     // combined size of opcode and operand, in bytes
 	Cycles   byte     // number of CPU cycles to execute the instruction
-	BPCycles byte     // additional cycles required by instruction if a boundary page is crossed
+	BPCycles byte     // additional cycles required if boundary page crossed
 	fn       instfunc // emulator implementation of the function
 }
 
@@ -418,9 +505,10 @@ func (s *InstructionSet) Lookup(opcode byte) *Instruction {
 	return &s.instructions[opcode]
 }
 
-// GetVariants returns all available variants of an istruction.
-func (s *InstructionSet) GetVariants(instName string) []*Instruction {
-	return s.variants[instName]
+// GetInstructions returns all CPU instructions whose name matches the
+// provided string.
+func (s *InstructionSet) GetInstructions(name string) []*Instruction {
+	return s.variants[name]
 }
 
 // Create an instruction set for a CPU architecture.
@@ -433,8 +521,8 @@ func newInstructionSet(arch Architecture) *InstructionSet {
 		symToImpl[impl[i].sym] = &impl[i]
 	}
 
-	// Create a map from instruction name string to the list of
-	// all instruction variants matching that name
+	// Create a map from instruction name to the slice  of all instruction
+	// variants matching that name.
 	set.variants = make(map[string][]*Instruction)
 
 	// For each instruction, create a list of opcode variants valid for
@@ -459,6 +547,26 @@ func newInstructionSet(arch Architecture) *InstructionSet {
 		inst.fn = impl.fn[arch]
 
 		set.variants[inst.Name] = append(set.variants[inst.Name], inst)
+	}
+
+	// Add unused opcodes to the instruction set. This information is useful
+	// mostly for 65c02, where unused operations do something predicable
+	// (i.e., eat cycles and nothing else).
+	var unusedName = "_unused"
+	for _, u := range unusedData {
+		inst := &set.instructions[u.opcode]
+		inst.Name = unusedName
+		inst.Mode = ACC
+		inst.Opcode = u.opcode
+		inst.Length = u.length
+		inst.Cycles = u.cycles
+		inst.BPCycles = 0
+		switch arch {
+		case NMOS:
+			inst.fn = (*CPU).unusedn
+		case CMOS:
+			inst.fn = (*CPU).unusedc
+		}
 	}
 
 	return set
