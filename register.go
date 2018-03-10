@@ -2,17 +2,17 @@ package go6502
 
 // Registers contains the state of all 6502 registers.
 type Registers struct {
-	A                byte    // accumulator
-	X                byte    // X indexing register
-	Y                byte    // Y indexing register
-	SP               byte    // stack pointer ($100 + SP = stack memory location)
-	PC               Address // program counter
-	Carry            bool    // PS: Carry bit
-	Zero             bool    // PS: Zero bit
-	InterruptDisable bool    // PS: Interrupt disable bit
-	Decimal          bool    // PS: Decimal bit
-	Overflow         bool    // PS: Overflow bit
-	Sign             bool    // PS: Sign bit
+	A                byte   // accumulator
+	X                byte   // X indexing register
+	Y                byte   // Y indexing register
+	SP               byte   // stack pointer ($100 + SP = stack memory location)
+	PC               uint16 // program counter
+	Carry            bool   // PS: Carry bit
+	Zero             bool   // PS: Zero bit
+	InterruptDisable bool   // PS: Interrupt disable bit
+	Decimal          bool   // PS: Decimal bit
+	Overflow         bool   // PS: Overflow bit
+	Sign             bool   // PS: Sign bit
 }
 
 // Bits assigned to the processor status byte

@@ -268,14 +268,14 @@ type assembler struct {
 // An Export describes an exported address.
 type Export struct {
 	Label string
-	Addr  go6502.Address
+	Addr  uint16
 }
 
 // Result of the Assemble function.
 type Result struct {
-	Code    []byte         // Assembled machine code
-	Origin  go6502.Address // Code origin address
-	Exports []Export       // Exported addresses
+	Code    []byte   // Assembled machine code
+	Origin  uint16   // Code origin address
+	Exports []Export // Exported addresses
 }
 
 // Assemble reads data from the provided stream and attempts to assemble
@@ -319,7 +319,7 @@ func Assemble(r io.Reader, verbose bool) (*Result, error) {
 
 	result := &Result{
 		Code:    a.code,
-		Origin:  go6502.Address(a.origin),
+		Origin:  uint16(a.origin),
 		Exports: a.exports,
 	}
 	return result, nil
@@ -501,7 +501,7 @@ func (a *assembler) generateCode() error {
 			}
 			export := Export{
 				Label: ss.expr.identifier.str,
-				Addr:  go6502.Address(ss.expr.value),
+				Addr:  uint16(ss.expr.value),
 			}
 			a.exports = append(a.exports, export)
 		}

@@ -47,7 +47,7 @@ func hexString(b []byte) string {
 // Disassemble the machine code in memory 'm' at address 'addr'. Return a
 // 'line' string representing the disassembled instruction and a 'next'
 // address that starts the following line of machine code.
-func Disassemble(m go6502.Memory, addr go6502.Address) (line string, next go6502.Address, err error) {
+func Disassemble(m go6502.Memory, addr uint16) (line string, next uint16, err error) {
 	opcode, err := m.LoadByte(addr)
 	if err != nil {
 		return "", 0, err
@@ -74,6 +74,6 @@ func Disassemble(m go6502.Memory, addr go6502.Address) (line string, next go6502
 	}
 	format := "%s " + modeFormat[inst.Mode]
 	line = fmt.Sprintf(format, inst.Name, hexString(operand))
-	next = addr + go6502.Address(inst.Length)
+	next = addr + uint16(inst.Length)
 	return line, next, err
 }

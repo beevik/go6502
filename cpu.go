@@ -20,13 +20,13 @@ const (
 // CPU represents a single 6502 CPU. It contains a pointer to the
 // memory associated with the CPU.
 type CPU struct {
-	Arch         Architecture // CPU architecture
-	Reg          Registers    // CPU registers
-	Mem          Memory       // assigned memory
-	Cycles       uint64       // total executed CPU cycles
-	instructions *InstructionSet
-	pageCrossed  bool
-	deltaCycles  int8
+	Arch        Architecture // CPU architecture
+	Reg         Registers    // CPU registers
+	Mem         Memory       // assigned memory
+	Cycles      uint64       // total executed CPU cycles
+	instSet     *InstructionSet
+	pageCrossed bool
+	deltaCycles int8
 }
 
 // Interrupt vectors
@@ -40,9 +40,9 @@ const (
 // NewCPU creates an emulated 6502 CPU bound to the specified memory.
 func NewCPU(arch Architecture, m Memory) *CPU {
 	cpu := &CPU{
-		Arch:         arch,
-		Mem:          m,
-		instructions: GetInstructionSet(arch),
+		Arch:    arch,
+		Mem:     m,
+		instSet: GetInstructionSet(arch),
 	}
 
 	cpu.Reg.Init()
@@ -50,7 +50,7 @@ func NewCPU(arch Architecture, m Memory) *CPU {
 }
 
 // SetPC updates the CPU program counter to 'addr'.
-func (cpu *CPU) SetPC(addr Address) {
+func (cpu *CPU) SetPC(addr uint16) {
 	cpu.Reg.PC = addr
 }
 
@@ -63,7 +63,7 @@ func (cpu *CPU) Step() {
 	}
 
 	// Look up the instruction data for the opcode
-	inst := cpu.instructions.Lookup(opcode)
+	inst := cpu.instSet.Lookup(opcode)
 
 	// If the instruction is undefined, reset the CPU (for now).
 	if inst.fn == nil {
@@ -75,7 +75,7 @@ func (cpu *CPU) Step() {
 	var buf [2]byte
 	operand := buf[:inst.Length-1]
 	err = cpu.Mem.LoadBytes(cpu.Reg.PC+1, operand)
-	cpu.Reg.PC += Address(inst.Length)
+	cpu.Reg.PC += uint16(inst.Length)
 	if err != nil {
 		panic(err)
 	}
@@ -96,8 +96,8 @@ func (cpu *CPU) Step() {
 	}
 }
 
-// Load a byte value using the requested addressing mode
-// and the variable-sized instruction operand.
+// Load a byte value from using the requested addressing mode
+// and the operand to determine where to load it from.
 func (cpu *CPU) load(mode Mode, operand []byte) (byte, error) {
 	switch mode {
 	case IMM:
@@ -147,9 +147,9 @@ func (cpu *CPU) load(mode Mode, operand []byte) (byte, error) {
 	}
 }
 
-// Load a 16-bit address value using the requested addressing mode
+// Load a 16-bit address value from memory using the requested addressing mode
 // and the 16-bit instruction operand.
-func (cpu *CPU) loadAddress(mode Mode, operand []byte) (Address, error) {
+func (cpu *CPU) loadAddress(mode Mode, operand []byte) (uint16, error) {
 	switch mode {
 	case ABS:
 		return operandToAddress(operand), nil
@@ -161,8 +161,8 @@ func (cpu *CPU) loadAddress(mode Mode, operand []byte) (Address, error) {
 	}
 }
 
-// Store the value 'v' using the specified addressing mode and the
-// variable-sized instruction operand.
+// Store a byte value using the specified addressing mode and the
+// variable-sized instruction operand to determine where to store it.
 func (cpu *CPU) store(mode Mode, operand []byte, v byte) error {
 	switch mode {
 	case ZPG:
@@ -216,9 +216,9 @@ func (cpu *CPU) branch(operand []byte) {
 	offset := operandToAddress(operand)
 	oldPC := cpu.Reg.PC
 	if offset < 0x80 {
-		cpu.Reg.PC += Address(offset)
+		cpu.Reg.PC += uint16(offset)
 	} else {
-		cpu.Reg.PC -= Address(0x100 - offset)
+		cpu.Reg.PC -= uint16(0x100 - offset)
 	}
 	cpu.deltaCycles++
 	if ((cpu.Reg.PC ^ oldPC) & 0xff00) != 0 {
@@ -234,7 +234,7 @@ func (cpu *CPU) push(v byte) error {
 }
 
 // Push the address 'addr' onto the stack.
-func (cpu *CPU) pushAddress(addr Address) error {
+func (cpu *CPU) pushAddress(addr uint16) error {
 	err := cpu.push(byte(addr >> 8))
 	if err != nil {
 		return err
@@ -249,7 +249,7 @@ func (cpu *CPU) pop() (byte, error) {
 }
 
 // Pop a 16-bit address off the stack.
-func (cpu *CPU) popAddress() (Address, error) {
+func (cpu *CPU) popAddress() (uint16, error) {
 	lo, err := cpu.pop()
 	if err != nil {
 		return 0, err
@@ -260,7 +260,7 @@ func (cpu *CPU) popAddress() (Address, error) {
 		return 0, err
 	}
 
-	return Address(lo) | (Address(hi) << 8), nil
+	return uint16(lo) | (uint16(hi) << 8), nil
 }
 
 // Update the Zero and Negative flags based on the value of 'v'.
@@ -272,7 +272,7 @@ func (cpu *CPU) updateNZ(v byte) {
 // Handle an handleInterrupt by storing the program counter and status
 // flags on the stack. Then switch the program counter to the requested
 // address.
-func (cpu *CPU) handleInterrupt(brk bool, addr Address) error {
+func (cpu *CPU) handleInterrupt(brk bool, addr uint16) error {
 	err := cpu.pushAddress(cpu.Reg.PC)
 	if err != nil {
 		return err
@@ -641,7 +641,7 @@ func (cpu *CPU) jmpc(inst *Instruction, operand []byte) error {
 		// Fix bug in NMOS 6502 address loading. In NMOS 6502, a JMP ($12FF)
 		// would load LSB of jmp target from $12FF and MSB from $1200.
 		// In CMOS, it loads the MSB from $1300.
-		addr0 := Address(operand[1])<<8 | 0xff
+		addr0 := uint16(operand[1])<<8 | 0xff
 		addr1 := addr0 + 1
 		lo, err := cpu.Mem.LoadByte(addr0)
 		if err != nil {
@@ -651,7 +651,7 @@ func (cpu *CPU) jmpc(inst *Instruction, operand []byte) error {
 		if err != nil {
 			return err
 		}
-		cpu.Reg.PC = Address(lo) | Address(hi)<<8
+		cpu.Reg.PC = uint16(lo) | uint16(hi)<<8
 		cpu.deltaCycles++
 		return nil
 	}
@@ -775,7 +775,7 @@ func (cpu *CPU) ply(inst *Instruction, operand []byte) error {
 	return err
 }
 
-// Rotate left
+// Rotate Left
 func (cpu *CPU) rol(inst *Instruction, operand []byte) error {
 	tmp, err := cpu.load(inst.Mode, operand)
 	if err != nil {
@@ -791,7 +791,7 @@ func (cpu *CPU) rol(inst *Instruction, operand []byte) error {
 	return err
 }
 
-// Rotate right
+// Rotate Right
 func (cpu *CPU) ror(inst *Instruction, operand []byte) error {
 	tmp, err := cpu.load(inst.Mode, operand)
 	if err != nil {
@@ -807,7 +807,7 @@ func (cpu *CPU) ror(inst *Instruction, operand []byte) error {
 	return err
 }
 
-// Return from interrupt
+// Return from Interrupt
 func (cpu *CPU) rti(inst *Instruction, operand []byte) error {
 	v, err := cpu.pop()
 	if err != nil {
@@ -953,22 +953,22 @@ func (cpu *CPU) sei(inst *Instruction, operand []byte) error {
 	return nil
 }
 
-// store Accumulator
+// Store Accumulator
 func (cpu *CPU) sta(inst *Instruction, operand []byte) error {
 	return cpu.store(inst.Mode, operand, cpu.Reg.A)
 }
 
-// store X register
+// Store X register
 func (cpu *CPU) stx(inst *Instruction, operand []byte) error {
 	return cpu.store(inst.Mode, operand, cpu.Reg.X)
 }
 
-// store Y register
+// Store Y register
 func (cpu *CPU) sty(inst *Instruction, operand []byte) error {
 	return cpu.store(inst.Mode, operand, cpu.Reg.Y)
 }
 
-// store zero (65c02 only)
+// Store Zero (65c02 only)
 func (cpu *CPU) stz(inst *Instruction, operand []byte) error {
 	return cpu.store(inst.Mode, operand, 0)
 }
@@ -987,7 +987,7 @@ func (cpu *CPU) tay(inst *Instruction, operand []byte) error {
 	return nil
 }
 
-// Test and reset bits (65c02 only)
+// Test and Reset Bits (65c02 only)
 func (cpu *CPU) trb(inst *Instruction, operand []byte) error {
 	v, err := cpu.load(inst.Mode, operand)
 	if err != nil {
@@ -998,7 +998,7 @@ func (cpu *CPU) trb(inst *Instruction, operand []byte) error {
 	return cpu.store(inst.Mode, operand, nv)
 }
 
-// Test and set bits (65c02 only)
+// Test and Set Bits (65c02 only)
 func (cpu *CPU) tsb(inst *Instruction, operand []byte) error {
 	v, err := cpu.load(inst.Mode, operand)
 	if err != nil {

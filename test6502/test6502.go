@@ -48,8 +48,8 @@ func main() {
 	run(r.Code, r.Origin, r.Exports)
 }
 
-func findExport(exports []asm.Export, origin go6502.Address, names ...string) go6502.Address {
-	table := make(map[string]go6502.Address)
+func findExport(exports []asm.Export, origin uint16, names ...string) uint16 {
+	table := make(map[string]uint16)
 	for _, e := range exports {
 		table[e.Label] = e.Addr
 	}
@@ -76,10 +76,10 @@ func loadMonitor(mem *go6502.FlatMemory) {
 		os.Exit(1)
 	}
 
-	mem.StoreBytes(go6502.Address(0xf800), b)
+	mem.StoreBytes(uint16(0xf800), b)
 }
 
-func run(code []byte, origin go6502.Address, exports []asm.Export) {
+func run(code []byte, origin uint16, exports []asm.Export) {
 
 	fmt.Printf("\nRunning assembled code...\n")
 

@@ -28,7 +28,7 @@ func runCPU(t *testing.T, asmString string, steps int) *go6502.CPU {
 	return cpu
 }
 
-func expectPC(t *testing.T, cpu *go6502.CPU, pc go6502.Address) {
+func expectPC(t *testing.T, cpu *go6502.CPU, pc uint16) {
 	if cpu.Reg.PC != pc {
 		t.Errorf("PC incorrect. exp: $%04X, got: $%04X", pc, cpu.Reg.PC)
 	}
@@ -46,7 +46,7 @@ func expectACC(t *testing.T, cpu *go6502.CPU, acc byte) {
 	}
 }
 
-func expectMem(t *testing.T, cpu *go6502.CPU, addr go6502.Address, v byte) {
+func expectMem(t *testing.T, cpu *go6502.CPU, addr uint16, v byte) {
 	got, _ := cpu.Mem.LoadByte(addr)
 	if got != v {
 		t.Errorf("Memory at $%04X incorrect. exp: $%02X, got: $%02X", addr, v, got)

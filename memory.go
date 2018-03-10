@@ -2,9 +2,6 @@ package go6502
 
 import "errors"
 
-// An Address on 6502 is always 16-bit.
-type Address uint16
-
 // Errors
 var (
 	ErrMemoryOutOfBounds = errors.New("Memory access out of bounds")
@@ -14,41 +11,39 @@ var (
 // memory accesses occur.
 type Memory interface {
 	// LoadByte loads a single byte from the address and returns it.
-	LoadByte(addr Address) (byte, error)
+	LoadByte(addr uint16) (byte, error)
 
 	// LoadBytes loads multiple bytes from the address and stores them into
 	// the buffer 'b'.
-	LoadBytes(addr Address, b []byte) error
+	LoadBytes(addr uint16, b []byte) error
 
 	// LoadAddress loads a 16-bit address value from the requested address and
 	// returns it.
-	LoadAddress(addr Address) (Address, error)
+	LoadAddress(addr uint16) (uint16, error)
 
 	// StoreByte stores a byte to the requested address.
-	StoreByte(addr Address, v byte) error
+	StoreByte(addr uint16, v byte) error
 
 	// StoreBytes stores multiple bytes to the requested address.
-	StoreBytes(addr Address, b []byte) error
+	StoreBytes(addr uint16, b []byte) error
 
 	// StoreAddres stores a 16-bit address 'v' to the requested address.
-	StoreAddress(addr Address, v Address) error
+	StoreAddress(addr uint16, v uint16) error
 }
 
 // FlatMemory represents an entire 16-bit address space as a singular
 // 64K buffer.
 type FlatMemory struct {
-	b []byte
+	b [64 * 1024]byte
 }
 
 // NewFlatMemory creates a new 16-bit memory space.
 func NewFlatMemory() *FlatMemory {
-	return &FlatMemory{
-		b: make([]byte, 65536),
-	}
+	return &FlatMemory{}
 }
 
 // LoadByte loads a single byte from the address and returns it.
-func (m *FlatMemory) LoadByte(addr Address) (byte, error) {
+func (m *FlatMemory) LoadByte(addr uint16) (byte, error) {
 	if int(addr) >= len(m.b) {
 		return 0, ErrMemoryOutOfBounds
 	}
@@ -56,7 +51,7 @@ func (m *FlatMemory) LoadByte(addr Address) (byte, error) {
 }
 
 // LoadBytes loads multiple bytes from the address and returns them.
-func (m *FlatMemory) LoadBytes(addr Address, b []byte) error {
+func (m *FlatMemory) LoadBytes(addr uint16, b []byte) error {
 	if int(addr)+len(b) > len(m.b) {
 		return ErrMemoryOutOfBounds
 	}
@@ -71,19 +66,19 @@ func (m *FlatMemory) LoadBytes(addr Address, b []byte) error {
 // byte of the loaded address comes from a page-wrapped address.  For example,
 // LoadAddress on $12FF reads the low byte from $12FF and the high byte from
 // $1200. This mimics the behavior of the NMOS 6502.
-func (m *FlatMemory) LoadAddress(addr Address) (Address, error) {
+func (m *FlatMemory) LoadAddress(addr uint16) (uint16, error) {
 	if int(addr)+2 > len(m.b) {
 		return 0, ErrMemoryOutOfBounds
 	}
 
 	if (addr & 0xff) == 0xff {
-		return Address(m.b[addr]) | Address(m.b[addr-0xff])<<8, nil
+		return uint16(m.b[addr]) | uint16(m.b[addr-0xff])<<8, nil
 	}
-	return Address(m.b[addr]) | Address(m.b[addr+1])<<8, nil
+	return uint16(m.b[addr]) | uint16(m.b[addr+1])<<8, nil
 }
 
 // StoreByte stores a byte at the requested address.
-func (m *FlatMemory) StoreByte(addr Address, v byte) error {
+func (m *FlatMemory) StoreByte(addr uint16, v byte) error {
 	if int(addr) >= len(m.b) {
 		return ErrMemoryOutOfBounds
 	}
@@ -93,7 +88,7 @@ func (m *FlatMemory) StoreByte(addr Address, v byte) error {
 }
 
 // StoreBytes stores multiple bytes to the requested address.
-func (m *FlatMemory) StoreBytes(addr Address, b []byte) error {
+func (m *FlatMemory) StoreBytes(addr uint16, b []byte) error {
 	if int(addr)+len(b) > len(m.b) {
 		return ErrMemoryOutOfBounds
 	}
@@ -103,7 +98,7 @@ func (m *FlatMemory) StoreBytes(addr Address, b []byte) error {
 }
 
 // StoreAddress stores a 16-bit address value to the requested address.
-func (m *FlatMemory) StoreAddress(addr Address, v Address) error {
+func (m *FlatMemory) StoreAddress(addr uint16, v uint16) error {
 	if int(addr)+2 > len(m.b) {
 		return ErrMemoryOutOfBounds
 	}
@@ -114,16 +109,16 @@ func (m *FlatMemory) StoreAddress(addr Address, v Address) error {
 
 // Return the offset address 'addr' + 'offset'. If the offset
 // crossed a page boundary, return 'pageCrossed' as true.
-func offsetAddress(addr Address, offset byte) (newAddr Address, pageCrossed bool) {
-	newAddr = addr + Address(offset)
+func offsetAddress(addr uint16, offset byte) (newAddr uint16, pageCrossed bool) {
+	newAddr = addr + uint16(offset)
 	pageCrossed = ((newAddr & 0xff00) != (addr & 0xff00))
 	return newAddr, pageCrossed
 }
 
 // Offset a zero-page address 'addr' by 'offset'. If the address
 // exceeds the zero-page address space, wrap it.
-func offsetZeroPage(addr Address, offset byte) Address {
-	addr += Address(offset)
+func offsetZeroPage(addr uint16, offset byte) uint16 {
+	addr += uint16(offset)
 	if addr >= 0x100 {
 		addr -= 0x100
 	}
@@ -131,18 +126,18 @@ func offsetZeroPage(addr Address, offset byte) Address {
 }
 
 // Convert a 1- or 2-byte operand into an address.
-func operandToAddress(operand []byte) Address {
+func operandToAddress(operand []byte) uint16 {
 	switch {
 	case len(operand) == 1:
-		return Address(operand[0])
+		return uint16(operand[0])
 	case len(operand) == 2:
-		return Address(operand[0]) | Address(operand[1])<<8
+		return uint16(operand[0]) | uint16(operand[1])<<8
 	}
 	return 0
 }
 
 // Given a 1-byte stack pointer register, return the stack
 // corresponding memory address.
-func stackAddress(offset byte) Address {
-	return Address(0x100) + Address(offset)
+func stackAddress(offset byte) uint16 {
+	return uint16(0x100) + uint16(offset)
 }
