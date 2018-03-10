@@ -16,8 +16,9 @@ func runCPU(t *testing.T, asmString string, steps int) *go6502.CPU {
 		return nil
 	}
 
-	cpu := go6502.NewCPU(go6502.NMOS, go6502.NewMemory())
-	cpu.Mem.CopyBytes(r.Origin, r.Code)
+	mem := go6502.NewFlatMemory()
+	cpu := go6502.NewCPU(go6502.NMOS, mem)
+	mem.StoreBytes(r.Origin, r.Code)
 	cpu.SetPC(r.Origin)
 
 	for i := 0; i < steps; i++ {
@@ -46,7 +47,7 @@ func expectACC(t *testing.T, cpu *go6502.CPU, acc byte) {
 }
 
 func expectMem(t *testing.T, cpu *go6502.CPU, addr go6502.Address, v byte) {
-	got := cpu.Mem.LoadByte(addr)
+	got, _ := cpu.Mem.LoadByte(addr)
 	if got != v {
 		t.Errorf("Memory at $%04X incorrect. exp: $%02X, got: $%02X", addr, v, got)
 	}

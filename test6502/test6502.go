@@ -61,7 +61,7 @@ func findExport(exports []asm.Export, origin go6502.Address, names ...string) go
 	return origin
 }
 
-func loadMonitor(mem *go6502.Memory) {
+func loadMonitor(mem *go6502.FlatMemory) {
 	file, err := os.Open("monitor.bin")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
@@ -76,15 +76,15 @@ func loadMonitor(mem *go6502.Memory) {
 		os.Exit(1)
 	}
 
-	mem.CopyBytes(go6502.Address(0xf800), b)
+	mem.StoreBytes(go6502.Address(0xf800), b)
 }
 
 func run(code []byte, origin go6502.Address, exports []asm.Export) {
 
 	fmt.Printf("\nRunning assembled code...\n")
 
-	mem := go6502.NewMemory()
-	err := mem.CopyBytes(origin, code)
+	mem := go6502.NewFlatMemory()
+	err := mem.StoreBytes(origin, code)
 	if err != nil {
 		panic(err)
 	}
@@ -102,15 +102,18 @@ func run(code []byte, origin go6502.Address, exports []asm.Export) {
 		cpu.Reg.SP, cpu.Reg.PC,
 		cpu.Cycles)
 
+	buf := make([]byte, 3)
+
 	// Step each instruction and output state after.
 	for {
 		pcStart := cpu.Reg.PC
-		opcode := cpu.Mem.LoadByte(pcStart)
-		line, pcNext := disasm.Disassemble(cpu.Mem, pcStart)
+		opcode, _ := cpu.Mem.LoadByte(pcStart)
+		line, pcNext, _ := disasm.Disassemble(cpu.Mem, pcStart)
 		cpu.Step()
-		bc := cpu.Mem.LoadBytes(pcStart, int(pcNext-pcStart))
+		b := buf[:pcNext-pcStart]
+		cpu.Mem.LoadBytes(pcStart, b)
 		fmt.Printf("%04X- %-8s  %-11s  A=%02X X=%02X Y=%02X PS=[%s] SP=%02X PC=%04X C=%d\n",
-			pcStart, codeString(bc), line,
+			pcStart, codeString(b), line,
 			cpu.Reg.A, cpu.Reg.X, cpu.Reg.Y, psString(&cpu.Reg),
 			cpu.Reg.SP, cpu.Reg.PC,
 			cpu.Cycles)

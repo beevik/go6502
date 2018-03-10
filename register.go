@@ -11,7 +11,6 @@ type Registers struct {
 	Zero             bool    // PS: Zero bit
 	InterruptDisable bool    // PS: Interrupt disable bit
 	Decimal          bool    // PS: Decimal bit
-	Break            bool    // PS: Break bit
 	Overflow         bool    // PS: Overflow bit
 	Sign             bool    // PS: Sign bit
 }
