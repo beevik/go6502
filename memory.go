@@ -11,24 +11,24 @@ var (
 // memory accesses occur.
 type Memory interface {
 	// LoadByte loads a single byte from the address and returns it.
-	LoadByte(addr uint16) (byte, error)
+	LoadByte(addr uint16) byte
 
 	// LoadBytes loads multiple bytes from the address and stores them into
 	// the buffer 'b'.
-	LoadBytes(addr uint16, b []byte) error
+	LoadBytes(addr uint16, b []byte)
 
 	// LoadAddress loads a 16-bit address value from the requested address and
 	// returns it.
-	LoadAddress(addr uint16) (uint16, error)
+	LoadAddress(addr uint16) uint16
 
 	// StoreByte stores a byte to the requested address.
-	StoreByte(addr uint16, v byte) error
+	StoreByte(addr uint16, v byte)
 
 	// StoreBytes stores multiple bytes to the requested address.
-	StoreBytes(addr uint16, b []byte) error
+	StoreBytes(addr uint16, b []byte)
 
 	// StoreAddres stores a 16-bit address 'v' to the requested address.
-	StoreAddress(addr uint16, v uint16) error
+	StoreAddress(addr uint16, v uint16)
 }
 
 // FlatMemory represents an entire 16-bit address space as a singular
@@ -43,20 +43,18 @@ func NewFlatMemory() *FlatMemory {
 }
 
 // LoadByte loads a single byte from the address and returns it.
-func (m *FlatMemory) LoadByte(addr uint16) (byte, error) {
-	if int(addr) >= len(m.b) {
-		return 0, ErrMemoryOutOfBounds
+func (m *FlatMemory) LoadByte(addr uint16) byte {
+	if int(addr) < len(m.b) {
+		return m.b[addr]
 	}
-	return m.b[addr], nil
+	return 0
 }
 
 // LoadBytes loads multiple bytes from the address and returns them.
-func (m *FlatMemory) LoadBytes(addr uint16, b []byte) error {
-	if int(addr)+len(b) > len(m.b) {
-		return ErrMemoryOutOfBounds
+func (m *FlatMemory) LoadBytes(addr uint16, b []byte) {
+	if int(addr)+len(b) <= len(m.b) {
+		copy(b, m.b[addr:])
 	}
-	copy(b, m.b[addr:])
-	return nil
 }
 
 // LoadAddress loads a 16-bit address value from the requested address and
@@ -66,45 +64,37 @@ func (m *FlatMemory) LoadBytes(addr uint16, b []byte) error {
 // byte of the loaded address comes from a page-wrapped address.  For example,
 // LoadAddress on $12FF reads the low byte from $12FF and the high byte from
 // $1200. This mimics the behavior of the NMOS 6502.
-func (m *FlatMemory) LoadAddress(addr uint16) (uint16, error) {
+func (m *FlatMemory) LoadAddress(addr uint16) uint16 {
 	if int(addr)+2 > len(m.b) {
-		return 0, ErrMemoryOutOfBounds
+		return 0
 	}
 
 	if (addr & 0xff) == 0xff {
-		return uint16(m.b[addr]) | uint16(m.b[addr-0xff])<<8, nil
+		return uint16(m.b[addr]) | uint16(m.b[addr-0xff])<<8
 	}
-	return uint16(m.b[addr]) | uint16(m.b[addr+1])<<8, nil
+	return uint16(m.b[addr]) | uint16(m.b[addr+1])<<8
 }
 
 // StoreByte stores a byte at the requested address.
-func (m *FlatMemory) StoreByte(addr uint16, v byte) error {
-	if int(addr) >= len(m.b) {
-		return ErrMemoryOutOfBounds
+func (m *FlatMemory) StoreByte(addr uint16, v byte) {
+	if int(addr) < len(m.b) {
+		m.b[addr] = v
 	}
-
-	m.b[addr] = v
-	return nil
 }
 
 // StoreBytes stores multiple bytes to the requested address.
-func (m *FlatMemory) StoreBytes(addr uint16, b []byte) error {
-	if int(addr)+len(b) > len(m.b) {
-		return ErrMemoryOutOfBounds
+func (m *FlatMemory) StoreBytes(addr uint16, b []byte) {
+	if int(addr)+len(b) <= len(m.b) {
+		copy(m.b[int(addr):], b)
 	}
-
-	copy(m.b[int(addr):], b)
-	return nil
 }
 
 // StoreAddress stores a 16-bit address value to the requested address.
-func (m *FlatMemory) StoreAddress(addr uint16, v uint16) error {
-	if int(addr)+2 > len(m.b) {
-		return ErrMemoryOutOfBounds
+func (m *FlatMemory) StoreAddress(addr uint16, v uint16) {
+	if int(addr)+2 <= len(m.b) {
+		m.b[addr] = byte(v & 0xff)
+		m.b[addr+1] = byte(v >> 8)
 	}
-	m.b[addr] = byte(v & 0xff)
-	m.b[addr+1] = byte(v >> 8)
-	return nil
 }
 
 // Return the offset address 'addr' + 'offset'. If the offset

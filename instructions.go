@@ -71,7 +71,7 @@ const (
 	symTYA
 )
 
-type instfunc func(c *CPU, inst *Instruction, operand []byte) error
+type instfunc func(c *CPU, inst *Instruction, operand []byte)
 
 // Emulator implementation for each opcode
 type opcodeImpl struct {

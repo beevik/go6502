@@ -84,10 +84,7 @@ func run(code []byte, origin uint16, exports []asm.Export) {
 	fmt.Printf("\nRunning assembled code...\n")
 
 	mem := go6502.NewFlatMemory()
-	err := mem.StoreBytes(origin, code)
-	if err != nil {
-		panic(err)
-	}
+	mem.StoreBytes(origin, code)
 
 	loadMonitor(mem)
 
@@ -107,8 +104,8 @@ func run(code []byte, origin uint16, exports []asm.Export) {
 	// Step each instruction and output state after.
 	for {
 		pcStart := cpu.Reg.PC
-		opcode, _ := cpu.Mem.LoadByte(pcStart)
-		line, pcNext, _ := disasm.Disassemble(cpu.Mem, pcStart)
+		opcode := cpu.Mem.LoadByte(pcStart)
+		line, pcNext := disasm.Disassemble(cpu.Mem, pcStart)
 		cpu.Step()
 		b := buf[:pcNext-pcStart]
 		cpu.Mem.LoadBytes(pcStart, b)

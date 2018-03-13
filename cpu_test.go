@@ -47,7 +47,7 @@ func expectACC(t *testing.T, cpu *go6502.CPU, acc byte) {
 }
 
 func expectMem(t *testing.T, cpu *go6502.CPU, addr uint16, v byte) {
-	got, _ := cpu.Mem.LoadByte(addr)
+	got := cpu.Mem.LoadByte(addr)
 	if got != v {
 		t.Errorf("Memory at $%04X incorrect. exp: $%02X, got: $%02X", addr, v, got)
 	}
