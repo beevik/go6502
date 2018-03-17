@@ -27,6 +27,8 @@ type CPU struct {
 	instSet     *InstructionSet
 	pageCrossed bool
 	deltaCycles int8
+	debugger    *Debugger
+	storeByte   func(cpu *CPU, addr uint16, v byte)
 }
 
 // Interrupt vectors
@@ -40,9 +42,10 @@ const (
 // NewCPU creates an emulated 6502 CPU bound to the specified memory.
 func NewCPU(arch Architecture, m Memory) *CPU {
 	cpu := &CPU{
-		Arch:    arch,
-		Mem:     m,
-		instSet: GetInstructionSet(arch),
+		Arch:      arch,
+		Mem:       m,
+		instSet:   GetInstructionSet(arch),
+		storeByte: (*CPU).storeByteNormal,
 	}
 
 	cpu.Reg.Init()
@@ -56,6 +59,10 @@ func (cpu *CPU) SetPC(addr uint16) {
 
 // Step the cpu by one instruction.
 func (cpu *CPU) Step() {
+	if cpu.debugger != nil {
+		cpu.debugger.onCPUExecute(cpu, cpu.Reg.PC)
+	}
+
 	// Grab the next opcode at the current PC
 	opcode := cpu.Mem.LoadByte(cpu.Reg.PC)
 
@@ -85,6 +92,20 @@ func (cpu *CPU) Step() {
 	if cpu.pageCrossed {
 		cpu.Cycles += uint64(inst.BPCycles)
 	}
+}
+
+// AttachDebugger attaches a debugger to the CPU. The debugger receives
+// notifications whenever the CPU executes an instruction or stores a byte
+// to memory.
+func (cpu *CPU) AttachDebugger(debugger *Debugger) {
+	cpu.debugger = debugger
+	cpu.storeByte = (*CPU).storeByteDebugger
+}
+
+// DetachDebugger detaches the currently debugger from the CPU.
+func (cpu *CPU) DetachDebugger() {
+	cpu.debugger = nil
+	cpu.storeByte = (*CPU).storeByteNormal
 }
 
 // Load a byte value from using the requested addressing mode
@@ -152,36 +173,36 @@ func (cpu *CPU) store(mode Mode, operand []byte, v byte) {
 	switch mode {
 	case ZPG:
 		zpaddr := operandToAddress(operand)
-		cpu.Mem.StoreByte(zpaddr, v)
+		cpu.storeByte(cpu, zpaddr, v)
 	case ZPX:
 		zpaddr := operandToAddress(operand)
 		zpaddr = offsetZeroPage(zpaddr, cpu.Reg.X)
-		cpu.Mem.StoreByte(zpaddr, v)
+		cpu.storeByte(cpu, zpaddr, v)
 	case ZPY:
 		zpaddr := operandToAddress(operand)
 		zpaddr = offsetZeroPage(zpaddr, cpu.Reg.Y)
-		cpu.Mem.StoreByte(zpaddr, v)
+		cpu.storeByte(cpu, zpaddr, v)
 	case ABS:
 		addr := operandToAddress(operand)
-		cpu.Mem.StoreByte(addr, v)
+		cpu.storeByte(cpu, addr, v)
 	case ABX:
 		addr := operandToAddress(operand)
 		addr, cpu.pageCrossed = offsetAddress(addr, cpu.Reg.X)
-		cpu.Mem.StoreByte(addr, v)
+		cpu.storeByte(cpu, addr, v)
 	case ABY:
 		addr := operandToAddress(operand)
 		addr, cpu.pageCrossed = offsetAddress(addr, cpu.Reg.Y)
-		cpu.Mem.StoreByte(addr, v)
+		cpu.storeByte(cpu, addr, v)
 	case IDX:
 		zpaddr := operandToAddress(operand)
 		zpaddr = offsetZeroPage(zpaddr, cpu.Reg.X)
 		addr := cpu.Mem.LoadAddress(zpaddr)
-		cpu.Mem.StoreByte(addr, v)
+		cpu.storeByte(cpu, addr, v)
 	case IDY:
 		zpaddr := operandToAddress(operand)
 		addr := cpu.Mem.LoadAddress(zpaddr)
 		addr, cpu.pageCrossed = offsetAddress(addr, cpu.Reg.Y)
-		cpu.Mem.StoreByte(addr, v)
+		cpu.storeByte(cpu, addr, v)
 	case ACC:
 		cpu.Reg.A = v
 	default:
@@ -204,9 +225,20 @@ func (cpu *CPU) branch(operand []byte) {
 	}
 }
 
+// Store the byte value 'v' add the address 'addr'.
+func (cpu *CPU) storeByteNormal(addr uint16, v byte) {
+	cpu.Mem.StoreByte(addr, v)
+}
+
+// Store the byte value 'v' add the address 'addr'.
+func (cpu *CPU) storeByteDebugger(addr uint16, v byte) {
+	cpu.debugger.onDataStore(cpu, addr, v)
+	cpu.Mem.StoreByte(addr, v)
+}
+
 // Push a value 'v' onto the stack.
 func (cpu *CPU) push(v byte) {
-	cpu.Mem.StoreByte(stackAddress(cpu.Reg.SP), v)
+	cpu.storeByte(cpu, stackAddress(cpu.Reg.SP), v)
 	cpu.Reg.SP--
 }
 
