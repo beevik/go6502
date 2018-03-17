@@ -11,8 +11,8 @@ type Debugger struct {
 // The DebuggerHandler interface should be implemented by any object that
 // wishes to receive debugger notifications.
 type DebuggerHandler interface {
-	onBreakpoint(cpu *CPU, addr uint16)
-	onDataBreakpoint(cpu *CPU, addr uint16, v byte)
+	OnBreakpoint(cpu *CPU, addr uint16)
+	OnDataBreakpoint(cpu *CPU, addr uint16, v byte)
 }
 
 type breakpoint struct {
@@ -105,7 +105,7 @@ func (d *Debugger) DisableDataBreakpoint(addr uint16) {
 func (d *Debugger) onCPUExecute(cpu *CPU, addr uint16) {
 	if d.Handler != nil {
 		if b, ok := d.breakpoints[addr]; ok && b.enabled {
-			d.Handler.onBreakpoint(cpu, addr)
+			d.Handler.OnBreakpoint(cpu, addr)
 		}
 	}
 }
@@ -114,7 +114,7 @@ func (d *Debugger) onDataStore(cpu *CPU, addr uint16, v byte) {
 	if d.Handler != nil {
 		if b, ok := d.dataBreakpoints[addr]; ok && b.enabled {
 			if !b.conditional || b.value == v {
-				d.Handler.onDataBreakpoint(cpu, addr, v)
+				d.Handler.OnDataBreakpoint(cpu, addr, v)
 			}
 		}
 	}

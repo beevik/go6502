@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -9,9 +10,15 @@ import (
 	"github.com/beevik/go6502"
 	"github.com/beevik/go6502/asm"
 	"github.com/beevik/go6502/disasm"
+	"github.com/beevik/prefixtree"
 )
 
 var verbose = flag.Bool("v", false, "Verbose output")
+
+var cmds = newCommands([]command{
+	{name: "step", description: "Step the CPU", handler: (*host).OnStepCPU},
+	{name: "quit", description: "Quit the program", handler: (*host).OnQuit},
+})
 
 func main() {
 	flag.Parse()
@@ -45,7 +52,13 @@ func main() {
 		}
 	}
 
-	run(r.Code, r.Origin, r.Exports)
+	h := newHost()
+	h.LoadROM()
+	h.Load(r.Code, r.Origin)
+
+	addr := findExport(r.Exports, r.Origin, "START", "COLD.START", "RESTART")
+	h.SetStart(addr)
+	h.Repl()
 }
 
 func findExport(exports []asm.Export, origin uint16, names ...string) uint16 {
@@ -61,7 +74,30 @@ func findExport(exports []asm.Export, origin uint16, names ...string) uint16 {
 	return origin
 }
 
-func loadMonitor(mem *go6502.FlatMemory) {
+type host struct {
+	mem      *go6502.FlatMemory
+	cpu      *go6502.CPU
+	debugger *go6502.Debugger
+}
+
+func newHost() *host {
+	h := new(host)
+
+	h.mem = go6502.NewFlatMemory()
+	h.cpu = go6502.NewCPU(go6502.CMOS, h.mem)
+	h.debugger = go6502.NewDebugger(h)
+	h.cpu.AttachDebugger(h.debugger)
+
+	return h
+}
+
+func (h *host) OnBreakpoint(cpu *go6502.CPU, addr uint16) {
+}
+
+func (h *host) OnDataBreakpoint(cpu *go6502.CPU, addr uint16, v byte) {
+}
+
+func (h *host) LoadROM() {
 	file, err := os.Open("monitor.bin")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
@@ -76,48 +112,96 @@ func loadMonitor(mem *go6502.FlatMemory) {
 		os.Exit(1)
 	}
 
-	mem.StoreBytes(uint16(0xf800), b)
+	h.mem.StoreBytes(uint16(0xf800), b)
 }
 
-func run(code []byte, origin uint16, exports []asm.Export) {
+func (h *host) Load(code []byte, origin uint16) {
+	h.mem.StoreBytes(origin, code)
+}
 
-	fmt.Printf("\nRunning assembled code...\n")
+func (h *host) SetStart(addr uint16) {
+	h.cpu.SetPC(addr)
+}
 
-	mem := go6502.NewFlatMemory()
-	mem.StoreBytes(origin, code)
+func (h *host) Repl() error {
+	c := newConn(os.Stdin, os.Stdout)
+	c.interactive = true
+	return h.RunCommands(c)
+}
 
-	loadMonitor(mem)
+func (h *host) RunCommands(c *conn) error {
+	var r commandResult
+	for {
+		if c.interactive {
+			c.Printf("* ")
+			c.Flush()
+		}
 
-	pc := findExport(exports, origin, "START", "COLD.START", "RESTART")
+		line, err := c.GetLine()
+		if err != nil {
+			break
+		}
 
-	cpu := go6502.NewCPU(go6502.CMOS, mem)
-	cpu.SetPC(pc)
+		if !c.interactive {
+			c.Printf("* %s\n", line)
+		}
 
-	// Output initial state.
-	fmt.Printf("                             A=%02X X=%02X Y=%02X PS=[%s] SP=%02X PC=%04X C=%d\n",
+		if line != "" {
+			r, err = cmds.find(line)
+			switch {
+			case err == prefixtree.ErrPrefixNotFound:
+				c.Println("command not found.")
+				continue
+			case err == prefixtree.ErrPrefixAmbiguous:
+				c.Println("command ambiguous.")
+				continue
+			case err != nil:
+				c.Printf("%v.\n", err)
+				continue
+			case r.helpText != "":
+				c.Printf("%s", r.helpText)
+				continue
+			}
+		}
+		if r.cmd == nil {
+			continue
+		}
+
+		err = r.cmd.handler(h, c, r.args)
+		if err != nil {
+			break
+		}
+	}
+
+	return nil
+}
+
+func (h *host) OnQuit(c *conn, args string) error {
+	return errors.New("Exiting program")
+}
+
+func (h *host) OnStepCPU(c *conn, args string) error {
+	cpu := h.cpu
+
+	buf := make([]byte, 3)
+	pcStart := cpu.Reg.PC
+	opcode := cpu.Mem.LoadByte(pcStart)
+	line, pcNext := disasm.Disassemble(cpu.Mem, pcStart)
+
+	cpu.Step()
+
+	b := buf[:pcNext-pcStart]
+	cpu.Mem.LoadBytes(pcStart, b)
+
+	fmt.Printf("%04X- %-8s  %-11s  A=%02X X=%02X Y=%02X PS=[%s] SP=%02X PC=%04X C=%d\n",
+		pcStart, codeString(b), line,
 		cpu.Reg.A, cpu.Reg.X, cpu.Reg.Y, psString(&cpu.Reg),
 		cpu.Reg.SP, cpu.Reg.PC,
 		cpu.Cycles)
 
-	buf := make([]byte, 3)
+	_ = opcode
 
-	// Step each instruction and output state after.
-	for {
-		pcStart := cpu.Reg.PC
-		opcode := cpu.Mem.LoadByte(pcStart)
-		line, pcNext := disasm.Disassemble(cpu.Mem, pcStart)
-		cpu.Step()
-		b := buf[:pcNext-pcStart]
-		cpu.Mem.LoadBytes(pcStart, b)
-		fmt.Printf("%04X- %-8s  %-11s  A=%02X X=%02X Y=%02X PS=[%s] SP=%02X PC=%04X C=%d\n",
-			pcStart, codeString(b), line,
-			cpu.Reg.A, cpu.Reg.X, cpu.Reg.Y, psString(&cpu.Reg),
-			cpu.Reg.SP, cpu.Reg.PC,
-			cpu.Cycles)
-		if opcode == 0 {
-			break
-		}
-	}
+	return nil
 }
 
 func codeString(bc []byte) string {
