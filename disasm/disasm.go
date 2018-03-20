@@ -71,3 +71,25 @@ func Disassemble(m go6502.Memory, addr uint16) (line string, next uint16) {
 	next = addr + uint16(inst.Length)
 	return line, next
 }
+
+// GetRegisterString returns a string describing the contents of the 6502
+// register.
+func GetRegisterString(r *go6502.Registers) string {
+	v := func(bit bool, ch byte) byte {
+		if bit {
+			return ch
+		}
+		return '-'
+	}
+	b := []byte{
+		v(r.Sign, 'N'),
+		v(r.Zero, 'Z'),
+		v(r.Carry, 'C'),
+		v(r.InterruptDisable, 'I'),
+		v(r.Decimal, 'D'),
+		v(r.Overflow, 'V'),
+	}
+
+	return fmt.Sprintf("A=%02X X=%02X Y=%02X PS=[%s] SP=%02X PC=%04X",
+		r.A, r.X, r.Y, string(b), r.SP, r.PC)
+}

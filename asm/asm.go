@@ -97,6 +97,7 @@ type segment interface {
 // opcode and operand data.
 type instruction struct {
 	addr    int                 // address assigned to the segment
+	line    int                 // the source code line number
 	opcode  fstring             // opcode string
 	inst    *go6502.Instruction // selected instruction data for the opcode
 	operand operand             // parameter data for the instruction
@@ -258,6 +259,9 @@ type assembler struct {
 	macros      map[string]*expr       // macro -> expression
 	labels      map[string]int         // label -> segment index
 	exports     []Export               // exported addresses
+	sourceLines []SourceLine           // source code line mappings
+	files       []string               // processed files
+	fileIndex   int                    // file currently being processed
 	segments    []segment              // segment of machine code
 	unevaluated []uneval               // expressions requiring evaluation
 	verbose     bool                   // verbose output
@@ -273,25 +277,27 @@ type Export struct {
 
 // Result of the Assemble function.
 type Result struct {
-	Code    []byte   // Assembled machine code
-	Origin  uint16   // Code origin address
-	Exports []Export // Exported addresses
+	Code      []byte    // Assembled machine code
+	Origin    uint16    // Code origin address
+	SourceMap SourceMap // Source map
 }
 
 // Assemble reads data from the provided stream and attempts to assemble
 // it into 6502 byte code.
-func Assemble(r io.Reader, verbose bool) (*Result, error) {
+func Assemble(r io.Reader, filename string, verbose bool) (*Result, error) {
 	a := &assembler{
-		arch:     go6502.NMOS,
-		instSet:  go6502.GetInstructionSet(go6502.NMOS),
-		origin:   0x600,
-		pc:       -1,
-		scanner:  bufio.NewScanner(r),
-		macros:   make(map[string]*expr),
-		labels:   make(map[string]int),
-		exports:  make([]Export, 0),
-		segments: make([]segment, 0, 32),
-		verbose:  verbose,
+		arch:      go6502.NMOS,
+		instSet:   go6502.GetInstructionSet(go6502.NMOS),
+		origin:    0x600,
+		pc:        -1,
+		scanner:   bufio.NewScanner(r),
+		macros:    make(map[string]*expr),
+		labels:    make(map[string]int),
+		files:     []string{filename},
+		fileIndex: 0,
+		exports:   make([]Export, 0),
+		segments:  make([]segment, 0, 32),
+		verbose:   verbose,
 	}
 
 	// Assembly consists of the following steps
@@ -318,9 +324,13 @@ func Assemble(r io.Reader, verbose bool) (*Result, error) {
 	}
 
 	result := &Result{
-		Code:    a.code,
-		Origin:  uint16(a.origin),
-		Exports: a.exports,
+		Code:   a.code,
+		Origin: uint16(a.origin),
+		SourceMap: SourceMap{
+			Files:   a.files,
+			Lines:   a.sourceLines,
+			Exports: a.exports,
+		},
 	}
 	return result, nil
 }
@@ -392,6 +402,14 @@ func (a *assembler) assignAddresses() error {
 				a.addError(ss.opcode, "invalid addressing mode for opcode '%s'", ss.opcode.str)
 				return errParse
 			}
+
+			l := SourceLine{
+				Address:   ss.addr,
+				FileIndex: a.fileIndex,
+				Line:      ss.line,
+			}
+			a.sourceLines = append(a.sourceLines, l)
+
 			a.log("%04X  %s Len:%d Mode:%s Opcode:%02X",
 				ss.addr, ss.opcode.str, ss.inst.Length,
 				modeName[ss.inst.Mode], ss.inst.Opcode)
@@ -865,7 +883,12 @@ func (a *assembler) parseInstruction(line fstring) error {
 	}
 
 	// Create a code segment for the instruction
-	seg := &instruction{addr: -1, opcode: opcode, operand: operand}
+	seg := &instruction{
+		addr:    -1,
+		line:    line.row,
+		opcode:  opcode,
+		operand: operand,
+	}
 	a.segments = append(a.segments, seg)
 	return nil
 }

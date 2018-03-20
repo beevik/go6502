@@ -8,7 +8,7 @@ import (
 
 func assemble(t *testing.T, code string) ([]byte, error) {
 	r := bytes.NewReader([]byte(code))
-	result, err := Assemble(r, false)
+	result, err := Assemble(r, "test", false)
 	if err != nil {
 		return []byte{}, err
 	}
