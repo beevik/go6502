@@ -8,7 +8,7 @@ import (
 	"github.com/beevik/prefixtree"
 )
 
-type handlerFunc func(h *host, c *conn, args string) error
+type handlerFunc func(h *host, args []string) error
 
 type command struct {
 	name        string

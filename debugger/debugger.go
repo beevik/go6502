@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -18,13 +21,20 @@ import (
 var signature = "56og"
 
 var cmds = newCommands([]command{
-	{name: "assemble", description: "Assemble a file", handler: (*host).OnAssemble},
-	{name: "load", description: "Load a binary", handler: (*host).OnLoad},
-	{name: "registers", description: "Display register contents", handler: (*host).OnRegisters},
-	{name: "step", description: "Step the CPU", handler: (*host).OnStepCPU},
-	{name: "quit", description: "Quit the program", handler: (*host).OnQuit},
-	{name: "r", handler: (*host).OnRegisters},
-	{name: "s", handler: (*host).OnStepCPU},
+	{name: "assemble", description: "Assemble a file", handler: (*host).onAssemble},
+	{name: "load", description: "Load a binary", handler: (*host).onLoad},
+	{name: "registers", description: "Display register contents", handler: (*host).onRegisters},
+	{name: "step", description: "Step the CPU", handler: (*host).onStep},
+	{name: "run", description: "Run the CPU", handler: (*host).onRun},
+	{name: "exports", description: "List exported addresses", handler: (*host).onExports},
+	{name: "breakpoint", description: "Breakpoint commands", commands: newCommands([]command{
+		{name: "list", description: "List breakpoints", handler: (*host).onBreakpointList},
+		{name: "add", description: "Add a breakpoint", handler: (*host).onBreakpointAdd},
+		{name: "remove", description: "Remove a breakpoint", handler: (*host).onBreakpointRemove},
+	})},
+	{name: "quit", description: "Quit the program", handler: (*host).onQuit},
+	{name: "r", handler: (*host).onRegisters},
+	{name: "s", handler: (*host).onStep},
 })
 
 func main() {
@@ -42,29 +52,15 @@ func main() {
 	}
 }
 
-func exitOnError(err error) {
-	fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
-	os.Exit(1)
-}
-
-func findExport(exports []asm.Export, origin uint16, names ...string) uint16 {
-	table := make(map[string]uint16)
-	for _, e := range exports {
-		table[e.Label] = e.Addr
-	}
-	for _, n := range names {
-		if a, ok := table[n]; ok {
-			return a
-		}
-	}
-	return origin
-}
-
 type host struct {
-	sourceMap asm.SourceMap
-	mem       *go6502.FlatMemory
-	cpu       *go6502.CPU
-	debugger  *go6502.Debugger
+	input       *bufio.Scanner
+	output      *bufio.Writer
+	interactive bool
+	stopped     bool
+	mem         *go6502.FlatMemory
+	cpu         *go6502.CPU
+	debugger    *go6502.Debugger
+	sourceMap   asm.SourceMap
 }
 
 func newHost() *host {
@@ -75,10 +71,49 @@ func newHost() *host {
 	h.debugger = go6502.NewDebugger(h)
 	h.cpu.AttachDebugger(h.debugger)
 
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		for {
+			<-c
+			h.stopped = true
+		}
+	}()
+
 	return h
 }
 
+func (h *host) Print(args ...interface{}) {
+	fmt.Fprint(h.output, args...)
+}
+
+func (h *host) Printf(format string, args ...interface{}) {
+	fmt.Fprintf(h.output, format, args...)
+	h.Flush()
+}
+
+func (h *host) Println(args ...interface{}) {
+	fmt.Fprintln(h.output, args...)
+	h.Flush()
+}
+
+func (h *host) Flush() {
+	h.output.Flush()
+}
+
+func (h *host) GetLine() (string, error) {
+	if h.input.Scan() {
+		return h.input.Text(), nil
+	}
+	if h.input.Err() != nil {
+		return "", h.input.Err()
+	}
+	return "", io.EOF
+}
+
 func (h *host) OnBreakpoint(cpu *go6502.CPU, addr uint16) {
+	h.Printf("Breakpoint at $%04X hit.\n", addr)
+	h.stopped = true
 }
 
 func (h *host) OnDataBreakpoint(cpu *go6502.CPU, addr uint16, v byte) {
@@ -93,9 +128,10 @@ func (h *host) SetStart(addr uint16) {
 }
 
 func (h *host) Repl() {
-	c := newConn(os.Stdin, os.Stdout)
-	c.interactive = true
-	h.RunCommands(c)
+	h.input = bufio.NewScanner(os.Stdin)
+	h.output = bufio.NewWriter(os.Stdout)
+	h.interactive = true
+	h.RunCommands()
 }
 
 func (h *host) Exec(filename string) error {
@@ -104,43 +140,44 @@ func (h *host) Exec(filename string) error {
 		exitOnError(err)
 	}
 
-	c := newConn(file, os.Stdout)
-	return h.RunCommands(c)
+	h.input = bufio.NewScanner(file)
+	h.output = bufio.NewWriter(os.Stdout)
+	return h.RunCommands()
 }
 
-func (h *host) RunCommands(c *conn) error {
-	h.load(c, "monitor.bin", 0xf800)
+func (h *host) RunCommands() error {
+	h.load("monitor.bin", 0xf800)
 
 	var r commandResult
 	for {
-		if c.interactive {
-			c.Printf("%04X* ", h.cpu.Reg.PC)
-			c.Flush()
+		if h.interactive {
+			h.Printf("%04X* ", h.cpu.Reg.PC)
+			h.Flush()
 		}
 
-		line, err := c.GetLine()
+		line, err := h.GetLine()
 		if err != nil {
 			break
 		}
 
-		if !c.interactive {
-			c.Printf("* %s\n", line)
+		if !h.interactive {
+			h.Printf("* %s\n", line)
 		}
 
 		if line != "" {
 			r, err = cmds.find(line)
 			switch {
 			case err == prefixtree.ErrPrefixNotFound:
-				c.Println("command not found.")
+				h.Println("command not found.")
 				continue
 			case err == prefixtree.ErrPrefixAmbiguous:
-				c.Println("command ambiguous.")
+				h.Println("command ambiguous.")
 				continue
 			case err != nil:
-				c.Printf("%v.\n", err)
+				h.Printf("%v.\n", err)
 				continue
 			case r.helpText != "":
-				c.Printf("%s", r.helpText)
+				h.Printf("%s", r.helpText)
 				continue
 			}
 		}
@@ -148,7 +185,8 @@ func (h *host) RunCommands(c *conn) error {
 			continue
 		}
 
-		err = r.cmd.handler(h, c, r.args)
+		args := splitArgs(r.args)
+		err = r.cmd.handler(h, args)
 		if err != nil {
 			break
 		}
@@ -157,33 +195,27 @@ func (h *host) RunCommands(c *conn) error {
 	return nil
 }
 
-func (h *host) OnQuit(c *conn, args string) error {
-	return errors.New("Exiting program")
-}
-
-func (h *host) OnAssemble(c *conn, args string) error {
-	a := splitArgs(args)
-
-	if len(a) < 1 {
-		c.Println("Syntax: assemble [filename]")
+func (h *host) onAssemble(args []string) error {
+	if len(args) < 1 {
+		h.Println("Syntax: assemble [filename]")
 		return nil
 	}
 
-	filename := a[0]
+	filename := args[0]
 	if filepath.Ext(filename) == "" {
 		filename += ".asm"
 	}
 
 	file, err := os.Open(filename)
 	if err != nil {
-		c.Printf("Failed to open '%s': %v\n", filepath.Base(filename), err)
+		h.Printf("Failed to open '%s': %v\n", filepath.Base(filename), err)
 		return nil
 	}
 	defer file.Close()
 
 	r, err := asm.Assemble(file, filename, false)
 	if err != nil {
-		c.Printf("Failed to assemble: %s\n%v\n", filepath.Base(filename), err)
+		h.Printf("Failed to assemble: %s\n%v\n", filepath.Base(filename), err)
 		return nil
 	}
 
@@ -194,7 +226,7 @@ func (h *host) OnAssemble(c *conn, args string) error {
 	binFilename := filePrefix + ".bin"
 	file, err = os.OpenFile(binFilename, os.O_WRONLY|os.O_CREATE, 0600)
 	if err != nil {
-		c.Printf("Failed to create '%s': %v\n", filepath.Base(binFilename), err)
+		h.Printf("Failed to create '%s': %v\n", filepath.Base(binFilename), err)
 		return nil
 	}
 
@@ -204,13 +236,13 @@ func (h *host) OnAssemble(c *conn, args string) error {
 	hdr[5] = byte(r.Origin >> 8)
 	_, err = file.Write(hdr[:])
 	if err != nil {
-		c.Printf("Failed to write '%s': %v\n", filepath.Base(binFilename), err)
+		h.Printf("Failed to write '%s': %v\n", filepath.Base(binFilename), err)
 		return nil
 	}
 
 	_, err = file.Write(r.Code)
 	if err != nil {
-		c.Printf("Failed to write '%s': %v\n", filepath.Base(binFilename), err)
+		h.Printf("Failed to write '%s': %v\n", filepath.Base(binFilename), err)
 		return nil
 	}
 
@@ -219,123 +251,52 @@ func (h *host) OnAssemble(c *conn, args string) error {
 	mapFilename := filePrefix + ".map"
 	file, err = os.OpenFile(mapFilename, os.O_WRONLY|os.O_CREATE, 0600)
 	if err != nil {
-		c.Printf("Failed to create '%s': %v\n", filepath.Base(mapFilename), err)
+		h.Printf("Failed to create '%s': %v\n", filepath.Base(mapFilename), err)
 		return nil
 	}
 
 	_, err = r.SourceMap.WriteTo(file)
 	if err != nil {
-		c.Printf("Failed to write '%s': %v\n", filepath.Base(mapFilename), err)
+		h.Printf("Failed to write '%s': %v\n", filepath.Base(mapFilename), err)
 		return nil
 	}
 
 	file.Close()
 
-	c.Printf("Assembled '%s' to '%s'.\n", filepath.Base(filename), filepath.Base(binFilename))
+	h.Printf("Assembled '%s' to '%s'.\n", filepath.Base(filename), filepath.Base(binFilename))
 	return nil
 }
 
-func (h *host) OnLoad(c *conn, args string) error {
-	a := splitArgs(args)
-
+func (h *host) onLoad(args []string) error {
 	origin := -1
-	if len(a) < 1 {
-		c.Println("Syntax: load [filename] [addr]")
+	if len(args) < 1 {
+		h.Println("Syntax: load [filename] [addr]")
 		return nil
 	}
 
-	filename := a[0]
+	filename := args[0]
 	if filepath.Ext(filename) == "" {
 		filename += ".bin"
 	}
 
-	if len(a) >= 2 {
-		oStr := a[1]
-		if startsWith(oStr, "0x") {
-			oStr = oStr[2:]
-		} else if startsWith(oStr, "$") {
-			oStr = oStr[1:]
-		}
-
-		o, err := strconv.ParseInt(oStr, 16, 32)
-		if err != nil || o < 0 || o > 0xffff {
-			c.Printf("Unable to parse address '%s'\n", a[1])
+	if len(args) >= 2 {
+		origin = h.parseAddr(args[1])
+		if origin < 0 {
+			h.Printf("Unable to parse address '%s'\n", args[1])
 			return nil
 		}
-		origin = int(o)
 	}
 
-	return h.load(c, filename, origin)
+	return h.load(filename, origin)
 }
 
-func (h *host) load(c *conn, filename string, origin int) error {
-	filename, err := filepath.Abs(filename)
-	if err != nil {
-		c.Printf("Failed to open '%s': %v\n", filepath.Base(filename), err)
-		return nil
-	}
-
-	file, err := os.Open(filename)
-	if err != nil {
-		c.Printf("Failed to open '%s': %v\n", filepath.Base(filename), err)
-		return nil
-	}
-	defer file.Close()
-
-	b, err := ioutil.ReadAll(file)
-	if err != nil {
-		c.Printf("Failed to read '%s': %v\n", filepath.Base(filename), err)
-		return nil
-	}
-
-	file.Close()
-
-	code := b
-	if len(b) >= 6 && string(b[:4]) == signature {
-		origin = int(b[4]) | int(b[5])<<8
-		code = b[6:]
-	}
-	if origin == -1 {
-		c.Printf("File '%s' has no signature and requires an address\n", filepath.Base(filename))
-		return nil
-	}
-
-	if origin+len(code) > 0x10000 {
-		c.Printf("File '%s' exceeded 64K memory bounds\n", filepath.Base(filename))
-		return nil
-	}
-
-	cpu := h.cpu
-	cpu.Mem.StoreBytes(uint16(origin), code)
-	c.Printf("Loaded '%s' to $%04X..$%04X\n", filepath.Base(filename), origin, int(origin)+len(code)-1)
-
-	cpu.SetPC(uint16(origin))
-
-	ext := filepath.Ext(filename)
-	filePrefix := filename[:len(filename)-len(ext)]
-	filename = filePrefix + ".map"
-
-	file, err = os.Open(filename)
-	if err == nil {
-		_, err = h.sourceMap.ReadFrom(file)
-		if err != nil {
-			c.Printf("Failled to read '%s': %v\n", filepath.Base(filename), err)
-		} else {
-			c.Printf("Loaded '%s' source map\n", filepath.Base(filename))
-		}
-	}
-
-	file.Close()
-	return nil
-}
-
-func (h *host) OnRegisters(c *conn, args string) error {
+func (h *host) onRegisters(args []string) error {
 	reg := disasm.GetRegisterString(&h.cpu.Reg)
 	fmt.Printf("%s\n", reg)
 	return nil
 }
 
-func (h *host) OnStepCPU(c *conn, args string) error {
+func (h *host) onStep(args []string) error {
 	cpu := h.cpu
 
 	buf := make([]byte, 3)
@@ -351,6 +312,162 @@ func (h *host) OnStepCPU(c *conn, args string) error {
 	fmt.Printf("%04X- %-8s  %-11s  %s C=%d\n",
 		start, codeString(b), line, regStr, cpu.Cycles)
 
+	return nil
+}
+
+func (h *host) onRun(args []string) error {
+	if len(args) > 0 {
+		pc := h.parseAddr(args[0])
+		if pc < 0 {
+			h.Printf("Unable to parse address '%s'\n", args[0])
+			return nil
+		}
+		h.cpu.SetPC(uint16(pc))
+	}
+
+	h.Printf("Running from $%04X. Press ctrl-C to break.\n", h.cpu.Reg.PC)
+
+	for !h.stopped {
+		h.cpu.Step()
+	}
+	h.stopped = false
+
+	return nil
+}
+
+func (h *host) onExports(args []string) error {
+	for _, e := range h.sourceMap.Exports {
+		h.Printf("%-16s $%04X\n", e.Label, e.Addr)
+	}
+	return nil
+}
+
+func (h *host) onBreakpointList(args []string) error {
+	h.Println("Addr  Enabled")
+	h.Println("----- -------")
+	for _, b := range h.debugger.GetBreakpoints() {
+		h.Printf("$%04X %v\n", b.Address, b.Enabled)
+	}
+	return nil
+}
+
+func (h *host) onBreakpointAdd(args []string) error {
+	if len(args) < 0 {
+		h.Printf("Syntax: breakpoint add [addr]\n")
+		return nil
+	}
+
+	addr := h.parseAddr(args[0])
+	if addr < 0 {
+		h.Printf("Invalid breakpoint address '%v'\n", args[0])
+		return nil
+	}
+
+	h.debugger.AddBreakpoint(uint16(addr))
+	h.Printf("Breakpoint added at $%04x\n", addr)
+	return nil
+}
+
+func (h *host) onBreakpointRemove(args []string) error {
+	if len(args) < 0 {
+		h.Printf("Syntax: breakpoint add [addr]\n")
+		return nil
+	}
+
+	addr := h.parseAddr(args[0])
+	if addr < 0 {
+		h.Printf("Invalid breakpoint address '%v'\n", args[0])
+		return nil
+	}
+
+	h.debugger.RemoveBreakpoint(uint16(addr))
+	h.Printf("Breakpoint at $%04x removed\n", addr)
+	return nil
+}
+
+func (h *host) onQuit(args []string) error {
+	return errors.New("Exiting program")
+}
+
+func (h *host) parseAddr(s string) int {
+	for _, e := range h.sourceMap.Exports {
+		if e.Label == s {
+			return int(e.Addr)
+		}
+	}
+
+	if startsWith(s, "0x") {
+		s = s[2:]
+	} else if startsWith(s, "$") {
+		s = s[1:]
+	}
+
+	o, err := strconv.ParseInt(s, 16, 32)
+	if err != nil || o < 0 || o > 0xffff {
+		return -1
+	}
+
+	return int(o)
+}
+
+func (h *host) load(filename string, origin int) error {
+	filename, err := filepath.Abs(filename)
+	if err != nil {
+		h.Printf("Failed to open '%s': %v\n", filepath.Base(filename), err)
+		return nil
+	}
+
+	file, err := os.Open(filename)
+	if err != nil {
+		h.Printf("Failed to open '%s': %v\n", filepath.Base(filename), err)
+		return nil
+	}
+	defer file.Close()
+
+	b, err := ioutil.ReadAll(file)
+	if err != nil {
+		h.Printf("Failed to read '%s': %v\n", filepath.Base(filename), err)
+		return nil
+	}
+
+	file.Close()
+
+	code := b
+	if len(b) >= 6 && string(b[:4]) == signature {
+		origin = int(b[4]) | int(b[5])<<8
+		code = b[6:]
+	}
+	if origin == -1 {
+		h.Printf("File '%s' has no signature and requires an address\n", filepath.Base(filename))
+		return nil
+	}
+
+	if origin+len(code) > 0x10000 {
+		h.Printf("File '%s' exceeded 64K memory bounds\n", filepath.Base(filename))
+		return nil
+	}
+
+	cpu := h.cpu
+	cpu.Mem.StoreBytes(uint16(origin), code)
+	h.Printf("Loaded '%s' to $%04X..$%04X\n", filepath.Base(filename), origin, int(origin)+len(code)-1)
+
+	cpu.SetPC(uint16(origin))
+
+	ext := filepath.Ext(filename)
+	filePrefix := filename[:len(filename)-len(ext)]
+	filename = filePrefix + ".map"
+
+	file, err = os.Open(filename)
+	if err == nil {
+		_, err = h.sourceMap.ReadFrom(file)
+		if err != nil {
+			h.Printf("Failled to read '%s': %v\n", filepath.Base(filename), err)
+		} else {
+			h.Printf("Loaded '%s' source map\n", filepath.Base(filename))
+		}
+	}
+
+	file.Close()
 	return nil
 }
 
@@ -403,4 +520,9 @@ func endsWith(s, m string) bool {
 		return false
 	}
 	return s[len(s)-len(m):] == m
+}
+
+func exitOnError(err error) {
+	fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
+	os.Exit(1)
 }
