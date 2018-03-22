@@ -20,21 +20,40 @@ import (
 
 var signature = "56og"
 
-var cmds = newCommands([]command{
+var cmds = newCommands("Debugger", []command{
 	{name: "assemble", description: "Assemble a file", handler: (*host).onAssemble},
 	{name: "load", description: "Load a binary", handler: (*host).onLoad},
-	{name: "registers", description: "Display register contents", handler: (*host).onRegisters},
-	{name: "step", description: "Step the CPU", handler: (*host).onStep},
+	{name: "registers", shortcut: "r", description: "Display register contents", handler: (*host).onRegisters},
+	{name: "step", shortcut: "s", description: "Step the CPU", handler: (*host).onStep},
 	{name: "run", description: "Run the CPU", handler: (*host).onRun},
 	{name: "exports", description: "List exported addresses", handler: (*host).onExports},
-	{name: "breakpoint", description: "Breakpoint commands", commands: newCommands([]command{
+	{name: "breakpoint", shortcut: "b", description: "Breakpoint commands", commands: newCommands("Breakpoint", []command{
 		{name: "list", description: "List breakpoints", handler: (*host).onBreakpointList},
 		{name: "add", description: "Add a breakpoint", handler: (*host).onBreakpointAdd},
 		{name: "remove", description: "Remove a breakpoint", handler: (*host).onBreakpointRemove},
+		{name: "enable", description: "Enable a breakpoint", handler: (*host).onBreakpointEnable},
+		{name: "disable", description: "Disable a breakpoint", handler: (*host).onBreakpointDisable},
+	})},
+	{name: "databreakpoint", shortcut: "db", description: "Data breakpoint commands", commands: newCommands("Data breakpoint", []command{
+		{name: "list", description: "List data breakpoints", handler: (*host).onDataBreakpointList},
+		{name: "add", description: "Add a data breakpoint", handler: (*host).onDataBreakpointAdd},
+		{name: "remove", description: "Remove a data breakpoint", handler: (*host).onDataBreakpointRemove},
+		{name: "enable", description: "Enable a data breakpoint", handler: (*host).onDataBreakpointEnable},
+		{name: "disable", description: "Disable a data breakpoint", handler: (*host).onDataBreakpointDisable},
 	})},
 	{name: "quit", description: "Quit the program", handler: (*host).onQuit},
-	{name: "r", handler: (*host).onRegisters},
-	{name: "s", handler: (*host).onStep},
+
+	// Shortcuts to nested commands
+	{name: "ba", handler: (*host).onBreakpointAdd},
+	{name: "br", handler: (*host).onBreakpointRemove},
+	{name: "bl", handler: (*host).onBreakpointList},
+	{name: "be", handler: (*host).onBreakpointEnable},
+	{name: "bd", handler: (*host).onBreakpointDisable},
+	{name: "dbl", handler: (*host).onDataBreakpointList},
+	{name: "dba", handler: (*host).onDataBreakpointAdd},
+	{name: "dbr", handler: (*host).onDataBreakpointRemove},
+	{name: "dbe", handler: (*host).onDataBreakpointEnable},
+	{name: "dbd", handler: (*host).onDataBreakpointDisable},
 })
 
 func main() {
@@ -42,14 +61,15 @@ func main() {
 
 	args := os.Args[1:]
 
-	switch {
-	case len(args) == 0:
-		h.Repl()
-	default:
+	h.load("monitor.bin", 0xf800)
+
+	if len(args) > 0 {
 		for _, filename := range args {
 			h.Exec(filename)
 		}
 	}
+
+	h.Repl()
 }
 
 type host struct {
@@ -65,6 +85,8 @@ type host struct {
 
 func newHost() *host {
 	h := new(host)
+
+	h.output = bufio.NewWriter(os.Stdout)
 
 	h.mem = go6502.NewFlatMemory()
 	h.cpu = go6502.NewCPU(go6502.CMOS, h.mem)
@@ -112,11 +134,13 @@ func (h *host) GetLine() (string, error) {
 }
 
 func (h *host) OnBreakpoint(cpu *go6502.CPU, addr uint16) {
-	h.Printf("Breakpoint at $%04X hit.\n", addr)
+	h.Printf("Breakpoint hit at $%04X.\n", addr)
 	h.stopped = true
 }
 
 func (h *host) OnDataBreakpoint(cpu *go6502.CPU, addr uint16, v byte) {
+	h.Printf("Data breakpoint hit on address $%04X.\n", addr)
+	h.stopped = true
 }
 
 func (h *host) Load(code []byte, origin uint16) {
@@ -146,8 +170,6 @@ func (h *host) Exec(filename string) error {
 }
 
 func (h *host) RunCommands() error {
-	h.load("monitor.bin", 0xf800)
-
 	var r commandResult
 	for {
 		if h.interactive {
@@ -177,7 +199,7 @@ func (h *host) RunCommands() error {
 				h.Printf("%v.\n", err)
 				continue
 			case r.helpText != "":
-				h.Printf("%s", r.helpText)
+				h.Print(r.helpText)
 				continue
 			}
 		}
@@ -352,7 +374,7 @@ func (h *host) onBreakpointList(args []string) error {
 }
 
 func (h *host) onBreakpointAdd(args []string) error {
-	if len(args) < 0 {
+	if len(args) < 1 {
 		h.Printf("Syntax: breakpoint add [addr]\n")
 		return nil
 	}
@@ -364,13 +386,13 @@ func (h *host) onBreakpointAdd(args []string) error {
 	}
 
 	h.debugger.AddBreakpoint(uint16(addr))
-	h.Printf("Breakpoint added at $%04x\n", addr)
+	h.Printf("Breakpoint added at $%04x.\n", addr)
 	return nil
 }
 
 func (h *host) onBreakpointRemove(args []string) error {
-	if len(args) < 0 {
-		h.Printf("Syntax: breakpoint add [addr]\n")
+	if len(args) < 1 {
+		h.Printf("Syntax: breakpoint remove [addr]\n")
 		return nil
 	}
 
@@ -380,8 +402,164 @@ func (h *host) onBreakpointRemove(args []string) error {
 		return nil
 	}
 
+	if !h.debugger.HasBreakpoint(uint16(addr)) {
+		h.Printf("No breakpoint was set on $%04X.\n", addr)
+		return nil
+	}
+
 	h.debugger.RemoveBreakpoint(uint16(addr))
-	h.Printf("Breakpoint at $%04x removed\n", addr)
+	h.Printf("Breakpoint at $%04x removed.\n", addr)
+	return nil
+}
+
+func (h *host) onBreakpointEnable(args []string) error {
+	if len(args) < 1 {
+		h.Printf("Syntax: breakpoint enable [addr]\n")
+		return nil
+	}
+
+	addr := h.parseAddr(args[0])
+	if addr < 0 {
+		h.Printf("Invalid breakpoint address '%v'\n", args[0])
+		return nil
+	}
+
+	if !h.debugger.HasBreakpoint(uint16(addr)) {
+		h.Printf("No breakpoint was set on $%04X.\n", addr)
+		return nil
+	}
+
+	h.debugger.EnableBreakpoint(uint16(addr))
+	h.Printf("Breakpoint at $%04x enabled.\n", addr)
+	return nil
+}
+
+func (h *host) onBreakpointDisable(args []string) error {
+	if len(args) < 1 {
+		h.Printf("Syntax: breakpoint disable [addr]\n")
+		return nil
+	}
+
+	addr := h.parseAddr(args[0])
+	if addr < 0 {
+		h.Printf("Invalid breakpoint address '%v'\n", args[0])
+		return nil
+	}
+
+	if !h.debugger.HasBreakpoint(uint16(addr)) {
+		h.Printf("No breakpoint was set on $%04X.\n", addr)
+		return nil
+	}
+
+	h.debugger.DisableBreakpoint(uint16(addr))
+	h.Printf("Breakpoint at $%04x disabled.\n", addr)
+	return nil
+}
+
+func (h *host) onDataBreakpointList(args []string) error {
+	h.Println("Addr  Enabled  Value")
+	h.Println("----- -------  -----")
+	for _, b := range h.debugger.GetDataBreakpoints() {
+		if b.Conditional {
+			h.Printf("$%04X %-5v    $%02X\n", b.Address, b.Enabled, b.Value)
+		} else {
+			h.Printf("$%04X %-5v    <none>\n", b.Address, b.Enabled)
+		}
+	}
+	return nil
+}
+
+func (h *host) onDataBreakpointAdd(args []string) error {
+	if len(args) < 1 {
+		h.Printf("Syntax: databreakpoint add [addr] [value]\n")
+		return nil
+	}
+
+	addr := h.parseAddr(args[0])
+	if addr < 0 {
+		h.Printf("Invalid data breakpoint address '%v'\n", args[0])
+		return nil
+	}
+
+	if len(args) > 1 {
+		value := h.parseByte(args[1])
+		if value < 0 {
+			h.Printf("Invalid conditional value '%v'\n", args[1])
+			return nil
+		}
+		h.debugger.AddConditionalDataBreakpoint(uint16(addr), byte(value))
+		h.Printf("Conditional data Breakpoint added at $%04x for value $%02X.\n", addr, value)
+	} else {
+		h.debugger.AddDataBreakpoint(uint16(addr))
+		h.Printf("Data breakpoint added at $%04x.\n", addr)
+	}
+
+	return nil
+}
+
+func (h *host) onDataBreakpointRemove(args []string) error {
+	if len(args) < 1 {
+		h.Printf("Syntax: databreakpoint remove [addr]\n")
+		return nil
+	}
+
+	addr := h.parseAddr(args[0])
+	if addr < 0 {
+		h.Printf("Invalid data breakpoint address '%v'\n", args[0])
+		return nil
+	}
+
+	if !h.debugger.HasDataBreakpoint(uint16(addr)) {
+		h.Printf("No data breakpoint was set on $%04X.\n", addr)
+		return nil
+	}
+
+	h.debugger.RemoveDataBreakpoint(uint16(addr))
+	h.Printf("Data breakpoint at $%04x removed.\n", addr)
+	return nil
+}
+
+func (h *host) onDataBreakpointEnable(args []string) error {
+	if len(args) < 1 {
+		h.Printf("Syntax: databreakpoint enable [addr]\n")
+		return nil
+	}
+
+	addr := h.parseAddr(args[0])
+	if addr < 0 {
+		h.Printf("Invalid data breakpoint address '%v'\n", args[0])
+		return nil
+	}
+
+	if !h.debugger.HasDataBreakpoint(uint16(addr)) {
+		h.Printf("No data breakpoint was set on $%04X.\n", addr)
+		return nil
+	}
+
+	h.debugger.EnableDataBreakpoint(uint16(addr))
+	h.Printf("Data breakpoint at $%04x enabled.\n", addr)
+	return nil
+}
+
+func (h *host) onDataBreakpointDisable(args []string) error {
+	if len(args) < 1 {
+		h.Printf("Syntax: databreakpoint disable [addr]\n")
+		return nil
+	}
+
+	addr := h.parseAddr(args[0])
+	if addr < 0 {
+		h.Printf("Invalid data breakpoint address '%v'\n", args[0])
+		return nil
+	}
+
+	if !h.debugger.HasDataBreakpoint(uint16(addr)) {
+		h.Printf("No data breakpoint was set on $%04X.\n", addr)
+		return nil
+	}
+
+	h.debugger.DisableDataBreakpoint(uint16(addr))
+	h.Printf("Data breakpoint at $%04x disabled.\n", addr)
 	return nil
 }
 
@@ -396,18 +574,38 @@ func (h *host) parseAddr(s string) int {
 		}
 	}
 
+	base := 10
 	if startsWith(s, "0x") {
-		s = s[2:]
+		s, base = s[2:], 16
 	} else if startsWith(s, "$") {
-		s = s[1:]
+		s, base = s[1:], 16
 	}
 
-	o, err := strconv.ParseInt(s, 16, 32)
+	o, err := strconv.ParseInt(s, base, 32)
 	if err != nil || o < 0 || o > 0xffff {
 		return -1
 	}
 
 	return int(o)
+}
+
+func (h *host) parseByte(s string) int {
+	base := 10
+	if startsWith(s, "0x") {
+		s, base = s[2:], 16
+	} else if startsWith(s, "$") {
+		s, base = s[1:], 16
+	}
+
+	n, err := strconv.ParseInt(s, base, 32)
+	if err != nil || n < -128 || n > 255 {
+		return -1
+	}
+	if n < 0 {
+		n = 256 + n
+	}
+
+	return int(n)
 }
 
 func (h *host) load(filename string, origin int) error {

@@ -52,6 +52,7 @@ LDA_TEST	LDA #$20	; Immediate
 		LDA ABS:$20	; Absolute (forced)
 		LDA $0200,X	; Absolute + X
 		LDA $0200,Y	; Absolute + Y
+		STA $0300
 		RTS
 
 LDX_TEST	LDX #$20	; Immediate

@@ -12,15 +12,16 @@ type handlerFunc func(h *host, args []string) error
 
 type command struct {
 	name        string
+	shortcut    string
 	description string
 	handler     handlerFunc
 	commands    *commands
 }
 
 type commands struct {
+	context string
 	list    []command
 	tree    *prefixtree.Tree
-	context string
 }
 
 type commandResult struct {
@@ -29,13 +30,17 @@ type commandResult struct {
 	helpText string
 }
 
-func newCommands(list []command) *commands {
+func newCommands(context string, list []command) *commands {
 	c := &commands{
-		list: list,
-		tree: prefixtree.New(),
+		context: context,
+		list:    list,
+		tree:    prefixtree.New(),
 	}
 	for i, cc := range c.list {
 		c.tree.Add(cc.name, &c.list[i])
+		if cc.shortcut != "" {
+			c.tree.Add(cc.shortcut, &c.list[i])
+		}
 	}
 	return c
 }
@@ -54,14 +59,7 @@ func (c *commands) find(line string) (commandResult, error) {
 	}
 
 	if cmd == "help" || cmd == "?" {
-		lines := []string{"Commands:\n"}
-		for _, c := range c.list {
-			if c.description != "" {
-				line := fmt.Sprintf("  %-15s  %s\n", c.name, c.description)
-				lines = append(lines, line)
-			}
-		}
-		return commandResult{helpText: strings.Join(lines, "")}, nil
+		return c.getHelp()
 	}
 
 	ci, err := c.tree.Find(cmd)
@@ -75,12 +73,23 @@ func (c *commands) find(line string) (commandResult, error) {
 		return commandResult{cmd: cc, args: args}, nil
 	case cc.commands != nil:
 		if args == "" {
-			return commandResult{}, errors.New("command missing argument")
+			return cc.commands.getHelp()
 		}
 		return cc.commands.find(args)
 	}
 
 	return commandResult{}, errors.New("command not found")
+}
+
+func (c *commands) getHelp() (commandResult, error) {
+	lines := []string{fmt.Sprintf("%s commands:\n", c.context)}
+	for _, c := range c.list {
+		if c.description != "" {
+			line := fmt.Sprintf("  %-15s  %s\n", c.name, c.description)
+			lines = append(lines, line)
+		}
+	}
+	return commandResult{helpText: strings.Join(lines, "")}, nil
 }
 
 func stripLeadingWhitespace(s string) string {

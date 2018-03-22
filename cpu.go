@@ -59,10 +59,6 @@ func (cpu *CPU) SetPC(addr uint16) {
 
 // Step the cpu by one instruction.
 func (cpu *CPU) Step() {
-	if cpu.debugger != nil {
-		cpu.debugger.onCPUExecute(cpu, cpu.Reg.PC)
-	}
-
 	// Grab the next opcode at the current PC
 	opcode := cpu.Mem.LoadByte(cpu.Reg.PC)
 
@@ -91,6 +87,11 @@ func (cpu *CPU) Step() {
 	cpu.Cycles += uint64(int8(inst.Cycles) + cpu.deltaCycles)
 	if cpu.pageCrossed {
 		cpu.Cycles += uint64(inst.BPCycles)
+	}
+
+	// Update the debugger so it handle breakpoints.
+	if cpu.debugger != nil {
+		cpu.debugger.onUpdatePC(cpu, cpu.Reg.PC)
 	}
 }
 

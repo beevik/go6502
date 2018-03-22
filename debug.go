@@ -49,14 +49,11 @@ func (d *Debugger) GetBreakpoints() []*Breakpoint {
 	return breakpoints
 }
 
-// GetDataBreakpoints returns all data breakpoints currently set in the
-// debugger.
-func (d *Debugger) GetDataBreakpoints() []*DataBreakpoint {
-	var breakpoints []*DataBreakpoint
-	for _, b := range d.dataBreakpoints {
-		breakpoints = append(breakpoints, b)
-	}
-	return breakpoints
+// HasBreakpoint returns true if there is a breakpoint set on the
+// requested address.
+func (d *Debugger) HasBreakpoint(addr uint16) bool {
+	_, ok := d.breakpoints[addr]
+	return ok
 }
 
 // AddBreakpoint adds a new breakpoint address to the debugger. If the
@@ -85,6 +82,23 @@ func (d *Debugger) DisableBreakpoint(addr uint16) {
 	if b, ok := d.breakpoints[addr]; ok {
 		b.Enabled = false
 	}
+}
+
+// GetDataBreakpoints returns all data breakpoints currently set in the
+// debugger.
+func (d *Debugger) GetDataBreakpoints() []*DataBreakpoint {
+	var breakpoints []*DataBreakpoint
+	for _, b := range d.dataBreakpoints {
+		breakpoints = append(breakpoints, b)
+	}
+	return breakpoints
+}
+
+// HasDataBreakpoint returns true if the debugger has a data breakpoint
+// set on the requested address.
+func (d *Debugger) HasDataBreakpoint(addr uint16) bool {
+	_, ok := d.dataBreakpoints[addr]
+	return ok
 }
 
 // AddDataBreakpoint adds an unconditional data breakpoint on the requested
@@ -125,7 +139,7 @@ func (d *Debugger) DisableDataBreakpoint(addr uint16) {
 	}
 }
 
-func (d *Debugger) onCPUExecute(cpu *CPU, addr uint16) {
+func (d *Debugger) onUpdatePC(cpu *CPU, addr uint16) {
 	if d.Handler != nil {
 		if b, ok := d.breakpoints[addr]; ok && b.Enabled {
 			d.Handler.OnBreakpoint(cpu, addr)
