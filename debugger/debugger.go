@@ -20,11 +20,16 @@ import (
 
 var signature = "56og"
 
+const maxStepDisplayCount = 20
+
 var cmds = newCommands("Debugger", []command{
 	{name: "assemble", description: "Assemble a file", handler: (*host).onAssemble},
 	{name: "load", description: "Load a binary", handler: (*host).onLoad},
 	{name: "registers", shortcut: "r", description: "Display register contents", handler: (*host).onRegisters},
-	{name: "step", shortcut: "s", description: "Step the CPU", handler: (*host).onStep},
+	{name: "step", description: "Step the debugger", commands: newCommands("Step", []command{
+		{name: "in", description: "Step in to routine", handler: (*host).onStepIn},
+		{name: "over", description: "Step over a routine", handler: (*host).onStepOver},
+	})},
 	{name: "run", description: "Run the CPU", handler: (*host).onRun},
 	{name: "exports", description: "List exported addresses", handler: (*host).onExports},
 	{name: "breakpoint", shortcut: "b", description: "Breakpoint commands", commands: newCommands("Breakpoint", []command{
@@ -54,6 +59,8 @@ var cmds = newCommands("Debugger", []command{
 	{name: "dbr", handler: (*host).onDataBreakpointRemove},
 	{name: "dbe", handler: (*host).onDataBreakpointEnable},
 	{name: "dbd", handler: (*host).onDataBreakpointDisable},
+	{name: "si", handler: (*host).onStepIn},
+	{name: "s", handler: (*host).onStepOver},
 })
 
 func main() {
@@ -73,22 +80,25 @@ func main() {
 }
 
 type host struct {
-	input       *bufio.Scanner
-	output      *bufio.Writer
-	interactive bool
-	stopped     bool
-	mem         *go6502.FlatMemory
-	cpu         *go6502.CPU
-	debugger    *go6502.Debugger
-	sourceMap   asm.SourceMap
+	input         *bufio.Scanner
+	output        *bufio.Writer
+	interactive   bool
+	stopped       bool
+	buf           []byte
+	tmpBreakpoint uint16
+	mem           *go6502.FlatMemory
+	cpu           *go6502.CPU
+	debugger      *go6502.Debugger
+	sourceMap     asm.SourceMap
 }
 
 func newHost() *host {
-	h := new(host)
+	h := &host{
+		output: bufio.NewWriter(os.Stdout),
+		buf:    make([]byte, 3),
+		mem:    go6502.NewFlatMemory(),
+	}
 
-	h.output = bufio.NewWriter(os.Stdout)
-
-	h.mem = go6502.NewFlatMemory()
 	h.cpu = go6502.NewCPU(go6502.CMOS, h.mem)
 	h.debugger = go6502.NewDebugger(h)
 	h.cpu.AttachDebugger(h.debugger)
@@ -133,28 +143,39 @@ func (h *host) GetLine() (string, error) {
 	return "", io.EOF
 }
 
-func (h *host) OnBreakpoint(cpu *go6502.CPU, addr uint16) {
-	h.Printf("Breakpoint hit at $%04X.\n", addr)
+func (h *host) OnBreakpoint(cpu *go6502.CPU, b go6502.Breakpoint) {
+	if b.Address != h.tmpBreakpoint {
+		h.Printf("Breakpoint hit at $%04X.\n", b.Address)
+		h.displayPC()
+	}
+
 	h.stopped = true
+	h.tmpBreakpoint = 0
 }
 
-func (h *host) OnDataBreakpoint(cpu *go6502.CPU, addr uint16, v byte) {
-	h.Printf("Data breakpoint hit on address $%04X.\n", addr)
+func (h *host) OnDataBreakpoint(cpu *go6502.CPU, b go6502.DataBreakpoint) {
+	h.Printf("Data breakpoint hit on address $%04X.\n", b.Address)
+
 	h.stopped = true
+	h.tmpBreakpoint = 0
+
+	if cpu.LastPC != cpu.Reg.PC {
+		d, _ := h.disassemble(cpu.LastPC)
+		h.Printf("%s\n", d)
+	}
+
+	h.displayPC()
 }
 
 func (h *host) Load(code []byte, origin uint16) {
 	h.mem.StoreBytes(origin, code)
 }
 
-func (h *host) SetStart(addr uint16) {
-	h.cpu.SetPC(addr)
-}
-
 func (h *host) Repl() {
 	h.input = bufio.NewScanner(os.Stdin)
 	h.output = bufio.NewWriter(os.Stdout)
 	h.interactive = true
+	h.displayPC()
 	h.RunCommands()
 }
 
@@ -173,17 +194,13 @@ func (h *host) RunCommands() error {
 	var r commandResult
 	for {
 		if h.interactive {
-			h.Printf("%04X* ", h.cpu.Reg.PC)
+			h.Printf("* ")
 			h.Flush()
 		}
 
 		line, err := h.GetLine()
 		if err != nil {
 			break
-		}
-
-		if !h.interactive {
-			h.Printf("* %s\n", line)
 		}
 
 		if line != "" {
@@ -290,7 +307,6 @@ func (h *host) onAssemble(args []string) error {
 }
 
 func (h *host) onLoad(args []string) error {
-	origin := -1
 	if len(args) < 1 {
 		h.Println("Syntax: load [filename] [addr]")
 		return nil
@@ -301,15 +317,17 @@ func (h *host) onLoad(args []string) error {
 		filename += ".bin"
 	}
 
+	addr := -1
 	if len(args) >= 2 {
-		origin = h.parseAddr(args[1])
-		if origin < 0 {
+		addr = h.parseAddr(args[1])
+		if addr < 0 {
 			h.Printf("Unable to parse address '%s'\n", args[1])
 			return nil
 		}
 	}
 
-	return h.load(filename, origin)
+	_, err := h.load(filename, addr)
+	return err
 }
 
 func (h *host) onRegisters(args []string) error {
@@ -318,21 +336,84 @@ func (h *host) onRegisters(args []string) error {
 	return nil
 }
 
-func (h *host) onStep(args []string) error {
+func (h *host) onStepIn(args []string) error {
+	// Parse the number of steps.
+	count := 1
+	if len(args) > 0 {
+		c, err := strconv.ParseInt(args[0], 10, 16)
+		if err == nil {
+			count = int(c)
+		}
+	}
+
+	// Step the CPU count times.
+	for i := count - 1; i >= 0 && !h.stopped; i-- {
+		h.cpu.Step()
+
+		switch {
+		case h.stopped:
+			// do nothing
+		case i == maxStepDisplayCount:
+			h.Println("...")
+		case i < maxStepDisplayCount:
+			h.displayPC()
+		}
+	}
+	h.stopped = false
+
+	return nil
+}
+
+func (h *host) onStepOver(args []string) error {
 	cpu := h.cpu
 
-	buf := make([]byte, 3)
-	start := cpu.Reg.PC
-	line, next := disasm.Disassemble(cpu.Mem, start)
+	// Parse the number of steps.
+	count := 1
+	if len(args) > 0 {
+		c, err := strconv.ParseInt(args[0], 10, 16)
+		if err == nil {
+			count = int(c)
+		}
+	}
 
-	cpu.Step()
+	// Step over the next instruction count times.
+	for i := count - 1; i >= 0 && !h.stopped; i-- {
+		inst := cpu.GetInstruction(cpu.Reg.PC)
+		switch inst.Name {
+		case "JSR":
+			// If the instruction is JSR, set a temporary breakpoint on the
+			// next instruction's address (unless it already has one).
+			next := cpu.Reg.PC + uint16(inst.Length)
+			hasBP := h.debugger.HasBreakpoint(next)
+			if !hasBP {
+				h.debugger.AddBreakpoint(next)
+			}
 
-	b := buf[:next-start]
-	cpu.Mem.LoadBytes(start, b)
+			// Run until a breakpoint (temporary or otherwise) is hit.
+			h.tmpBreakpoint = next
+			for !h.stopped {
+				cpu.Step()
+			}
 
-	regStr := disasm.GetRegisterString(&cpu.Reg)
-	fmt.Printf("%04X- %-8s  %-11s  %s C=%d\n",
-		start, codeString(b), line, regStr, cpu.Cycles)
+			// Clear the temporary breakpoint.
+			if !hasBP {
+				h.debugger.RemoveBreakpoint(next)
+			}
+
+		default:
+			h.cpu.Step()
+		}
+
+		switch {
+		case h.stopped:
+			// do nothing
+		case i == maxStepDisplayCount:
+			h.Println("...")
+		case i < maxStepDisplayCount:
+			h.displayPC()
+		}
+	}
+	h.stopped = false
 
 	return nil
 }
@@ -368,7 +449,7 @@ func (h *host) onBreakpointList(args []string) error {
 	h.Println("Addr  Enabled")
 	h.Println("----- -------")
 	for _, b := range h.debugger.GetBreakpoints() {
-		h.Printf("$%04X %v\n", b.Address, b.Enabled)
+		h.Printf("$%04X %v\n", b.Address, !b.Disabled)
 	}
 	return nil
 }
@@ -461,9 +542,9 @@ func (h *host) onDataBreakpointList(args []string) error {
 	h.Println("----- -------  -----")
 	for _, b := range h.debugger.GetDataBreakpoints() {
 		if b.Conditional {
-			h.Printf("$%04X %-5v    $%02X\n", b.Address, b.Enabled, b.Value)
+			h.Printf("$%04X %-5v    $%02X\n", b.Address, !b.Disabled, b.Value)
 		} else {
-			h.Printf("$%04X %-5v    <none>\n", b.Address, b.Enabled)
+			h.Printf("$%04X %-5v    <none>\n", b.Address, !b.Disabled)
 		}
 	}
 	return nil
@@ -567,6 +648,30 @@ func (h *host) onQuit(args []string) error {
 	return errors.New("Exiting program")
 }
 
+func (h *host) displayPC() {
+	if !h.interactive {
+		return
+	}
+	disStr, _ := h.disassemble(h.cpu.Reg.PC)
+	regStr := disasm.GetRegisterString(&h.cpu.Reg)
+	fmt.Print(disStr)
+	fmt.Printf("  %s C=%d\n", regStr, h.cpu.Cycles)
+}
+
+func (h *host) disassemble(addr uint16) (str string, next uint16) {
+	cpu := h.cpu
+
+	var line string
+	line, next = disasm.Disassemble(cpu.Mem, addr)
+
+	l := next - addr
+	b := h.buf[:l]
+	cpu.Mem.LoadBytes(addr, b)
+
+	str = fmt.Sprintf("%04X- %-8s  %-11s", addr, codeString(b[:l]), line)
+	return str, next
+}
+
 func (h *host) parseAddr(s string) int {
 	for _, e := range h.sourceMap.Exports {
 		if e.Label == s {
@@ -608,48 +713,46 @@ func (h *host) parseByte(s string) int {
 	return int(n)
 }
 
-func (h *host) load(filename string, origin int) error {
-	filename, err := filepath.Abs(filename)
+func (h *host) load(filename string, addr int) (origin uint16, err error) {
+	filename, err = filepath.Abs(filename)
 	if err != nil {
 		h.Printf("Failed to open '%s': %v\n", filepath.Base(filename), err)
-		return nil
+		return 0, nil
 	}
 
 	file, err := os.Open(filename)
 	if err != nil {
 		h.Printf("Failed to open '%s': %v\n", filepath.Base(filename), err)
-		return nil
+		return 0, nil
 	}
 	defer file.Close()
 
 	b, err := ioutil.ReadAll(file)
 	if err != nil {
 		h.Printf("Failed to read '%s': %v\n", filepath.Base(filename), err)
-		return nil
+		return 0, nil
 	}
 
 	file.Close()
 
 	code := b
 	if len(b) >= 6 && string(b[:4]) == signature {
-		origin = int(b[4]) | int(b[5])<<8
+		addr = int(b[4]) | int(b[5])<<8
 		code = b[6:]
 	}
-	if origin == -1 {
+	if addr == -1 {
 		h.Printf("File '%s' has no signature and requires an address\n", filepath.Base(filename))
-		return nil
+		return 0, nil
 	}
-
-	if origin+len(code) > 0x10000 {
+	if addr+len(code) > 0x10000 {
 		h.Printf("File '%s' exceeded 64K memory bounds\n", filepath.Base(filename))
-		return nil
+		return 0, nil
 	}
 
+	origin = uint16(addr)
 	cpu := h.cpu
-	cpu.Mem.StoreBytes(uint16(origin), code)
-	h.Printf("Loaded '%s' to $%04X..$%04X\n", filepath.Base(filename), origin, int(origin)+len(code)-1)
-
-	cpu.SetPC(uint16(origin))
+	cpu.Mem.StoreBytes(origin, code)
+	h.Printf("Loaded '%s' to $%04X..$%04X\n", filepath.Base(filename), origin, addr+len(code)-1)
 
 	ext := filepath.Ext(filename)
 	filePrefix := filename[:len(filename)-len(ext)]
@@ -659,14 +762,16 @@ func (h *host) load(filename string, origin int) error {
 	if err == nil {
 		_, err = h.sourceMap.ReadFrom(file)
 		if err != nil {
-			h.Printf("Failled to read '%s': %v\n", filepath.Base(filename), err)
+			h.Printf("Failed to read '%s': %v\n", filepath.Base(filename), err)
 		} else {
 			h.Printf("Loaded '%s' source map\n", filepath.Base(filename))
 		}
 	}
 
 	file.Close()
-	return nil
+
+	cpu.SetPC(origin)
+	return origin, nil
 }
 
 func codeString(bc []byte) string {

@@ -552,7 +552,7 @@ func newInstructionSet(arch Architecture) *InstructionSet {
 	// Add unused opcodes to the instruction set. This information is useful
 	// mostly for 65c02, where unused operations do something predicable
 	// (i.e., eat cycles and nothing else).
-	var unusedName = "_unused"
+	var unusedName = "???"
 	for _, u := range unusedData {
 		inst := &set.instructions[u.opcode]
 		inst.Name = unusedName

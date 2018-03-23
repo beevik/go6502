@@ -24,6 +24,7 @@ type CPU struct {
 	Reg         Registers    // CPU registers
 	Mem         Memory       // assigned memory
 	Cycles      uint64       // total executed CPU cycles
+	LastPC      uint16       // Previous program counter
 	instSet     *InstructionSet
 	pageCrossed bool
 	deltaCycles int8
@@ -57,6 +58,12 @@ func (cpu *CPU) SetPC(addr uint16) {
 	cpu.Reg.PC = addr
 }
 
+// GetInstruction returns the instruction opcode at the requested address.
+func (cpu *CPU) GetInstruction(addr uint16) *Instruction {
+	opcode := cpu.Mem.LoadByte(addr)
+	return cpu.instSet.Lookup(opcode)
+}
+
 // Step the cpu by one instruction.
 func (cpu *CPU) Step() {
 	// Grab the next opcode at the current PC
@@ -75,6 +82,7 @@ func (cpu *CPU) Step() {
 	var buf [2]byte
 	operand := buf[:inst.Length-1]
 	cpu.Mem.LoadBytes(cpu.Reg.PC+1, operand)
+	cpu.LastPC = cpu.Reg.PC
 	cpu.Reg.PC += uint16(inst.Length)
 
 	// Execute the instruction
