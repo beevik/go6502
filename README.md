@@ -1,14 +1,13 @@
 go6502
 ======
 
-The go6502 package implements a 6502 CPU instruction set, emulator,
-assembler, and disassembler.
+The go6502 package implements a 6502 CPU emulator, assembler, disassembler,
+and debugger.
 
 See http://godoc.org/github.com/beevik/go6502 for the godoc-formatted API
 documentation.
 
-The assembler and disassembler are currently under construction, so they
-may have a significant number of bugs.
+This project is currently under construction and is changing frequently.
 
 ### Example
 
