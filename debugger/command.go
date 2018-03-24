@@ -2,94 +2,100 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/beevik/prefixtree"
 )
 
-type handlerFunc func(h *host, args []string) error
-
-type command struct {
-	name        string
-	shortcut    string
-	description string
-	handler     handlerFunc
-	commands    *commands
+// A Command represents either a single named command or a group of
+// subcommands.
+type Command struct {
+	Name        string      // command string
+	Shortcut    string      // optional shortcut for command
+	Description string      // description shown in help text
+	Param       interface{} // user-defined parameter for this command
+	Tree        *Tree       // the command tree this command belongs to
+	Subcommands *Tree       // child command tree
 }
 
-type commands struct {
-	context string
-	list    []command
-	tree    *prefixtree.Tree
+// A Tree contains one or more commands which may be looked up by
+// a shortest unambiguous prefix match.
+type Tree struct {
+	Title    string    // Description of all commands in tree
+	Commands []Command // All commands in the tree
+	tree     *prefixtree.Tree
 }
 
-type commandResult struct {
-	cmd      *command
-	args     string
-	helpText string
+// A Selection represents the result of looking up a command in a
+// hierarchical command tree. It includes the whitespace-delimited arguments
+// following the discovered command, if any.
+type Selection struct {
+	Command *Command // The selected command
+	Args    []string // the command's white-space delimited arguments
 }
 
-func newCommands(context string, list []command) *commands {
-	c := &commands{
-		context: context,
-		list:    list,
-		tree:    prefixtree.New(),
+// Errors returned by the cmd package.
+var (
+	ErrAmbiguous = errors.New("Command is ambiguous")
+	ErrNotFound  = errors.New("Command not found")
+)
+
+// NewCommands creates a new Command tree.
+func NewCommands(title string, list []Command) *Tree {
+	c := &Tree{
+		Title:    title,
+		Commands: list,
+		tree:     prefixtree.New(),
 	}
-	for i, cc := range c.list {
-		c.tree.Add(cc.name, &c.list[i])
-		if cc.shortcut != "" {
-			c.tree.Add(cc.shortcut, &c.list[i])
+	for i, cc := range c.Commands {
+		c.Commands[i].Tree = c
+		c.tree.Add(cc.Name, &c.Commands[i])
+		if cc.Shortcut != "" {
+			c.tree.Add(cc.Shortcut, &c.Commands[i])
 		}
 	}
 	return c
 }
 
-func (c *commands) find(line string) (commandResult, error) {
+// Lookup performs a hierarchical search on a command tree for a matching
+// command.
+func (c *Tree) Lookup(line string) (Selection, error) {
 	ss := strings.SplitN(stripLeadingWhitespace(line), " ", 2)
 
 	var args string
-	cmd := ss[0]
+	cmdStr := ss[0]
 	if len(ss) > 1 {
 		args = stripLeadingWhitespace(ss[1])
 	}
 
-	if cmd == "" {
-		return commandResult{}, nil
+	if cmdStr == "" {
+		return Selection{}, nil
 	}
 
-	if cmd == "help" || cmd == "?" {
-		return c.getHelp()
+	ci, err := c.tree.Find(cmdStr)
+	switch err {
+	case prefixtree.ErrPrefixAmbiguous:
+		return Selection{}, ErrAmbiguous
+	case prefixtree.ErrPrefixNotFound:
+		return Selection{}, ErrNotFound
 	}
 
-	ci, err := c.tree.Find(cmd)
-	if err != nil {
-		return commandResult{}, err
-	}
-
-	cc := ci.(*command)
+	cmd := ci.(*Command)
 	switch {
-	case cc.handler != nil:
-		return commandResult{cmd: cc, args: args}, nil
-	case cc.commands != nil:
+	case cmd.Subcommands != nil:
 		if args == "" {
-			return cc.commands.getHelp()
+			h, err := cmd.Subcommands.Lookup("help")
+			if err == nil {
+				return h, nil
+			}
+			return Selection{}, nil
 		}
-		return cc.commands.find(args)
+		return cmd.Subcommands.Lookup(args)
+	case cmd.Param != nil:
+		return Selection{Command: cmd, Args: splitArgs(args)}, nil
 	}
 
-	return commandResult{}, errors.New("command not found")
-}
-
-func (c *commands) getHelp() (commandResult, error) {
-	lines := []string{fmt.Sprintf("%s commands:\n", c.context)}
-	for _, c := range c.list {
-		if c.description != "" {
-			line := fmt.Sprintf("  %-15s  %s\n", c.name, c.description)
-			lines = append(lines, line)
-		}
-	}
-	return commandResult{helpText: strings.Join(lines, "")}, nil
+	return Selection{}, errors.New("command not found")
 }
 
 func stripLeadingWhitespace(s string) string {
@@ -99,4 +105,28 @@ func stripLeadingWhitespace(s string) string {
 		}
 	}
 	return ""
+}
+
+func splitArgs(args string) []string {
+	ss := make([]string, 0)
+	for len(args) > 0 {
+		i := strings.IndexAny(args, " \t")
+		if i == -1 {
+			if len(args) > 0 {
+				ss = append(ss, args)
+			}
+			break
+		}
+
+		if i > 0 {
+			arg := args[:i]
+			ss = append(ss, arg)
+		}
+
+		for i < len(args) && (args[i] == ' ' || args[i] == '\t') {
+			i++
+		}
+		args = args[i:]
+	}
+	return ss
 }

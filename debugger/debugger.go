@@ -10,57 +10,60 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/beevik/go6502"
 	"github.com/beevik/go6502/asm"
 	"github.com/beevik/go6502/disasm"
-	"github.com/beevik/prefixtree"
 )
 
 var signature = "56og"
 
 const maxStepDisplayCount = 20
 
-var cmds = newCommands("Debugger", []command{
-	{name: "assemble", description: "Assemble a file", handler: (*host).onAssemble},
-	{name: "load", description: "Load a binary", handler: (*host).onLoad},
-	{name: "registers", shortcut: "r", description: "Display register contents", handler: (*host).onRegisters},
-	{name: "step", description: "Step the debugger", commands: newCommands("Step", []command{
-		{name: "in", description: "Step in to routine", handler: (*host).onStepIn},
-		{name: "over", description: "Step over a routine", handler: (*host).onStepOver},
+var cmds = NewCommands("Debugger", []Command{
+	{Name: "help", Shortcut: "?", Param: (*host).onHelp},
+	{Name: "assemble", Description: "Assemble a file", Param: (*host).onAssemble},
+	{Name: "load", Description: "Load a binary", Param: (*host).onLoad},
+	{Name: "registers", Shortcut: "r", Description: "Display register contents", Param: (*host).onRegisters},
+	{Name: "disassemble", Shortcut: "d", Description: "Disassemble code", Param: (*host).onDisassemble},
+	{Name: "step", Description: "Step the debugger", Subcommands: NewCommands("Step", []Command{
+		{Name: "help", Shortcut: "?", Param: (*host).onHelp},
+		{Name: "in", Description: "Step in to routine", Param: (*host).onStepIn},
+		{Name: "over", Description: "Step over a routine", Param: (*host).onStepOver},
 	})},
-	{name: "run", description: "Run the CPU", handler: (*host).onRun},
-	{name: "exports", description: "List exported addresses", handler: (*host).onExports},
-	{name: "breakpoint", shortcut: "b", description: "Breakpoint commands", commands: newCommands("Breakpoint", []command{
-		{name: "list", description: "List breakpoints", handler: (*host).onBreakpointList},
-		{name: "add", description: "Add a breakpoint", handler: (*host).onBreakpointAdd},
-		{name: "remove", description: "Remove a breakpoint", handler: (*host).onBreakpointRemove},
-		{name: "enable", description: "Enable a breakpoint", handler: (*host).onBreakpointEnable},
-		{name: "disable", description: "Disable a breakpoint", handler: (*host).onBreakpointDisable},
+	{Name: "run", Description: "Run the CPU", Param: (*host).onRun},
+	{Name: "exports", Description: "List exported addresses", Param: (*host).onExports},
+	{Name: "breakpoint", Shortcut: "b", Description: "Breakpoint commands", Subcommands: NewCommands("Breakpoint", []Command{
+		{Name: "help", Shortcut: "?", Param: (*host).onHelp},
+		{Name: "list", Description: "List breakpoints", Param: (*host).onBreakpointList},
+		{Name: "add", Description: "Add a breakpoint", Param: (*host).onBreakpointAdd},
+		{Name: "remove", Description: "Remove a breakpoint", Param: (*host).onBreakpointRemove},
+		{Name: "enable", Description: "Enable a breakpoint", Param: (*host).onBreakpointEnable},
+		{Name: "disable", Description: "Disable a breakpoint", Param: (*host).onBreakpointDisable},
 	})},
-	{name: "databreakpoint", shortcut: "db", description: "Data breakpoint commands", commands: newCommands("Data breakpoint", []command{
-		{name: "list", description: "List data breakpoints", handler: (*host).onDataBreakpointList},
-		{name: "add", description: "Add a data breakpoint", handler: (*host).onDataBreakpointAdd},
-		{name: "remove", description: "Remove a data breakpoint", handler: (*host).onDataBreakpointRemove},
-		{name: "enable", description: "Enable a data breakpoint", handler: (*host).onDataBreakpointEnable},
-		{name: "disable", description: "Disable a data breakpoint", handler: (*host).onDataBreakpointDisable},
+	{Name: "databreakpoint", Shortcut: "db", Description: "Data breakpoint commands", Subcommands: NewCommands("Data breakpoint", []Command{
+		{Name: "help", Shortcut: "?", Param: (*host).onHelp},
+		{Name: "list", Description: "List data breakpoints", Param: (*host).onDataBreakpointList},
+		{Name: "add", Description: "Add a data breakpoint", Param: (*host).onDataBreakpointAdd},
+		{Name: "remove", Description: "Remove a data breakpoint", Param: (*host).onDataBreakpointRemove},
+		{Name: "enable", Description: "Enable a data breakpoint", Param: (*host).onDataBreakpointEnable},
+		{Name: "disable", Description: "Disable a data breakpoint", Param: (*host).onDataBreakpointDisable},
 	})},
-	{name: "quit", description: "Quit the program", handler: (*host).onQuit},
+	{Name: "quit", Description: "Quit the program", Param: (*host).onQuit},
 
 	// Shortcuts to nested commands
-	{name: "ba", handler: (*host).onBreakpointAdd},
-	{name: "br", handler: (*host).onBreakpointRemove},
-	{name: "bl", handler: (*host).onBreakpointList},
-	{name: "be", handler: (*host).onBreakpointEnable},
-	{name: "bd", handler: (*host).onBreakpointDisable},
-	{name: "dbl", handler: (*host).onDataBreakpointList},
-	{name: "dba", handler: (*host).onDataBreakpointAdd},
-	{name: "dbr", handler: (*host).onDataBreakpointRemove},
-	{name: "dbe", handler: (*host).onDataBreakpointEnable},
-	{name: "dbd", handler: (*host).onDataBreakpointDisable},
-	{name: "si", handler: (*host).onStepIn},
-	{name: "s", handler: (*host).onStepOver},
+	{Name: "ba", Param: (*host).onBreakpointAdd},
+	{Name: "br", Param: (*host).onBreakpointRemove},
+	{Name: "bl", Param: (*host).onBreakpointList},
+	{Name: "be", Param: (*host).onBreakpointEnable},
+	{Name: "bd", Param: (*host).onBreakpointDisable},
+	{Name: "dbl", Param: (*host).onDataBreakpointList},
+	{Name: "dba", Param: (*host).onDataBreakpointAdd},
+	{Name: "dbr", Param: (*host).onDataBreakpointRemove},
+	{Name: "dbe", Param: (*host).onDataBreakpointEnable},
+	{Name: "dbd", Param: (*host).onDataBreakpointDisable},
+	{Name: "si", Param: (*host).onStepIn},
+	{Name: "s", Param: (*host).onStepOver},
 })
 
 func main() {
@@ -191,7 +194,7 @@ func (h *host) Exec(filename string) error {
 }
 
 func (h *host) RunCommands() error {
-	var r commandResult
+	var sel Selection
 	for {
 		if h.interactive {
 			h.Printf("* ")
@@ -204,28 +207,25 @@ func (h *host) RunCommands() error {
 		}
 
 		if line != "" {
-			r, err = cmds.find(line)
+			sel, err = cmds.Lookup(line)
 			switch {
-			case err == prefixtree.ErrPrefixNotFound:
-				h.Println("command not found.")
+			case err == ErrNotFound:
+				h.Println("Command not found.")
 				continue
-			case err == prefixtree.ErrPrefixAmbiguous:
-				h.Println("command ambiguous.")
+			case err == ErrAmbiguous:
+				h.Println("Command is ambiguous.")
 				continue
 			case err != nil:
-				h.Printf("%v.\n", err)
-				continue
-			case r.helpText != "":
-				h.Print(r.helpText)
+				h.Printf("ERROR: %v.\n", err)
 				continue
 			}
 		}
-		if r.cmd == nil {
+		if sel.Command == nil {
 			continue
 		}
 
-		args := splitArgs(r.args)
-		err = r.cmd.handler(h, args)
+		handler := sel.Command.Param.(func(*host, Selection) error)
+		err = handler(h, sel)
 		if err != nil {
 			break
 		}
@@ -234,13 +234,24 @@ func (h *host) RunCommands() error {
 	return nil
 }
 
-func (h *host) onAssemble(args []string) error {
-	if len(args) < 1 {
+func (h *host) onHelp(sel Selection) error {
+	commands := sel.Command.Tree
+	h.Printf("%s commands:\n", commands.Title)
+	for _, c := range commands.Commands {
+		if c.Description != "" {
+			h.Printf("    %-15s  %s\n", c.Name, c.Description)
+		}
+	}
+	return nil
+}
+
+func (h *host) onAssemble(sel Selection) error {
+	if len(sel.Args) < 1 {
 		h.Println("Syntax: assemble [filename]")
 		return nil
 	}
 
-	filename := args[0]
+	filename := sel.Args[0]
 	if filepath.Ext(filename) == "" {
 		filename += ".asm"
 	}
@@ -306,22 +317,22 @@ func (h *host) onAssemble(args []string) error {
 	return nil
 }
 
-func (h *host) onLoad(args []string) error {
-	if len(args) < 1 {
+func (h *host) onLoad(sel Selection) error {
+	if len(sel.Args) < 1 {
 		h.Println("Syntax: load [filename] [addr]")
 		return nil
 	}
 
-	filename := args[0]
+	filename := sel.Args[0]
 	if filepath.Ext(filename) == "" {
 		filename += ".bin"
 	}
 
 	addr := -1
-	if len(args) >= 2 {
-		addr = h.parseAddr(args[1])
+	if len(sel.Args) >= 2 {
+		addr = h.parseAddr(sel.Args[1])
 		if addr < 0 {
-			h.Printf("Unable to parse address '%s'\n", args[1])
+			h.Printf("Unable to parse address '%s'\n", sel.Args[1])
 			return nil
 		}
 	}
@@ -330,49 +341,52 @@ func (h *host) onLoad(args []string) error {
 	return err
 }
 
-func (h *host) onRegisters(args []string) error {
+func (h *host) onRegisters(sel Selection) error {
 	reg := disasm.GetRegisterString(&h.cpu.Reg)
 	fmt.Printf("%s\n", reg)
 	return nil
 }
 
-func (h *host) onStepIn(args []string) error {
+func (h *host) onDisassemble(sel Selection) error {
+	// TODO: write me
+	return nil
+}
+
+func (h *host) onStepIn(sel Selection) error {
 	// Parse the number of steps.
 	count := 1
-	if len(args) > 0 {
-		c, err := strconv.ParseInt(args[0], 10, 16)
+	if len(sel.Args) > 0 {
+		n, err := strconv.ParseInt(sel.Args[0], 10, 16)
 		if err == nil {
-			count = int(c)
+			count = int(n)
 		}
 	}
 
 	// Step the CPU count times.
 	for i := count - 1; i >= 0 && !h.stopped; i-- {
 		h.cpu.Step()
+		h.stopped = false
 
 		switch {
-		case h.stopped:
-			// do nothing
 		case i == maxStepDisplayCount:
 			h.Println("...")
 		case i < maxStepDisplayCount:
 			h.displayPC()
 		}
 	}
-	h.stopped = false
 
 	return nil
 }
 
-func (h *host) onStepOver(args []string) error {
+func (h *host) onStepOver(sel Selection) error {
 	cpu := h.cpu
 
 	// Parse the number of steps.
 	count := 1
-	if len(args) > 0 {
-		c, err := strconv.ParseInt(args[0], 10, 16)
+	if len(sel.Args) > 0 {
+		n, err := strconv.ParseInt(sel.Args[0], 10, 16)
 		if err == nil {
-			count = int(c)
+			count = int(n)
 		}
 	}
 
@@ -403,26 +417,24 @@ func (h *host) onStepOver(args []string) error {
 		default:
 			h.cpu.Step()
 		}
+		h.stopped = false
 
 		switch {
-		case h.stopped:
-			// do nothing
 		case i == maxStepDisplayCount:
 			h.Println("...")
 		case i < maxStepDisplayCount:
 			h.displayPC()
 		}
 	}
-	h.stopped = false
 
 	return nil
 }
 
-func (h *host) onRun(args []string) error {
-	if len(args) > 0 {
-		pc := h.parseAddr(args[0])
+func (h *host) onRun(sel Selection) error {
+	if len(sel.Args) > 0 {
+		pc := h.parseAddr(sel.Args[0])
 		if pc < 0 {
-			h.Printf("Unable to parse address '%s'\n", args[0])
+			h.Printf("Unable to parse address '%s'\n", sel.Args[0])
 			return nil
 		}
 		h.cpu.SetPC(uint16(pc))
@@ -438,14 +450,14 @@ func (h *host) onRun(args []string) error {
 	return nil
 }
 
-func (h *host) onExports(args []string) error {
+func (h *host) onExports(sel Selection) error {
 	for _, e := range h.sourceMap.Exports {
 		h.Printf("%-16s $%04X\n", e.Label, e.Addr)
 	}
 	return nil
 }
 
-func (h *host) onBreakpointList(args []string) error {
+func (h *host) onBreakpointList(sel Selection) error {
 	h.Println("Addr  Enabled")
 	h.Println("----- -------")
 	for _, b := range h.debugger.GetBreakpoints() {
@@ -454,15 +466,15 @@ func (h *host) onBreakpointList(args []string) error {
 	return nil
 }
 
-func (h *host) onBreakpointAdd(args []string) error {
-	if len(args) < 1 {
+func (h *host) onBreakpointAdd(sel Selection) error {
+	if len(sel.Args) < 1 {
 		h.Printf("Syntax: breakpoint add [addr]\n")
 		return nil
 	}
 
-	addr := h.parseAddr(args[0])
+	addr := h.parseAddr(sel.Args[0])
 	if addr < 0 {
-		h.Printf("Invalid breakpoint address '%v'\n", args[0])
+		h.Printf("Invalid breakpoint address '%v'\n", sel.Args[0])
 		return nil
 	}
 
@@ -471,15 +483,15 @@ func (h *host) onBreakpointAdd(args []string) error {
 	return nil
 }
 
-func (h *host) onBreakpointRemove(args []string) error {
-	if len(args) < 1 {
+func (h *host) onBreakpointRemove(sel Selection) error {
+	if len(sel.Args) < 1 {
 		h.Printf("Syntax: breakpoint remove [addr]\n")
 		return nil
 	}
 
-	addr := h.parseAddr(args[0])
+	addr := h.parseAddr(sel.Args[0])
 	if addr < 0 {
-		h.Printf("Invalid breakpoint address '%v'\n", args[0])
+		h.Printf("Invalid breakpoint address '%v'\n", sel.Args[0])
 		return nil
 	}
 
@@ -493,15 +505,15 @@ func (h *host) onBreakpointRemove(args []string) error {
 	return nil
 }
 
-func (h *host) onBreakpointEnable(args []string) error {
-	if len(args) < 1 {
+func (h *host) onBreakpointEnable(sel Selection) error {
+	if len(sel.Args) < 1 {
 		h.Printf("Syntax: breakpoint enable [addr]\n")
 		return nil
 	}
 
-	addr := h.parseAddr(args[0])
+	addr := h.parseAddr(sel.Args[0])
 	if addr < 0 {
-		h.Printf("Invalid breakpoint address '%v'\n", args[0])
+		h.Printf("Invalid breakpoint address '%v'\n", sel.Args[0])
 		return nil
 	}
 
@@ -515,15 +527,15 @@ func (h *host) onBreakpointEnable(args []string) error {
 	return nil
 }
 
-func (h *host) onBreakpointDisable(args []string) error {
-	if len(args) < 1 {
+func (h *host) onBreakpointDisable(sel Selection) error {
+	if len(sel.Args) < 1 {
 		h.Printf("Syntax: breakpoint disable [addr]\n")
 		return nil
 	}
 
-	addr := h.parseAddr(args[0])
+	addr := h.parseAddr(sel.Args[0])
 	if addr < 0 {
-		h.Printf("Invalid breakpoint address '%v'\n", args[0])
+		h.Printf("Invalid breakpoint address '%v'\n", sel.Args[0])
 		return nil
 	}
 
@@ -537,7 +549,7 @@ func (h *host) onBreakpointDisable(args []string) error {
 	return nil
 }
 
-func (h *host) onDataBreakpointList(args []string) error {
+func (h *host) onDataBreakpointList(sel Selection) error {
 	h.Println("Addr  Enabled  Value")
 	h.Println("----- -------  -----")
 	for _, b := range h.debugger.GetDataBreakpoints() {
@@ -550,22 +562,22 @@ func (h *host) onDataBreakpointList(args []string) error {
 	return nil
 }
 
-func (h *host) onDataBreakpointAdd(args []string) error {
-	if len(args) < 1 {
+func (h *host) onDataBreakpointAdd(sel Selection) error {
+	if len(sel.Args) < 1 {
 		h.Printf("Syntax: databreakpoint add [addr] [value]\n")
 		return nil
 	}
 
-	addr := h.parseAddr(args[0])
+	addr := h.parseAddr(sel.Args[0])
 	if addr < 0 {
-		h.Printf("Invalid data breakpoint address '%v'\n", args[0])
+		h.Printf("Invalid data breakpoint address '%v'\n", sel.Args[0])
 		return nil
 	}
 
-	if len(args) > 1 {
-		value := h.parseByte(args[1])
+	if len(sel.Args) > 1 {
+		value := h.parseByte(sel.Args[1])
 		if value < 0 {
-			h.Printf("Invalid conditional value '%v'\n", args[1])
+			h.Printf("Invalid conditional value '%v'\n", sel.Args[1])
 			return nil
 		}
 		h.debugger.AddConditionalDataBreakpoint(uint16(addr), byte(value))
@@ -578,15 +590,15 @@ func (h *host) onDataBreakpointAdd(args []string) error {
 	return nil
 }
 
-func (h *host) onDataBreakpointRemove(args []string) error {
-	if len(args) < 1 {
+func (h *host) onDataBreakpointRemove(sel Selection) error {
+	if len(sel.Args) < 1 {
 		h.Printf("Syntax: databreakpoint remove [addr]\n")
 		return nil
 	}
 
-	addr := h.parseAddr(args[0])
+	addr := h.parseAddr(sel.Args[0])
 	if addr < 0 {
-		h.Printf("Invalid data breakpoint address '%v'\n", args[0])
+		h.Printf("Invalid data breakpoint address '%v'\n", sel.Args[0])
 		return nil
 	}
 
@@ -600,15 +612,15 @@ func (h *host) onDataBreakpointRemove(args []string) error {
 	return nil
 }
 
-func (h *host) onDataBreakpointEnable(args []string) error {
-	if len(args) < 1 {
+func (h *host) onDataBreakpointEnable(sel Selection) error {
+	if len(sel.Args) < 1 {
 		h.Printf("Syntax: databreakpoint enable [addr]\n")
 		return nil
 	}
 
-	addr := h.parseAddr(args[0])
+	addr := h.parseAddr(sel.Args[0])
 	if addr < 0 {
-		h.Printf("Invalid data breakpoint address '%v'\n", args[0])
+		h.Printf("Invalid data breakpoint address '%v'\n", sel.Args[0])
 		return nil
 	}
 
@@ -622,15 +634,15 @@ func (h *host) onDataBreakpointEnable(args []string) error {
 	return nil
 }
 
-func (h *host) onDataBreakpointDisable(args []string) error {
-	if len(args) < 1 {
+func (h *host) onDataBreakpointDisable(sel Selection) error {
+	if len(sel.Args) < 1 {
 		h.Printf("Syntax: databreakpoint disable [addr]\n")
 		return nil
 	}
 
-	addr := h.parseAddr(args[0])
+	addr := h.parseAddr(sel.Args[0])
 	if addr < 0 {
-		h.Printf("Invalid data breakpoint address '%v'\n", args[0])
+		h.Printf("Invalid data breakpoint address '%v'\n", sel.Args[0])
 		return nil
 	}
 
@@ -644,7 +656,7 @@ func (h *host) onDataBreakpointDisable(args []string) error {
 	return nil
 }
 
-func (h *host) onQuit(args []string) error {
+func (h *host) onQuit(sel Selection) error {
 	return errors.New("Exiting program")
 }
 
@@ -785,30 +797,6 @@ func codeString(bc []byte) string {
 	default:
 		return ""
 	}
-}
-
-func splitArgs(args string) []string {
-	ss := make([]string, 0)
-	for len(args) > 0 {
-		i := strings.IndexAny(args, " \t")
-		if i == -1 {
-			if len(args) > 0 {
-				ss = append(ss, args)
-			}
-			break
-		}
-
-		if i > 0 {
-			arg := args[:i]
-			ss = append(ss, arg)
-		}
-
-		for i < len(args) && (args[i] == ' ' || args[i] == '\t') {
-			i++
-		}
-		args = args[i:]
-	}
-	return ss
 }
 
 func startsWith(s, m string) bool {
