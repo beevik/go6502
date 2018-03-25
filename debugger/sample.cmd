@@ -1,2 +1,3 @@
-a sample.asm
-l sample.bin
+l monitor 0xf800
+a sample
+l sample
