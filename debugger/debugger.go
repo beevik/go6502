@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/beevik/cmd"
 	"github.com/beevik/go6502"
@@ -42,6 +43,7 @@ var cmds = cmd.NewTree("Debugger", []cmd.Command{
 	})},
 	{Name: "disassemble", Shortcut: "d", Description: "Disassemble code", Param: (*host).CmdDisassemble},
 	{Name: "exports", Description: "List exported addresses", Param: (*host).CmdExports},
+	{Name: "eval", Shortcut: "e", Description: "Evaluate an expression", Param: (*host).CmdEval},
 	{Name: "load", Description: "Load a binary", Param: (*host).CmdLoad},
 	{Name: "quit", Description: "Quit the program", Param: (*host).CmdQuit},
 	{Name: "registers", Shortcut: "r", Description: "Display register contents", Param: (*host).CmdRegisters},
@@ -120,18 +122,20 @@ type host struct {
 	cpu      *go6502.CPU
 	debugger *go6502.Debugger
 
-	sourceMap asm.SourceMap
-	buf       []byte
-	state     state
-	settings  *settings
+	exprParser *exprParser
+	sourceMap  asm.SourceMap
+	buf        []byte
+	state      state
+	settings   *settings
 }
 
 func newHost() *host {
 	h := &host{
-		buf:      make([]byte, 3),
-		mem:      go6502.NewFlatMemory(),
-		state:    stateProcessingCommands,
-		settings: newSettings(),
+		buf:        make([]byte, 3),
+		mem:        go6502.NewFlatMemory(),
+		exprParser: newExprParser(),
+		state:      stateProcessingCommands,
+		settings:   newSettings(),
 	}
 
 	h.cpu = go6502.NewCPU(go6502.CMOS, h.mem)
@@ -514,6 +518,23 @@ func (h *host) CmdExports(c cmd.Selection) error {
 	return nil
 }
 
+func (h *host) CmdEval(c cmd.Selection) error {
+	if len(c.Args) < 1 {
+		h.Println("Syntax: eval [expression]")
+		return nil
+	}
+
+	expr := strings.Join(c.Args, " ")
+	v, err := h.ParseExpr(expr)
+	if err != nil {
+		h.Printf("%v\n", err)
+		return nil
+	}
+
+	h.Printf("$%04X\n", v)
+	return nil
+}
+
 func (h *host) CmdHelp(c cmd.Selection) error {
 	commands := c.Command.Tree
 	h.Printf("%s commands:\n", commands.Title)
@@ -791,6 +812,45 @@ func (h *host) OnDataBreakpoint(cpu *go6502.CPU, b *go6502.DataBreakpoint) {
 	}
 
 	h.DisplayPC()
+}
+
+func (h *host) ParseExpr(expr string) (uint16, error) {
+	v, err := h.exprParser.Parse(expr, h)
+	if err != nil {
+		return 0, err
+	}
+
+	if v < 0 {
+		v = 0x10000 + v
+	}
+	return uint16(v), nil
+}
+
+func (h *host) ResolveIdentifier(s string) (int64, error) {
+	s = strings.ToLower(s)
+
+	switch s {
+	case "a":
+		return int64(h.cpu.Reg.A), nil
+	case "x":
+		return int64(h.cpu.Reg.X), nil
+	case "y":
+		return int64(h.cpu.Reg.Y), nil
+	case "sp":
+		return int64(h.cpu.Reg.SP) + 0x100, nil
+	case ".":
+		fallthrough
+	case "pc":
+		return int64(h.cpu.Reg.PC), nil
+	}
+
+	for _, e := range h.sourceMap.Exports {
+		if strings.ToLower(e.Label) == s {
+			return int64(e.Addr), nil
+		}
+	}
+
+	return 0, fmt.Errorf("identifier '%s' not found", s)
 }
 
 func (h *host) Disassemble(addr uint16) (str string, next uint16) {
