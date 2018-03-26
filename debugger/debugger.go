@@ -122,6 +122,7 @@ type host struct {
 	cpu      *go6502.CPU
 	debugger *go6502.Debugger
 
+	lastCmd    *cmd.Selection
 	exprParser *exprParser
 	sourceMap  asm.SourceMap
 	buf        []byte
@@ -196,7 +197,6 @@ func (h *host) RunCommands(r io.Reader, w io.Writer, interactive bool) {
 
 	h.DisplayPC()
 
-	var c cmd.Selection
 	for {
 		h.Prompt()
 
@@ -205,6 +205,7 @@ func (h *host) RunCommands(r io.Reader, w io.Writer, interactive bool) {
 			break
 		}
 
+		var c cmd.Selection
 		if line != "" {
 			c, err = cmds.Lookup(line)
 			switch {
@@ -218,10 +219,14 @@ func (h *host) RunCommands(r io.Reader, w io.Writer, interactive bool) {
 				h.Printf("ERROR: %v.\n", err)
 				continue
 			}
+		} else if h.lastCmd != nil {
+			c = *h.lastCmd
 		}
+
 		if c.Command == nil {
 			continue
 		}
+		h.lastCmd = &c
 
 		handler := c.Command.Param.(func(*host, cmd.Selection) error)
 		err = handler(h, c)
@@ -507,7 +512,46 @@ func (h *host) CmdDataBreakpointDisable(c cmd.Selection) error {
 }
 
 func (h *host) CmdDisassemble(c cmd.Selection) error {
-	// TODO: write me
+	if len(c.Args) == 0 {
+		c.Args = []string{"$"}
+	}
+
+	var addr uint16
+	if len(c.Args) > 0 {
+		if c.Args[0] == "$" {
+			addr = h.settings.NextDisasmAddr
+			if addr == 0 {
+				addr = h.cpu.Reg.PC
+			}
+		} else {
+			a, err := h.ParseExpr(c.Args[0])
+			if err != nil {
+				h.Printf("%v\n", err)
+				return nil
+			}
+			addr = a
+		}
+	}
+
+	lines := h.settings.DisasmLinesToDisplay
+	if len(c.Args) > 1 {
+		l, err := h.ParseExpr(c.Args[1])
+		if err != nil {
+			h.Printf("%v\n", err)
+			return nil
+		}
+		lines = int(l)
+	}
+
+	for i := 0; i < lines; i++ {
+		d, next := h.Disassemble(addr)
+		h.Println(d)
+		addr = next
+	}
+
+	h.settings.NextDisasmAddr = addr
+
+	h.lastCmd.Args = []string{"$", fmt.Sprintf("%d", lines)}
 	return nil
 }
 
@@ -599,6 +643,7 @@ func (h *host) CmdRun(c cmd.Selection) error {
 	}
 	h.state = stateProcessingCommands
 
+	h.settings.NextDisasmAddr = h.cpu.Reg.PC
 	return nil
 }
 
@@ -616,8 +661,8 @@ func (h *host) CmdSet(c cmd.Selection) error {
 		if h.settings.IsString(c.Args[0]) {
 			err = h.settings.Set(c.Args[0], c.Args[1])
 		} else {
-			var v int
-			v, err = h.ParseInt(c.Args[1])
+			var v uint16
+			v, err = h.ParseExpr(strings.Join(c.Args[1:], ""))
 			if err == nil {
 				err = h.settings.Set(c.Args[0], v)
 			}
@@ -647,14 +692,15 @@ func (h *host) CmdStepIn(c cmd.Selection) error {
 	for i := count - 1; i >= 0 && h.state == stateRunning; i-- {
 		h.Step()
 		switch {
-		case i == h.settings.StepLineDisplayMax:
+		case i == h.settings.StepLinesToDisplay:
 			h.Println("...")
-		case i < h.settings.StepLineDisplayMax:
+		case i < h.settings.StepLinesToDisplay:
 			h.DisplayPC()
 		}
 	}
 	h.state = stateProcessingCommands
 
+	h.settings.NextDisasmAddr = h.cpu.Reg.PC
 	return nil
 }
 
@@ -673,14 +719,15 @@ func (h *host) CmdStepOver(c cmd.Selection) error {
 	for i := count - 1; i >= 0 && h.state == stateRunning; i-- {
 		h.StepOver()
 		switch {
-		case i == h.settings.StepLineDisplayMax:
+		case i == h.settings.StepLinesToDisplay:
 			h.Println("...")
-		case i < h.settings.StepLineDisplayMax:
+		case i < h.settings.StepLinesToDisplay:
 			h.DisplayPC()
 		}
 	}
 	h.state = stateProcessingCommands
 
+	h.settings.NextDisasmAddr = h.cpu.Reg.PC
 	return nil
 }
 

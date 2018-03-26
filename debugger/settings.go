@@ -11,12 +11,16 @@ import (
 )
 
 type settings struct {
-	StepLineDisplayMax int
+	DisasmLinesToDisplay int
+	StepLinesToDisplay   int
+	NextDisasmAddr       uint16
 }
 
 func newSettings() *settings {
 	return &settings{
-		StepLineDisplayMax: 20,
+		DisasmLinesToDisplay: 10,
+		StepLinesToDisplay:   20,
+		NextDisasmAddr:       0,
 	}
 }
 
