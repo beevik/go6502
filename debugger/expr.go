@@ -100,11 +100,11 @@ const (
 var lexeme = []struct {
 	TokenType tokenType
 	OpType    opType
-	Parse     func(t tstring) (tok token, remain tstring, err error)
+	Parse     func(p *exprParser, t tstring) (tok token, remain tstring, err error)
 }{
 	/*lNil*/ {TokenType: tokenNil, OpType: opNil},
-	/*lNum*/ {TokenType: tokenNumber, OpType: opNil, Parse: parseNumber},
-	/*lIde*/ {TokenType: tokenIdentifier, OpType: opNil, Parse: parseIdentifier},
+	/*lNum*/ {TokenType: tokenNumber, OpType: opNil, Parse: (*exprParser).parseNumber},
+	/*lIde*/ {TokenType: tokenIdentifier, OpType: opNil, Parse: (*exprParser).parseIdentifier},
 	/*lLPa*/ {TokenType: tokenLParen, OpType: opNil},
 	/*lRPa*/ {TokenType: tokenRParen, OpType: opNil},
 	/*lMul*/ {TokenType: tokenOp, OpType: opMultiply},
@@ -112,8 +112,8 @@ var lexeme = []struct {
 	/*lMod*/ {TokenType: tokenOp, OpType: opModulo},
 	/*lAdd*/ {TokenType: tokenOp, OpType: opAdd},
 	/*lSub*/ {TokenType: tokenOp, OpType: opSubtract},
-	/*lShl*/ {TokenType: tokenOp, OpType: opNil, Parse: parseShiftOp},
-	/*lShr*/ {TokenType: tokenOp, OpType: opNil, Parse: parseShiftOp},
+	/*lShl*/ {TokenType: tokenOp, OpType: opNil, Parse: (*exprParser).parseShiftOp},
+	/*lShr*/ {TokenType: tokenOp, OpType: opNil, Parse: (*exprParser).parseShiftOp},
 	/*lAnd*/ {TokenType: tokenOp, OpType: opBitwiseAnd},
 	/*lXor*/ {TokenType: tokenOp, OpType: opBitwiseXor},
 	/*lOra*/ {TokenType: tokenOp, OpType: opBitwiseOr},
@@ -136,95 +136,8 @@ var lex0 = [96]byte{
 	lIde, lIde, lIde, lNil, lOra, lNil, lNot, lNil, // 120..127
 }
 
-func parseToken(t tstring) (tok token, remain tstring, err error) {
-	t = t.consumeWhitespace()
-
-	// Return the nil token when there are no more tokens to parse.
-	if len(t) == 0 {
-		return token{}, t, nil
-	}
-
-	// Use the first character of the token string to look up lexeme
-	// parser data.
-	if t[0] < 32 || t[0] > 127 {
-		return token{}, t, errExprParse
-	}
-	lex := lexeme[lex0[t[0]-32]]
-
-	// One-character lexemes require no additional parsing to generate the
-	// token.
-	if lex.Parse == nil {
-		tok = token{lex.TokenType, nil}
-		if lex.OpType != opNil {
-			tok.Value = &ops[lex.OpType]
-		}
-		return tok, t.consume(1), nil
-	}
-
-	// Lexemes that are more than one character in length require custom
-	// parsing to generate the token.
-	return lex.Parse(t)
-}
-
-func parseNumber(t tstring) (tok token, remain tstring, err error) {
-	base, fn, num := 10, decimal, t
-	switch num[0] {
-	case '$':
-		if len(num) < 2 {
-			return token{}, t, errExprParse
-		}
-		base, fn, num = 16, hexadecimal, num.consume(1)
-
-	case '0':
-		if len(num) > 1 && (num[1] == 'x' || num[1] == 'b') {
-			if len(num) < 3 {
-				return token{}, t, errExprParse
-			}
-			switch num[1] {
-			case 'x':
-				base, fn, num = 16, hexadecimal, num.consume(2)
-			case 'b':
-				base, fn, num = 2, binary, num.consume(2)
-			}
-		}
-	}
-
-	num, remain = num.consumeWhile(fn)
-	if num == "" {
-		return token{}, t, errExprParse
-	}
-
-	v, err := strconv.ParseInt(string(num), base, 64)
-	if err != nil {
-		return token{}, t, errExprParse
-	}
-
-	tok = token{tokenNumber, v}
-	return tok, remain, nil
-}
-
-func parseIdentifier(t tstring) (tok token, remain tstring, err error) {
-	var id tstring
-	id, remain = t.consumeWhile(identifier)
-	tok = token{tokenIdentifier, string(id)}
-	return tok, remain, nil
-}
-
-func parseShiftOp(t tstring) (tok token, remain tstring, err error) {
-	if len(t) < 2 || t[1] != t[0] {
-		return token{}, t, errExprParse
-	}
-
-	var op *op
-	switch t[0] {
-	case '<':
-		op = &ops[opShiftLeft]
-	default:
-		op = &ops[opShiftRight]
-	}
-
-	tok = token{tokenOp, op}
-	return tok, t.consume(2), nil
+type resolver interface {
+	ResolveIdentifier(s string) (int64, error)
 }
 
 //
@@ -235,14 +148,11 @@ type exprParser struct {
 	output        tokenStack
 	operatorStack tokenStack
 	prevTokenType tokenType
+	hexMode       bool
 }
 
 func newExprParser() *exprParser {
 	return &exprParser{}
-}
-
-type resolver interface {
-	ResolveIdentifier(s string) (int64, error)
 }
 
 func (p *exprParser) Reset() {
@@ -257,7 +167,7 @@ func (p *exprParser) Parse(expr string, r resolver) (int64, error) {
 	t := tstring(expr)
 
 	for {
-		tok, remain, err := parseToken(t)
+		tok, remain, err := p.parseToken(t)
 		if err != nil {
 			return 0, err
 		}
@@ -325,6 +235,105 @@ func (p *exprParser) Parse(expr string, r resolver) (int64, error) {
 	}
 
 	return result.Value.(int64), nil
+}
+
+func (p *exprParser) parseToken(t tstring) (tok token, remain tstring, err error) {
+	t = t.consumeWhitespace()
+
+	// Return the nil token when there are no more tokens to parse.
+	if len(t) == 0 {
+		return token{}, t, nil
+	}
+
+	// Use the first character of the token string to look up lexeme
+	// parser data.
+	if t[0] < 32 || t[0] > 127 {
+		return token{}, t, errExprParse
+	}
+	lex := lexeme[lex0[t[0]-32]]
+
+	// One-character lexemes require no additional parsing to generate the
+	// token.
+	if lex.Parse == nil {
+		tok = token{lex.TokenType, nil}
+		if lex.OpType != opNil {
+			tok.Value = &ops[lex.OpType]
+		}
+		return tok, t.consume(1), nil
+	}
+
+	// Lexemes that are more than one character in length require custom
+	// parsing to generate the token.
+	return lex.Parse(p, t)
+}
+
+func (p *exprParser) parseNumber(t tstring) (tok token, remain tstring, err error) {
+	base, fn, num := 10, decimal, t
+
+	if p.hexMode {
+		base, fn = 16, hexadecimal
+	}
+
+	switch num[0] {
+	case '$':
+		if len(num) < 2 {
+			return token{}, t, errExprParse
+		}
+		base, fn, num = 16, hexadecimal, num.consume(1)
+
+	case '0':
+		if len(num) > 1 && (num[1] == 'x' || num[1] == 'b' || num[1] == 'd') {
+			if len(num) < 3 {
+				return token{}, t, errExprParse
+			}
+			switch num[1] {
+			case 'x':
+				base, fn = 16, hexadecimal
+			case 'b':
+				base, fn = 2, binary
+			case 'd':
+				base, fn = 10, decimal
+			}
+			num = num.consume(2)
+		}
+	}
+
+	num, remain = num.consumeWhile(fn)
+	if num == "" {
+		return token{}, t, errExprParse
+	}
+
+	v, err := strconv.ParseInt(string(num), base, 64)
+	if err != nil {
+		return token{}, t, errExprParse
+	}
+
+	tok = token{tokenNumber, v}
+	return tok, remain, nil
+}
+
+func (p *exprParser) parseIdentifier(t tstring) (tok token, remain tstring, err error) {
+	var id tstring
+	id, remain = t.consumeWhile(identifier)
+	tok = token{tokenIdentifier, string(id)}
+	return tok, remain, nil
+}
+
+func (p *exprParser) parseShiftOp(t tstring) (tok token, remain tstring, err error) {
+	if len(t) < 2 || t[1] != t[0] {
+		return token{}, t, errExprParse
+	}
+
+	var op *op
+	switch t[0] {
+	case '<':
+		op = &ops[opShiftLeft]
+	default:
+		op = &ops[opShiftRight]
+	}
+
+	tok = token{tokenOp, op}
+	return tok, t.consume(2), nil
 }
 
 func (p *exprParser) evalOutput() (token, error) {

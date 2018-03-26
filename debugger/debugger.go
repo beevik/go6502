@@ -9,7 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
+	"reflect"
 	"strings"
 
 	"github.com/beevik/cmd"
@@ -323,7 +323,7 @@ func (h *host) CmdBreakpointAdd(c cmd.Selection) error {
 		return nil
 	}
 
-	addr, err := h.ParseAddr(c.Args[0])
+	addr, err := h.ParseExpr(c.Args[0])
 	if err != nil {
 		h.Printf("%v\n", err)
 		return nil
@@ -340,7 +340,7 @@ func (h *host) CmdBreakpointRemove(c cmd.Selection) error {
 		return nil
 	}
 
-	addr, err := h.ParseAddr(c.Args[0])
+	addr, err := h.ParseExpr(c.Args[0])
 	if err != nil {
 		h.Printf("%v\n", err)
 		return nil
@@ -362,7 +362,7 @@ func (h *host) CmdBreakpointEnable(c cmd.Selection) error {
 		return nil
 	}
 
-	addr, err := h.ParseAddr(c.Args[0])
+	addr, err := h.ParseExpr(c.Args[0])
 	if err != nil {
 		h.Printf("%v\n", err)
 		return nil
@@ -385,7 +385,7 @@ func (h *host) CmdBreakpointDisable(c cmd.Selection) error {
 		return nil
 	}
 
-	addr, err := h.ParseAddr(c.Args[0])
+	addr, err := h.ParseExpr(c.Args[0])
 	if err != nil {
 		h.Printf("%v\n", err)
 		return nil
@@ -421,14 +421,14 @@ func (h *host) CmdDataBreakpointAdd(c cmd.Selection) error {
 		return nil
 	}
 
-	addr, err := h.ParseAddr(c.Args[0])
+	addr, err := h.ParseExpr(c.Args[0])
 	if err != nil {
 		h.Printf("%v\n", err)
 		return nil
 	}
 
 	if len(c.Args) > 1 {
-		value, err := h.ParseByte(c.Args[1])
+		value, err := h.ParseExpr(c.Args[1])
 		if err != nil {
 			h.Printf("%v\n", err)
 			return nil
@@ -449,7 +449,7 @@ func (h *host) CmdDataBreakpointRemove(c cmd.Selection) error {
 		return nil
 	}
 
-	addr, err := h.ParseAddr(c.Args[0])
+	addr, err := h.ParseExpr(c.Args[0])
 	if err != nil {
 		h.Printf("%v\n", err)
 		return nil
@@ -471,7 +471,7 @@ func (h *host) CmdDataBreakpointEnable(c cmd.Selection) error {
 		return nil
 	}
 
-	addr, err := h.ParseAddr(c.Args[0])
+	addr, err := h.ParseExpr(c.Args[0])
 	if err != nil {
 		h.Printf("%v\n", err)
 		return nil
@@ -494,7 +494,7 @@ func (h *host) CmdDataBreakpointDisable(c cmd.Selection) error {
 		return nil
 	}
 
-	addr, err := h.ParseAddr(c.Args[0])
+	addr, err := h.ParseExpr(c.Args[0])
 	if err != nil {
 		h.Printf("%v\n", err)
 		return nil
@@ -603,7 +603,7 @@ func (h *host) CmdLoad(c cmd.Selection) error {
 
 	loadAddr := -1
 	if len(c.Args) >= 2 {
-		addr, err := h.ParseAddr(c.Args[1])
+		addr, err := h.ParseExpr(c.Args[1])
 		if err != nil {
 			h.Printf("%v\n", err)
 			return nil
@@ -627,7 +627,7 @@ func (h *host) CmdRegisters(c cmd.Selection) error {
 
 func (h *host) CmdRun(c cmd.Selection) error {
 	if len(c.Args) > 0 {
-		pc, err := h.ParseAddr(c.Args[0])
+		pc, err := h.ParseExpr(c.Args[0])
 		if err != nil {
 			h.Printf("%v\n", err)
 			return nil
@@ -657,21 +657,62 @@ func (h *host) CmdSet(c cmd.Selection) error {
 		h.Println("Syntax: set [name] [value]")
 
 	default:
-		var err error
-		if h.settings.IsString(c.Args[0]) {
-			err = h.settings.Set(c.Args[0], c.Args[1])
-		} else {
-			var v uint16
-			v, err = h.ParseExpr(strings.Join(c.Args[1:], ""))
-			if err == nil {
-				err = h.settings.Set(c.Args[0], v)
+		key, value := strings.ToLower(c.Args[0]), strings.Join(c.Args[1:], " ")
+		v, errV := h.exprParser.Parse(value, h)
+
+		// Setting a register?
+		if errV == nil {
+			sz := 0
+			switch key {
+			case "a":
+				h.cpu.Reg.A, sz = byte(v), 1
+			case "x":
+				h.cpu.Reg.X, sz = byte(v), 1
+			case "y":
+				h.cpu.Reg.Y, sz = byte(v), 1
+			case "sp":
+				v = 0x0100 | (v & 0xff)
+				h.cpu.Reg.SP, sz = byte(v), 2
+			case ".":
+				key = "pc"
+				fallthrough
+			case "pc":
+				h.cpu.Reg.PC, sz = uint16(v), 2
+			}
+
+			switch sz {
+			case 1:
+				h.Printf("Register %s set to $%02X.\n", strings.ToUpper(key), byte(v))
+				return nil
+			case 2:
+				h.Printf("Register %s set to $%04X.\n", strings.ToUpper(key), uint16(v))
+				return nil
 			}
 		}
+
+		// Setting a debugger setting?
+		var err error
+		switch h.settings.Kind(key) {
+		case reflect.Invalid:
+			err = fmt.Errorf("Setting '%s' not found", key)
+		case reflect.String:
+			err = h.settings.Set(key, value)
+		case reflect.Bool:
+			err = h.settings.Set(key, toBool(value))
+		default:
+			err = errV
+			if err == nil {
+				err = h.settings.Set(key, v)
+			}
+		}
+
 		if err == nil {
 			h.Println("Setting updated.")
 		} else {
 			h.Printf("%v\n", err)
 		}
+
+		h.OnSettingsUpdate()
 	}
 
 	return nil
@@ -681,7 +722,7 @@ func (h *host) CmdStepIn(c cmd.Selection) error {
 	// Parse the number of steps.
 	count := 1
 	if len(c.Args) > 0 {
-		n, err := strconv.ParseInt(c.Args[0], 10, 16)
+		n, err := h.ParseExpr(c.Args[0])
 		if err == nil {
 			count = int(n)
 		}
@@ -708,7 +749,7 @@ func (h *host) CmdStepOver(c cmd.Selection) error {
 	// Parse the number of steps.
 	count := 1
 	if len(c.Args) > 0 {
-		n, err := strconv.ParseInt(c.Args[0], 10, 16)
+		n, err := h.ParseExpr(c.Args[0])
 		if err == nil {
 			count = int(n)
 		}
@@ -861,6 +902,10 @@ func (h *host) OnDataBreakpoint(cpu *go6502.CPU, b *go6502.DataBreakpoint) {
 	h.DisplayPC()
 }
 
+func (h *host) OnSettingsUpdate() {
+	h.exprParser.hexMode = h.settings.HexMode
+}
+
 func (h *host) ParseExpr(expr string) (uint16, error) {
 	v, err := h.exprParser.Parse(expr, h)
 	if err != nil {
@@ -884,7 +929,7 @@ func (h *host) ResolveIdentifier(s string) (int64, error) {
 	case "y":
 		return int64(h.cpu.Reg.Y), nil
 	case "sp":
-		return int64(h.cpu.Reg.SP) + 0x100, nil
+		return int64(h.cpu.Reg.SP) | 0x0100, nil
 	case ".":
 		fallthrough
 	case "pc":
@@ -912,62 +957,4 @@ func (h *host) Disassemble(addr uint16) (str string, next uint16) {
 
 	str = fmt.Sprintf("%04X- %-8s  %-11s", addr, codeString(b[:l]), line)
 	return str, next
-}
-
-func (h *host) ParseAddr(s string) (uint16, error) {
-	for _, e := range h.sourceMap.Exports {
-		if e.Label == s {
-			return e.Addr, nil
-		}
-	}
-
-	base := 10
-	if startsWith(s, "0x") {
-		s, base = s[2:], 16
-	} else if startsWith(s, "$") {
-		s, base = s[1:], 16
-	}
-
-	o, err := strconv.ParseInt(s, base, 32)
-	if err != nil {
-		return 0, fmt.Errorf("invalid address '%s'", s)
-	}
-	if o < -32768 || o > 0xffff {
-		return 0, fmt.Errorf("invalid address '%s'", s)
-	}
-
-	if o < 0 {
-		o = 65536 - o
-	}
-	return uint16(o), nil
-}
-
-func (h *host) ParseByte(s string) (byte, error) {
-	n, err := h.ParseInt(s)
-	if err != nil {
-		return 0, err
-	}
-	if n < -128 || n > 255 {
-		return 0, fmt.Errorf("invalid byte value '%s'", s)
-	}
-
-	if n < 0 {
-		n = 256 + n
-	}
-	return byte(n), nil
-}
-
-func (h *host) ParseInt(s string) (int, error) {
-	base := 10
-	if startsWith(s, "0x") {
-		s, base = s[2:], 16
-	} else if startsWith(s, "$") {
-		s, base = s[1:], 16
-	}
-
-	n, err := strconv.ParseInt(s, base, 32)
-	if err != nil {
-		return 0, fmt.Errorf("invalid integer value '%s'", s)
-	}
-	return int(n), nil
 }

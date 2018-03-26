@@ -14,6 +14,7 @@ type settings struct {
 	DisasmLinesToDisplay int
 	StepLinesToDisplay   int
 	NextDisasmAddr       uint16
+	HexMode              bool
 }
 
 func newSettings() *settings {
@@ -21,6 +22,7 @@ func newSettings() *settings {
 		DisasmLinesToDisplay: 10,
 		StepLinesToDisplay:   20,
 		NextDisasmAddr:       0,
+		HexMode:              false,
 	}
 }
 
@@ -68,12 +70,12 @@ func (s *settings) Display(w io.Writer) {
 	}
 }
 
-func (s *settings) IsString(key string) bool {
+func (s *settings) Kind(key string) reflect.Kind {
 	f, err := settingsTree.Find(strings.ToLower(key))
 	if err != nil {
-		return false
+		return reflect.Invalid
 	}
-	return f.(*settingsField).kind == reflect.String
+	return f.(*settingsField).kind
 }
 
 func (s *settings) Set(key string, value interface{}) error {

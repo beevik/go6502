@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 func codeString(bc []byte) string {
@@ -35,4 +36,13 @@ func endsWith(s, m string) bool {
 func exitOnError(err error) {
 	fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
 	os.Exit(1)
+}
+
+func toBool(s string) bool {
+	switch {
+	case s == "1" || strings.ToLower(s) == "true":
+		return true
+	default:
+		return false
+	}
 }
