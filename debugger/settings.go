@@ -12,16 +12,20 @@ import (
 
 type settings struct {
 	DisasmLinesToDisplay int
+	MemDumpBytes         int
 	StepLinesToDisplay   int
 	NextDisasmAddr       uint16
+	NextMemDumpAddr      uint16
 	HexMode              bool
 }
 
 func newSettings() *settings {
 	return &settings{
 		DisasmLinesToDisplay: 10,
+		MemDumpBytes:         64,
 		StepLinesToDisplay:   20,
 		NextDisasmAddr:       0,
+		NextMemDumpAddr:      0,
 		HexMode:              false,
 	}
 }

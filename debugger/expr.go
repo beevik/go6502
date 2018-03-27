@@ -313,6 +313,10 @@ func (p *exprParser) parseNumber(t tstring) (tok token, remain tstring, err erro
 }
 
 func (p *exprParser) parseIdentifier(t tstring) (tok token, remain tstring, err error) {
+	if p.hexMode {
+		return p.parseNumber(t)
+	}
+
 	var id tstring
 	id, remain = t.consumeWhile(identifier)
 	tok = token{tokenIdentifier, string(id)}

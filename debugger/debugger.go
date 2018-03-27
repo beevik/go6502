@@ -45,6 +45,10 @@ var cmds = cmd.NewTree("Debugger", []cmd.Command{
 	{Name: "exports", Description: "List exported addresses", Param: (*host).CmdExports},
 	{Name: "eval", Shortcut: "e", Description: "Evaluate an expression", Param: (*host).CmdEval},
 	{Name: "load", Description: "Load a binary", Param: (*host).CmdLoad},
+	{Name: "memory", Description: "Memory commands", Subcommands: cmd.NewTree("Memory", []cmd.Command{
+		{Name: "help", Shortcut: "?", Param: (*host).CmdHelp},
+		{Name: "dump", Description: "Dump memory starting at address", Param: (*host).CmdMemoryDump},
+	})},
 	{Name: "quit", Description: "Quit the program", Param: (*host).CmdQuit},
 	{Name: "registers", Shortcut: "r", Description: "Display register contents", Param: (*host).CmdRegisters},
 	{Name: "run", Description: "Run the CPU", Param: (*host).CmdRun},
@@ -66,6 +70,7 @@ var cmds = cmd.NewTree("Debugger", []cmd.Command{
 	{Name: "dbr", Param: (*host).CmdDataBreakpointRemove},
 	{Name: "dbe", Param: (*host).CmdDataBreakpointEnable},
 	{Name: "dbd", Param: (*host).CmdDataBreakpointDisable},
+	{Name: "m", Param: (*host).CmdMemoryDump},
 	{Name: "si", Param: (*host).CmdStepIn},
 	{Name: "s", Param: (*host).CmdStepOver},
 })
@@ -518,12 +523,17 @@ func (h *host) CmdDisassemble(c cmd.Selection) error {
 
 	var addr uint16
 	if len(c.Args) > 0 {
-		if c.Args[0] == "$" {
+		switch c.Args[0] {
+		case "$":
 			addr = h.settings.NextDisasmAddr
 			if addr == 0 {
 				addr = h.cpu.Reg.PC
 			}
-		} else {
+
+		case ".":
+			addr = h.cpu.Reg.PC
+
+		default:
 			a, err := h.ParseExpr(c.Args[0])
 			if err != nil {
 				h.Printf("%v\n", err)
@@ -550,7 +560,6 @@ func (h *host) CmdDisassemble(c cmd.Selection) error {
 	}
 
 	h.settings.NextDisasmAddr = addr
-
 	h.lastCmd.Args = []string{"$", fmt.Sprintf("%d", lines)}
 	return nil
 }
@@ -615,6 +624,51 @@ func (h *host) CmdLoad(c cmd.Selection) error {
 	return err
 }
 
+func (h *host) CmdMemoryDump(c cmd.Selection) error {
+	if len(c.Args) < 1 {
+		h.Println("Syntax: memory dump [addr] [bytes]")
+		return nil
+	}
+
+	var addr uint16
+	if len(c.Args) > 0 {
+		switch c.Args[0] {
+		case "$":
+			addr = h.settings.NextMemDumpAddr
+			if addr == 0 {
+				addr = h.cpu.Reg.PC
+			}
+
+		case ".":
+			addr = h.cpu.Reg.PC
+
+		default:
+			a, err := h.ParseExpr(c.Args[0])
+			if err != nil {
+				h.Printf("%v\n", err)
+				return nil
+			}
+			addr = a
+		}
+	}
+
+	bytes := uint16(h.settings.MemDumpBytes)
+	if len(c.Args) >= 2 {
+		var err error
+		bytes, err = h.ParseExpr(c.Args[1])
+		if err != nil {
+			h.Printf("%v\n", err)
+			return nil
+		}
+	}
+
+	h.DumpMemory(addr, bytes)
+
+	h.settings.NextMemDumpAddr = addr + bytes
+	h.lastCmd.Args = []string{"$", fmt.Sprintf("%d", bytes)}
+	return nil
+}
+
 func (h *host) CmdQuit(c cmd.Selection) error {
 	return errors.New("Exiting program")
 }
@@ -662,7 +716,7 @@ func (h *host) CmdSet(c cmd.Selection) error {
 
 		// Setting a register?
 		if errV == nil {
-			sz := 0
+			sz := -1
 			switch key {
 			case "a":
 				h.cpu.Reg.A, sz = byte(v), 1
@@ -678,9 +732,22 @@ func (h *host) CmdSet(c cmd.Selection) error {
 				fallthrough
 			case "pc":
 				h.cpu.Reg.PC, sz = uint16(v), 2
+			case "carry":
+				h.cpu.Reg.Carry, sz = intToBool(int(v)), 0
+			case "zero":
+				h.cpu.Reg.Zero, sz = intToBool(int(v)), 0
+			case "decimal":
+				h.cpu.Reg.Decimal, sz = intToBool(int(v)), 0
+			case "overflow":
+				h.cpu.Reg.Overflow, sz = intToBool(int(v)), 0
+			case "sign":
+				h.cpu.Reg.Sign, sz = intToBool(int(v)), 0
 			}
 
 			switch sz {
+			case 0:
+				h.Printf("Register %s set to %v.\n", strings.ToUpper(key), intToBool(int(v)))
+				return nil
 			case 1:
 				h.Printf("Register %s set to $%02X.\n", strings.ToUpper(key), byte(v))
 				return nil
@@ -698,7 +765,11 @@ func (h *host) CmdSet(c cmd.Selection) error {
 		case reflect.String:
 			err = h.settings.Set(key, value)
 		case reflect.Bool:
-			err = h.settings.Set(key, toBool(value))
+			var v bool
+			v, err = stringToBool(value)
+			if err == nil {
+				err = h.settings.Set(key, v)
+			}
 		default:
 			err = errV
 			if err == nil {
@@ -957,4 +1028,49 @@ func (h *host) Disassemble(addr uint16) (str string, next uint16) {
 
 	str = fmt.Sprintf("%04X- %-8s  %-11s", addr, codeString(b[:l]), line)
 	return str, next
+}
+
+var dumpTemplate = []byte("    -" + strings.Repeat(" ", 35))
+
+func (h *host) DumpMemory(addr0, bytes uint16) {
+	if bytes < 0 {
+		return
+	}
+
+	addr1 := addr0 + bytes - 1
+	if addr1 < addr0 {
+		addr1 = 0xffff
+	}
+
+	start := uint32(addr0) & 0xfff8
+	stop := (uint32(addr1) + 8) & 0xffff8
+	if stop > 0x10000 {
+		stop = 0x10000
+	}
+
+	a := uint16(start)
+	for r := start; r < stop; r += 8 {
+		addrToBuf(a, dumpTemplate[0:4])
+		for c := 6; c < 29; c, a = c+3, a+1 {
+			if a >= addr0 && a <= addr1 {
+				m := h.cpu.Mem.LoadByte(a)
+				byteToBuf(m, dumpTemplate[c:c+2])
+			} else {
+				dumpTemplate[c] = ' '
+				dumpTemplate[c+1] = ' '
+			}
+		}
+
+		a -= 8
+		for c := 32; c < 40; c, a = c+1, a+1 {
+			if a >= addr0 && a <= addr1 {
+				m := h.cpu.Mem.LoadByte(a)
+				dumpTemplate[c] = toPrintableChar(m)
+			} else {
+				dumpTemplate[c] = ' '
+			}
+		}
+
+		h.Println(string(dumpTemplate))
+	}
 }
