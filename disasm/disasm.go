@@ -66,7 +66,7 @@ func Disassemble(m go6502.Memory, addr uint16) (line string, next uint16) {
 		operand[0] = byte(braddr)
 		operand[1] = byte(braddr >> 8)
 	}
-	format := "%s " + modeFormat[inst.Mode]
+	format := "%s   " + modeFormat[inst.Mode]
 	line = fmt.Sprintf(format, inst.Name, hexString(operand))
 	next = addr + uint16(inst.Length)
 	return line, next

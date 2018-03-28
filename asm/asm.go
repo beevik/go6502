@@ -470,20 +470,20 @@ func (a *assembler) generateCode() error {
 			a.code = append(a.code, ss.inst.Opcode)
 			switch {
 			case ss.inst.Length == 1:
-				a.log("%04X- %-8s  %s", ss.addr, ss.codeString(), ss.opcode.str)
+				a.log("%04X-   %-8s    %s", ss.addr, ss.codeString(), ss.opcode.str)
 			case ss.inst.Mode == go6502.REL:
 				offset, err := relOffset(ss.operand.getValue(), ss.addr+int(ss.inst.Length))
 				if err != nil {
 					a.addError(ss.opcode, "branch offset out of bounds")
 				}
 				a.code = append(a.code, offset)
-				a.log("%04X- %-8s  %s  %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
+				a.log("%04X-   %-8s    %s   %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
 			case ss.inst.Length == 2:
 				a.code = append(a.code, byte(ss.operand.getValue()))
-				a.log("%04X- %-8s  %s  %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
+				a.log("%04X-   %-8s    %s   %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
 			case ss.inst.Length == 3:
 				a.code = append(a.code, toBytes(2, ss.operand.getValue())...)
-				a.log("%04X- %-8s  %s  %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
+				a.log("%04X-   %-8s    %s   %s", ss.addr, ss.codeString(), ss.opcode.str, ss.operandString())
 			default:
 				panic("invalid operand")
 			}

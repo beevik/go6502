@@ -1026,7 +1026,7 @@ func (h *host) Disassemble(addr uint16) (str string, next uint16) {
 	b := h.buf[:l]
 	cpu.Mem.LoadBytes(addr, b)
 
-	str = fmt.Sprintf("%04X- %-8s  %-11s", addr, codeString(b[:l]), line)
+	str = fmt.Sprintf("%04X-   %-8s    %-15s", addr, codeString(b[:l]), line)
 	return str, next
 }
 
