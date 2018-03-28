@@ -1030,8 +1030,6 @@ func (h *host) Disassemble(addr uint16) (str string, next uint16) {
 	return str, next
 }
 
-var dumpTemplate = []byte("    -" + strings.Repeat(" ", 35))
-
 func (h *host) DumpMemory(addr0, bytes uint16) {
 	if bytes < 0 {
 		return
@@ -1042,6 +1040,21 @@ func (h *host) DumpMemory(addr0, bytes uint16) {
 		addr1 = 0xffff
 	}
 
+	buf := []byte("    -" + strings.Repeat(" ", 35))
+
+	// Don't align display for short dumps.
+	if addr1-addr0 < 8 {
+		addrToBuf(addr0, buf[0:4])
+		for a, c1, c2 := addr0, 6, 32; a <= addr1; a, c1, c2 = a+1, c1+3, c2+1 {
+			m := h.cpu.Mem.LoadByte(a)
+			byteToBuf(m, buf[c1:c1+2])
+			buf[c2] = toPrintableChar(m)
+		}
+		h.Println(string(buf))
+		return
+	}
+
+	// Align addr0 and addr1 to 8-byte boundaries.
 	start := uint32(addr0) & 0xfff8
 	stop := (uint32(addr1) + 8) & 0xffff8
 	if stop > 0x10000 {
@@ -1050,27 +1063,18 @@ func (h *host) DumpMemory(addr0, bytes uint16) {
 
 	a := uint16(start)
 	for r := start; r < stop; r += 8 {
-		addrToBuf(a, dumpTemplate[0:4])
-		for c := 6; c < 29; c, a = c+3, a+1 {
+		addrToBuf(a, buf[0:4])
+		for c1, c2 := 6, 32; c1 < 29; c1, c2, a = c1+3, c2+1, a+1 {
 			if a >= addr0 && a <= addr1 {
 				m := h.cpu.Mem.LoadByte(a)
-				byteToBuf(m, dumpTemplate[c:c+2])
+				byteToBuf(m, buf[c1:c1+2])
+				buf[c2] = toPrintableChar(m)
 			} else {
-				dumpTemplate[c] = ' '
-				dumpTemplate[c+1] = ' '
+				buf[c1] = ' '
+				buf[c1+1] = ' '
+				buf[c2] = ' '
 			}
 		}
-
-		a -= 8
-		for c := 32; c < 40; c, a = c+1, a+1 {
-			if a >= addr0 && a <= addr1 {
-				m := h.cpu.Mem.LoadByte(a)
-				dumpTemplate[c] = toPrintableChar(m)
-			} else {
-				dumpTemplate[c] = ' '
-			}
-		}
-
-		h.Println(string(dumpTemplate))
+		h.Println(string(buf))
 	}
 }
