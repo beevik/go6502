@@ -32,6 +32,7 @@ STORE		.EQ		$0200
 ; -------
 
 START:				; Labels may end in ':', which is ignored.
+		LDX		#$EE
 		PHX
 		JSR LDA_TEST
 		JSR LDX_TEST

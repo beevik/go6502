@@ -261,7 +261,10 @@ func (h *host) CmdAssemble(c cmd.Selection) error {
 
 	r, err := asm.Assemble(file, filename, false)
 	if err != nil {
-		h.Printf("Failed to assemble: %s\n%v\n", filepath.Base(filename), err)
+		h.Printf("Failed to assemble: %s\n", filepath.Base(filename))
+		for _, e := range r.Errors {
+			fmt.Println(e)
+		}
 		return nil
 	}
 

@@ -16,10 +16,6 @@ import (
 	"github.com/beevik/go6502"
 )
 
-// TODO:
-// 	- Return error slice on fail
-//  - Add .PAD pseudo-op
-
 var (
 	errParse = errors.New("parse error")
 )
@@ -280,6 +276,7 @@ type Result struct {
 	Code      []byte    // Assembled machine code
 	Origin    uint16    // Code origin address
 	SourceMap SourceMap // Source map
+	Errors    []string  // Errors encountered during assembly
 }
 
 // Assemble reads data from the provided stream and attempts to assemble
@@ -313,14 +310,22 @@ func Assemble(r io.Reader, filename string, verbose bool) (*Result, error) {
 
 	// Execute assembler steps, breaking if an error is encountered
 	// in any one of them.
+	var err error
 	for _, step := range steps {
-		err := step(a)
+		err = step(a)
 		if err != nil {
-			return nil, err
+			break
 		}
 		if len(a.errors) > 0 {
-			return nil, errParse
+			err = errParse
+			break
 		}
+	}
+
+	errors := make([]string, 0, len(a.errors))
+	for _, e := range a.errors {
+		s := fmt.Sprintf("Syntax error line %d, col %d: %s", e.line.row, e.line.column+1, e.msg)
+		errors = append(errors, s)
 	}
 
 	result := &Result{
@@ -331,8 +336,9 @@ func Assemble(r io.Reader, filename string, verbose bool) (*Result, error) {
 			Lines:   a.sourceLines,
 			Exports: a.exports,
 		},
+		Errors: errors,
 	}
-	return result, nil
+	return result, err
 }
 
 // Read the assembly code and perform the initial parsing. Build up
