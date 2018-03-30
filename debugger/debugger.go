@@ -24,6 +24,7 @@ var signature = "56og"
 // a host callback to handle the command.
 var cmds = cmd.NewTree("Debugger", []cmd.Command{
 	{Name: "help", Shortcut: "?", Param: (*host).CmdHelp},
+	{Name: "annotate", Description: "Annotate an address", Param: (*host).CmdAnnotate},
 	{Name: "assemble", Description: "Assemble a file", Param: (*host).CmdAssemble},
 	{Name: "breakpoint", Shortcut: "b", Description: "Breakpoint commands", Subcommands: cmd.NewTree("Breakpoint", []cmd.Command{
 		{Name: "help", Shortcut: "?", Param: (*host).CmdHelp},
@@ -103,11 +104,22 @@ func main() {
 			h.RunCommands(file, os.Stdout, false)
 			file.Close()
 		}
+		h.Println()
 	}
 
 	// Start the interactive debugger.
 	h.RunCommands(os.Stdin, os.Stdout, true)
 }
+
+type displayFlags uint8
+
+const (
+	displayRegisters displayFlags = 1 << iota
+	displayCycles
+	displayAnnotations
+
+	displayAll = displayRegisters | displayCycles | displayAnnotations
+)
 
 type state byte
 
@@ -127,21 +139,23 @@ type host struct {
 	cpu      *go6502.CPU
 	debugger *go6502.Debugger
 
-	lastCmd    *cmd.Selection
-	exprParser *exprParser
-	sourceMap  asm.SourceMap
-	buf        []byte
-	state      state
-	settings   *settings
+	lastCmd     *cmd.Selection
+	exprParser  *exprParser
+	sourceMap   asm.SourceMap
+	buf         []byte
+	state       state
+	settings    *settings
+	annotations map[uint16]string
 }
 
 func newHost() *host {
 	h := &host{
-		buf:        make([]byte, 3),
-		mem:        go6502.NewFlatMemory(),
-		exprParser: newExprParser(),
-		state:      stateProcessingCommands,
-		settings:   newSettings(),
+		buf:         make([]byte, 3),
+		mem:         go6502.NewFlatMemory(),
+		exprParser:  newExprParser(),
+		state:       stateProcessingCommands,
+		settings:    newSettings(),
+		annotations: make(map[uint16]string),
 	}
 
 	h.cpu = go6502.NewCPU(go6502.CMOS, h.mem)
@@ -188,10 +202,8 @@ func (h *host) Prompt() {
 
 func (h *host) DisplayPC() {
 	if h.interactive {
-		disStr, _ := h.Disassemble(h.cpu.Reg.PC)
-		regStr := disasm.GetRegisterString(&h.cpu.Reg)
-		fmt.Print(disStr)
-		fmt.Printf("  %s C=%d\n", regStr, h.cpu.Cycles)
+		d, _ := h.Disassemble(h.cpu.Reg.PC, displayAll)
+		fmt.Println(d)
 	}
 }
 
@@ -239,6 +251,34 @@ func (h *host) RunCommands(r io.Reader, w io.Writer, interactive bool) {
 			break
 		}
 	}
+}
+
+func (h *host) CmdAnnotate(c cmd.Selection) error {
+	if len(c.Args) < 1 {
+		h.Println("Syntax: annotate [address] [string]")
+		return nil
+	}
+
+	addr, err := h.ParseExpr(c.Args[0])
+	if err != nil {
+		h.Printf("%v\n", err)
+		return nil
+	}
+
+	var annotation string
+	if len(c.Args) >= 2 {
+		annotation = strings.Join(c.Args[1:], " ")
+	}
+
+	if annotation == "" {
+		delete(h.annotations, addr)
+		h.Printf("Annotation removed at $%04X.\n", addr)
+	} else {
+		h.annotations[addr] = annotation
+		h.Printf("Annotation added at $%04X.\n", addr)
+	}
+
+	return nil
 }
 
 func (h *host) CmdAssemble(c cmd.Selection) error {
@@ -557,7 +597,7 @@ func (h *host) CmdDisassemble(c cmd.Selection) error {
 	}
 
 	for i := 0; i < lines; i++ {
-		d, next := h.Disassemble(addr)
+		d, next := h.Disassemble(addr, displayAnnotations)
 		h.Println(d)
 		addr = next
 	}
@@ -969,8 +1009,8 @@ func (h *host) OnDataBreakpoint(cpu *go6502.CPU, b *go6502.DataBreakpoint) {
 	h.state = stateBreakpoint
 
 	if cpu.LastPC != cpu.Reg.PC {
-		d, _ := h.Disassemble(cpu.LastPC)
-		h.Printf("%s\n", d)
+		d, _ := h.Disassemble(cpu.LastPC, displayAll)
+		h.Println(d)
 	}
 
 	h.DisplayPC()
@@ -1019,7 +1059,7 @@ func (h *host) ResolveIdentifier(s string) (int64, error) {
 	return 0, fmt.Errorf("identifier '%s' not found", s)
 }
 
-func (h *host) Disassemble(addr uint16) (str string, next uint16) {
+func (h *host) Disassemble(addr uint16, flags displayFlags) (str string, next uint16) {
 	cpu := h.cpu
 
 	var line string
@@ -1030,6 +1070,21 @@ func (h *host) Disassemble(addr uint16) (str string, next uint16) {
 	cpu.Mem.LoadBytes(addr, b)
 
 	str = fmt.Sprintf("%04X-   %-8s    %-15s", addr, codeString(b[:l]), line)
+
+	if (flags & displayRegisters) != 0 {
+		str += " " + disasm.GetRegisterString(&h.cpu.Reg)
+	}
+
+	if (flags & displayCycles) != 0 {
+		str += fmt.Sprintf(" C=%-12d", h.cpu.Cycles)
+	}
+
+	if (flags & displayAnnotations) != 0 {
+		if anno, ok := h.annotations[addr]; ok {
+			str += " ; " + anno
+		}
+	}
+
 	return str, next
 }
 
