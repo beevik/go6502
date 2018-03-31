@@ -502,7 +502,7 @@ func (p *exprParser) parseNumber(line fstring) (value, bytes int, remain fstring
 		base, fn, bitsPerChar = 16, hexadecimal, 4
 	case line.startsWithString("0b"):
 		line = line.consume(2)
-		base, fn, bitsPerChar = 2, binary, 1
+		base, fn, bitsPerChar = 2, binarynum, 1
 	}
 
 	numstr, remain := line.consumeWhile(fn)

@@ -163,7 +163,7 @@ func hexadecimal(c byte) bool {
 	return decimal(c) || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')
 }
 
-func binary(c byte) bool {
+func binarynum(c byte) bool {
 	return c == '0' || c == '1'
 }
 

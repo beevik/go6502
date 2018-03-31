@@ -1,9 +1,11 @@
 package asm
 
 import (
-	"encoding/json"
+	"bufio"
+	"bytes"
+	"encoding/binary"
+	"errors"
 	"io"
-	"io/ioutil"
 	"sort"
 )
 
@@ -34,27 +36,138 @@ func (s *SourceMap) Search(addr int) (filename string, line int) {
 	return "", -1
 }
 
-// ReadFrom reads the contents of an exported source map file.
+// ReadFrom reads the contents of an assembly source map.
 func (s *SourceMap) ReadFrom(r io.Reader) (n int64, err error) {
-	b, err := ioutil.ReadAll(r)
+	rr := bufio.NewReader(r)
+
+	b := make([]byte, 16)
+	nn, err := io.ReadFull(rr, b)
+	n += int64(nn)
 	if err != nil {
-		return 0, err
+		return n, err
 	}
 
-	err = json.Unmarshal(b, s)
-	if err != nil {
-		return 0, err
+	if len(b) < 16 || bytes.Compare(b[0:4], []byte(sourceMapSignature)) != 0 {
+		return n, errors.New("invalid source map format")
 	}
-	return int64(len(b)), nil
+	if b[4] != versionMajor || b[5] != versionMinor {
+		return n, errors.New("invalid source map version")
+	}
+
+	fileCount := int(binary.LittleEndian.Uint16(b[6:8]))
+	lineCount := int(binary.LittleEndian.Uint32(b[8:12]))
+	exportCount := int(binary.LittleEndian.Uint32(b[12:16]))
+
+	s.Files = make([]string, fileCount)
+	for i := 0; i < fileCount; i++ {
+		file, err := rr.ReadString(0)
+		n += int64(len(file))
+		if err != nil {
+			return n, err
+		}
+		s.Files[i] = file[:len(file)-1]
+	}
+
+	s.Lines = make([]SourceLine, lineCount)
+	for i := 0; i < lineCount; i++ {
+		nn, err = io.ReadFull(rr, b[:8])
+		n += int64(nn)
+		if err != nil {
+			return n, err
+		}
+		s.Lines[i].Address = int(binary.LittleEndian.Uint16(b[0:2]))
+		s.Lines[i].FileIndex = int(binary.LittleEndian.Uint16(b[2:4]))
+		s.Lines[i].Line = int(binary.LittleEndian.Uint32(b[4:8]))
+	}
+
+	s.Exports = make([]Export, exportCount)
+	for i := 0; i < exportCount; i++ {
+		label, err := rr.ReadString(0)
+		n += int64(len(label))
+		if err != nil {
+			return n, err
+		}
+		s.Exports[i].Label = label[:len(label)-1]
+
+		nn, err = io.ReadFull(rr, b[:2])
+		n += int64(nn)
+		if err != nil {
+			return n, err
+		}
+		s.Exports[i].Addr = binary.LittleEndian.Uint16(b[0:2])
+	}
+
+	return n, nil
 }
 
-// WriteTo writes the contents of the source map to an output stream.
+// WriteSourceMap writes the contents of an assembly source map to an output
+// stream.
 func (s *SourceMap) WriteTo(w io.Writer) (n int64, err error) {
-	b, err := json.Marshal(*s)
+	fileCount := uint16(len(s.Files))
+	lineCount := uint32(len(s.Lines))
+	exportCount := uint32(len(s.Exports))
+
+	ww := bufio.NewWriter(w)
+
+	b := make([]byte, 16)
+	copy(b, []byte(sourceMapSignature))
+	b[4] = versionMajor
+	b[5] = versionMinor
+	binary.LittleEndian.PutUint16(b[6:8], fileCount)
+	binary.LittleEndian.PutUint32(b[8:12], lineCount)
+	binary.LittleEndian.PutUint32(b[12:16], exportCount)
+	nn, err := ww.Write(b)
+	n += int64(nn)
+	ww.Flush()
 	if err != nil {
-		return 0, err
+		return n, err
 	}
 
-	nn, err := w.Write(b)
-	return int64(nn), err
+	for _, f := range s.Files {
+		nn, err = ww.WriteString(f)
+		n += int64(nn)
+		if err != nil {
+			return n, err
+		}
+		err = ww.WriteByte(0)
+		if err != nil {
+			return 0, err
+		}
+		n++
+	}
+
+	for _, l := range s.Lines {
+		binary.LittleEndian.PutUint16(b[0:2], uint16(l.Address))
+		binary.LittleEndian.PutUint16(b[2:4], uint16(l.FileIndex))
+		binary.LittleEndian.PutUint32(b[4:8], uint32(l.Line))
+		nn, err = ww.Write(b[0:8])
+		n += int64(nn)
+		if err != nil {
+			return n, err
+		}
+		ww.Flush()
+	}
+
+	for _, e := range s.Exports {
+		nn, err = ww.WriteString(e.Label)
+		n += int64(nn)
+		if err != nil {
+			return n, err
+		}
+		ww.WriteByte(0)
+		if err != nil {
+			return n, err
+		}
+		n++
+
+		binary.LittleEndian.PutUint16(b[0:2], e.Addr)
+		nn, err = ww.Write(b[0:2])
+		n += int64(nn)
+		if err != nil {
+			return n, err
+		}
+		ww.Flush()
+	}
+
+	return n, nil
 }

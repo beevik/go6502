@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"strconv"
 	"strings"
 
@@ -18,6 +19,13 @@ import (
 
 var (
 	errParse = errors.New("parse error")
+)
+
+const (
+	binSignature       = "go65"
+	sourceMapSignature = "sm65"
+	versionMajor       = 0
+	versionMinor       = 1
 )
 
 var modeName = []string{
@@ -271,17 +279,61 @@ type Export struct {
 	Addr  uint16
 }
 
-// Result of the Assemble function.
-type Result struct {
-	Code      []byte    // Assembled machine code
-	Origin    uint16    // Code origin address
-	SourceMap SourceMap // Source map
-	Errors    []string  // Errors encountered during assembly
+// Assembly contains the assembled machine code and other data associated with
+// the machine code.
+type Assembly struct {
+	Code   []byte   // Assembled machine code
+	Origin uint16   // Origin address of machine code
+	Errors []string // Errors encountered during assembly
+}
+
+// ReadFrom reads machine code from a binary input source.
+func (a *Assembly) ReadFrom(r io.Reader) (n int64, err error) {
+	b, err := ioutil.ReadAll(r)
+	n = int64(len(b))
+	if err != nil {
+		return n, err
+	}
+
+	a.Code = b
+	if len(b) >= 8 && string(b[:4]) == binSignature {
+		if b[4] != versionMajor || b[5] != versionMinor {
+			return n, errors.New("invalid file version")
+		}
+		a.Origin = uint16(b[6]) | uint16(b[7])<<8
+		a.Code = b[8:]
+	}
+
+	if int(a.Origin)+len(a.Code) > 0x10000 {
+		return n, fmt.Errorf("assembly exceeded 64K memory bounds")
+	}
+
+	a.Errors = []string{}
+	return n, nil
+}
+
+// WriteTo saves machine code as binary data into an output writer.
+func (a *Assembly) WriteTo(w io.Writer) (n int64, err error) {
+	var hdr [8]byte
+	copy(hdr[:4], []byte(binSignature))
+	hdr[4] = versionMajor
+	hdr[5] = versionMinor
+	hdr[6] = byte(a.Origin)
+	hdr[7] = byte(a.Origin >> 8)
+	nn, err := w.Write(hdr[:])
+	n += int64(nn)
+	if err != nil {
+		return 0, err
+	}
+
+	nn, err = w.Write(a.Code)
+	n += int64(nn)
+	return n, err
 }
 
 // Assemble reads data from the provided stream and attempts to assemble
 // it into 6502 byte code.
-func Assemble(r io.Reader, filename string, verbose bool) (*Result, error) {
+func Assemble(r io.Reader, filename string, verbose bool) (*Assembly, *SourceMap, error) {
 	a := &assembler{
 		arch:      go6502.NMOS,
 		instSet:   go6502.GetInstructionSet(go6502.NMOS),
@@ -328,17 +380,19 @@ func Assemble(r io.Reader, filename string, verbose bool) (*Result, error) {
 		errors = append(errors, s)
 	}
 
-	result := &Result{
+	assembly := &Assembly{
 		Code:   a.code,
 		Origin: uint16(a.origin),
-		SourceMap: SourceMap{
-			Files:   a.files,
-			Lines:   a.sourceLines,
-			Exports: a.exports,
-		},
 		Errors: errors,
 	}
-	return result, err
+
+	sourceMap := &SourceMap{
+		Files:   a.files,
+		Lines:   a.sourceLines,
+		Exports: a.exports,
+	}
+
+	return assembly, sourceMap, err
 }
 
 // Read the assembly code and perform the initial parsing. Build up

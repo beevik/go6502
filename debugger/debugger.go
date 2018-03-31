@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -25,7 +24,7 @@ var signature = "56og"
 var cmds = cmd.NewTree("Debugger", []cmd.Command{
 	{Name: "help", Shortcut: "?", Param: (*host).CmdHelp},
 	{Name: "annotate", Description: "Annotate an address", Param: (*host).CmdAnnotate},
-	{Name: "assemble", Description: "Assemble a file", Param: (*host).CmdAssemble},
+	{Name: "assemble", Shortcut: "a", Description: "Assemble a file", Param: (*host).CmdAssemble},
 	{Name: "breakpoint", Shortcut: "b", Description: "Breakpoint commands", Subcommands: cmd.NewTree("Breakpoint", []cmd.Command{
 		{Name: "help", Shortcut: "?", Param: (*host).CmdHelp},
 		{Name: "list", Description: "List breakpoints", Param: (*host).CmdBreakpointList},
@@ -141,7 +140,7 @@ type host struct {
 
 	lastCmd     *cmd.Selection
 	exprParser  *exprParser
-	sourceMap   asm.SourceMap
+	sourceMap   *asm.SourceMap
 	buf         []byte
 	state       state
 	settings    *settings
@@ -163,6 +162,10 @@ func newHost() *host {
 	h.cpu.AttachDebugger(h.debugger)
 
 	return h
+}
+
+func (h *host) Write(p []byte) (n int, err error) {
+	return h.output.Write(p)
 }
 
 func (h *host) Print(args ...interface{}) {
@@ -203,7 +206,7 @@ func (h *host) Prompt() {
 func (h *host) DisplayPC() {
 	if h.interactive {
 		d, _ := h.Disassemble(h.cpu.Reg.PC, displayAll)
-		fmt.Println(d)
+		h.Println(d)
 	}
 }
 
@@ -299,11 +302,11 @@ func (h *host) CmdAssemble(c cmd.Selection) error {
 	}
 	defer file.Close()
 
-	r, err := asm.Assemble(file, filename, false)
+	assembly, sourceMap, err := asm.Assemble(file, filename, false)
 	if err != nil {
 		h.Printf("Failed to assemble: %s\n", filepath.Base(filename))
-		for _, e := range r.Errors {
-			fmt.Println(e)
+		for _, e := range assembly.Errors {
+			h.Println(e)
 		}
 		return nil
 	}
@@ -319,32 +322,22 @@ func (h *host) CmdAssemble(c cmd.Selection) error {
 		return nil
 	}
 
-	var hdr [6]byte
-	copy(hdr[:4], []byte(signature))
-	hdr[4] = byte(r.Origin)
-	hdr[5] = byte(r.Origin >> 8)
-	_, err = file.Write(hdr[:])
+	_, err = assembly.WriteTo(file)
 	if err != nil {
-		h.Printf("Failed to write '%s': %v\n", filepath.Base(binFilename), err)
-		return nil
-	}
-
-	_, err = file.Write(r.Code)
-	if err != nil {
-		h.Printf("Failed to write '%s': %v\n", filepath.Base(binFilename), err)
+		h.Printf("Failed to save '%s': %v\n", filepath.Base(binFilename), err)
 		return nil
 	}
 
 	file.Close()
 
 	mapFilename := filePrefix + ".map"
-	file, err = os.OpenFile(mapFilename, os.O_WRONLY|os.O_CREATE, 0600)
+	file, err = os.OpenFile(mapFilename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		h.Printf("Failed to create '%s': %v\n", filepath.Base(mapFilename), err)
 		return nil
 	}
 
-	_, err = r.SourceMap.WriteTo(file)
+	_, err = sourceMap.WriteTo(file)
 	if err != nil {
 		h.Printf("Failed to write '%s': %v\n", filepath.Base(mapFilename), err)
 		return nil
@@ -718,7 +711,7 @@ func (h *host) CmdQuit(c cmd.Selection) error {
 
 func (h *host) CmdRegisters(c cmd.Selection) error {
 	reg := disasm.GetRegisterString(&h.cpu.Reg)
-	fmt.Printf("%s\n", reg)
+	h.Printf("%s\n", reg)
 	return nil
 }
 
@@ -900,7 +893,8 @@ func (h *host) Load(filename string, addr int) (origin uint16, err error) {
 	}
 	defer file.Close()
 
-	b, err := ioutil.ReadAll(file)
+	a := &asm.Assembly{}
+	_, err = a.ReadFrom(file)
 	if err != nil {
 		h.Printf("Failed to read '%s': %v\n", filepath.Base(filename), err)
 		return 0, nil
@@ -908,26 +902,18 @@ func (h *host) Load(filename string, addr int) (origin uint16, err error) {
 
 	file.Close()
 
-	code := b
-	if len(b) >= 6 && string(b[:4]) == signature {
+	origin = a.Origin
+	if origin == 0 {
 		if addr == -1 {
-			addr = int(b[4]) | int(b[5])<<8
+			h.Printf("File '%s' has no signature and requires an address\n", filepath.Base(filename))
+			return 0, nil
 		}
-		code = b[6:]
-	}
-	if addr == -1 {
-		h.Printf("File '%s' has no signature and requires an address\n", filepath.Base(filename))
-		return 0, nil
-	}
-	if addr+len(code) > 0x10000 {
-		h.Printf("File '%s' exceeded 64K memory bounds\n", filepath.Base(filename))
-		return 0, nil
+		origin = uint16(addr)
 	}
 
-	origin = uint16(addr)
 	cpu := h.cpu
-	cpu.Mem.StoreBytes(origin, code)
-	h.Printf("Loaded '%s' to $%04X..$%04X\n", filepath.Base(filename), origin, addr+len(code)-1)
+	cpu.Mem.StoreBytes(origin, a.Code)
+	h.Printf("Loaded '%s' to $%04X..$%04X\n", filepath.Base(filename), origin, int(origin)+len(a.Code)-1)
 
 	ext := filepath.Ext(filename)
 	filePrefix := filename[:len(filename)-len(ext)]
@@ -935,6 +921,7 @@ func (h *host) Load(filename string, addr int) (origin uint16, err error) {
 
 	file, err = os.Open(filename)
 	if err == nil {
+		h.sourceMap = &asm.SourceMap{}
 		_, err = h.sourceMap.ReadFrom(file)
 		if err != nil {
 			h.Printf("Failed to read '%s': %v\n", filepath.Base(filename), err)
