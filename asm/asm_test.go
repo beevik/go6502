@@ -8,11 +8,11 @@ import (
 
 func assemble(t *testing.T, code string) ([]byte, error) {
 	r := bytes.NewReader([]byte(code))
-	result, err := Assemble(r, "test", false)
+	assembly, _, err := Assemble(r, "test", false)
 	if err != nil {
 		return []byte{}, err
 	}
-	return result.Code, nil
+	return assembly.Code, nil
 }
 
 func fromHex(c byte) byte {

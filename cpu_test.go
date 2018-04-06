@@ -10,7 +10,7 @@ import (
 
 func runCPU(t *testing.T, asmString string, steps int) *go6502.CPU {
 	b := strings.NewReader(asmString)
-	r, err := asm.Assemble(b, "test.asm", false)
+	r, _, err := asm.Assemble(b, "test.asm", false)
 	if err != nil {
 		t.Error(err)
 		return nil
