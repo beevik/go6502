@@ -183,7 +183,6 @@ func (s *SourceMap) WriteTo(w io.Writer) (n int64, err error) {
 }
 
 func decodeSourceLine(r *bufio.Reader, prev SourceLine) (line SourceLine, n int, err error) {
-	var nn int
 	da, nn, err := decode67(r)
 	n += nn
 	if err != nil {
@@ -322,7 +321,7 @@ func encodeSourceLine(w *bufio.Writer, l0, l1 SourceLine) (n int, err error) {
 func encode7(w *bufio.Writer, v int) (n int, err error) {
 	for v != 0 {
 		var b byte
-		if v >= 0x7f {
+		if v >= 0x80 {
 			b |= continued
 		}
 		b |= (byte(v) & 0x7f)

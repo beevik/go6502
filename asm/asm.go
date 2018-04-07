@@ -69,33 +69,34 @@ type pseudoOpData struct {
 const hiBitTerm = 1 << 16
 
 var pseudoOps = map[string]pseudoOpData{
-	".ar":      pseudoOpData{fn: (*assembler).parseArch, param: nil},
-	".arch":    pseudoOpData{fn: (*assembler).parseArch, param: nil},
-	".eq":      pseudoOpData{fn: (*assembler).parseMacro, param: nil},
-	".equ":     pseudoOpData{fn: (*assembler).parseMacro, param: nil},
-	"=":        pseudoOpData{fn: (*assembler).parseMacro, param: nil},
-	".or":      pseudoOpData{fn: (*assembler).parseOrigin, param: nil},
-	".org":     pseudoOpData{fn: (*assembler).parseOrigin, param: nil},
+	".ar":      pseudoOpData{fn: (*assembler).parseArch},
+	".arch":    pseudoOpData{fn: (*assembler).parseArch},
+	".eq":      pseudoOpData{fn: (*assembler).parseMacro},
+	".equ":     pseudoOpData{fn: (*assembler).parseMacro},
+	"=":        pseudoOpData{fn: (*assembler).parseMacro},
+	".or":      pseudoOpData{fn: (*assembler).parseOrigin},
+	".org":     pseudoOpData{fn: (*assembler).parseOrigin},
 	".db":      pseudoOpData{fn: (*assembler).parseData, param: 1},
 	".byte":    pseudoOpData{fn: (*assembler).parseData, param: 1},
 	".dw":      pseudoOpData{fn: (*assembler).parseData, param: 2},
 	".word":    pseudoOpData{fn: (*assembler).parseData, param: 2},
 	".dd":      pseudoOpData{fn: (*assembler).parseData, param: 4},
 	".dword":   pseudoOpData{fn: (*assembler).parseData, param: 4},
-	".dh":      pseudoOpData{fn: (*assembler).parseHexString, param: nil},
-	".hex":     pseudoOpData{fn: (*assembler).parseHexString, param: nil},
+	".dh":      pseudoOpData{fn: (*assembler).parseHexString},
+	".hex":     pseudoOpData{fn: (*assembler).parseHexString},
 	".ds":      pseudoOpData{fn: (*assembler).parseData, param: 1 | hiBitTerm},
 	".tstring": pseudoOpData{fn: (*assembler).parseData, param: 1 | hiBitTerm},
-	".al":      pseudoOpData{fn: (*assembler).parseAlign, param: nil},
-	".align":   pseudoOpData{fn: (*assembler).parseAlign, param: nil},
-	".ex":      pseudoOpData{fn: (*assembler).parseExport, param: nil},
-	".export":  pseudoOpData{fn: (*assembler).parseExport, param: nil},
+	".al":      pseudoOpData{fn: (*assembler).parseAlign},
+	".align":   pseudoOpData{fn: (*assembler).parseAlign},
+	".ex":      pseudoOpData{fn: (*assembler).parseExport},
+	".export":  pseudoOpData{fn: (*assembler).parseExport},
 }
 
 func init() {
-	// Must be initialized here to prevent an initialization loop in pseudoOps:
-	pseudoOps[".in"] = pseudoOpData{fn: (*assembler).parseInclude, param: nil}
-	pseudoOps[".include"] = pseudoOpData{fn: (*assembler).parseInclude, param: nil}
+	// The .include pseudo-op must be initialized here to bypass go's overly
+	// aggressive initialization loop detection.
+	pseudoOps[".in"] = pseudoOpData{fn: (*assembler).parseInclude}
+	pseudoOps[".include"] = pseudoOpData{fn: (*assembler).parseInclude}
 }
 
 // A segment is a small chunk of machine code that may represent a single
