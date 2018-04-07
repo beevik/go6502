@@ -88,6 +88,7 @@ var pseudoOps = map[string]pseudoOpData{
 	".tstring": pseudoOpData{fn: (*assembler).parseData, param: 1 | hiBitTerm},
 	".al":      pseudoOpData{fn: (*assembler).parseAlign},
 	".align":   pseudoOpData{fn: (*assembler).parseAlign},
+	".pad":     pseudoOpData{fn: (*assembler).parsePadding},
 	".ex":      pseudoOpData{fn: (*assembler).parseExport},
 	".export":  pseudoOpData{fn: (*assembler).parseExport},
 }
@@ -234,6 +235,19 @@ type alignment struct {
 
 func (a *alignment) address() int {
 	return a.addr
+}
+
+// A padding segment contains padding character and length expressions.
+type padding struct {
+	addr    int
+	pad     int
+	value   byte
+	valExpr *expr
+	lenExpr *expr
+}
+
+func (p *padding) address() int {
+	return p.addr
 }
 
 // An export segment contains an exported address.
@@ -409,7 +423,18 @@ func Assemble(r io.Reader, filename string, verbose bool) (*Assembly, *SourceMap
 func (a *assembler) parse() error {
 	a.logSection("Parsing assembly code")
 
-	return a.parseFile(bufio.NewScanner(a.r), 0)
+	err := a.parseFile(bufio.NewScanner(a.r), 0)
+	if err != nil {
+		return err
+	}
+
+	// Add an empty byte-data segment to the end of the file, just so the
+	// end of the file can be assigned an address and any labels attached
+	// to the end of the file will be valid.
+	seg := &bytedata{addr: -1, b: []byte{}}
+	a.segments = append(a.segments, seg)
+
+	return nil
 }
 
 // Parse a single file. This may be called to parse the original file
@@ -436,12 +461,10 @@ func (a *assembler) pushUnevaluated(e *expr) {
 
 // Return the address assigned to the requested segment.
 func (a *assembler) segaddr(segno int) int {
-	switch {
-	case segno < len(a.segments):
+	if segno < len(a.segments) {
 		return a.segments[segno].address()
-	default:
-		return a.pc
 	}
+	return -1
 }
 
 // Evaluate all unevaluated expression trees using macros and labels.
@@ -453,7 +476,7 @@ func (a *assembler) evaluateExpressions() error {
 			if u.expr.eval(a.segaddr(u.segno), a.macros, a.labels) {
 				a.log("%-25s Val:$%X", u.expr.String(), u.expr.value)
 			} else {
-				a.log("%-25s Val:????? isaddr:%v", u.expr.String(), u.expr.address)
+				a.log("%-25s Val:??? isaddr:%v", u.expr.String(), u.expr.address)
 				unevaluated = append(unevaluated, u)
 			}
 		}
@@ -508,6 +531,25 @@ func (a *assembler) assignAddresses() error {
 			a.log("%04X  .ALIGN Len:%d", ss.addr, ss.pad)
 			a.pc += ss.pad
 
+		case *padding:
+			ss.addr = a.pc
+			if !ss.valExpr.evaluated || !ss.lenExpr.evaluated {
+				a.resolveLabels()
+				a.evaluateExpressions()
+				if !ss.valExpr.evaluated {
+					a.addError(ss.valExpr.line, "padding value expression could not be evaluated")
+					return errParse
+				}
+				if !ss.lenExpr.evaluated {
+					a.addError(ss.lenExpr.line, "padding length expression could not be evaluated")
+					return errParse
+				}
+			}
+			ss.value = byte(ss.valExpr.value)
+			ss.pad = maxInt(0, ss.lenExpr.value)
+			a.log("%04X  .PAD Len:%d Val:%d", ss.addr, ss.pad, ss.value)
+			a.pc += ss.pad
+
 		case *export:
 			ss.addr = a.pc
 		}
@@ -519,9 +561,14 @@ func (a *assembler) assignAddresses() error {
 func (a *assembler) resolveLabels() error {
 	a.logSection("Resolving labels")
 	for label, segno := range a.labels {
+		if _, ok := a.macros[label]; ok {
+			continue
+		}
 		addr := a.segaddr(segno)
-		a.log("%-15s Seg:%-3d Addr:$%04X", label, segno, addr)
-		a.macros[label] = &expr{op: opNumber, value: addr, evaluated: true}
+		if addr != -1 {
+			a.log("%-15s Seg:%-3d Addr:$%04X", label, segno, addr)
+			a.macros[label] = &expr{op: opNumber, value: addr, evaluated: true}
+		}
 	}
 	return nil
 }
@@ -586,6 +633,14 @@ func (a *assembler) generateCode() error {
 
 		case *alignment:
 			pad := make([]byte, ss.pad)
+			a.code = append(a.code, pad...)
+			a.logBytes(ss.addr, pad)
+
+		case *padding:
+			pad := make([]byte, ss.pad)
+			for i := 0; i < ss.pad; i++ {
+				pad[i] = ss.value
+			}
 			a.code = append(a.code, pad...)
 			a.logBytes(ss.addr, pad)
 
@@ -903,27 +958,58 @@ func (a *assembler) parseAlign(line, label fstring, param interface{}) error {
 	return nil
 }
 
-// Parse an include pseudo-op
-func (a *assembler) parseInclude(line, label fstring, param interface{}) error {
-	a.logLine(line, "include")
+// Parse a padding pseudo-op
+func (a *assembler) parsePadding(line, label fstring, param interface{}) error {
+	a.logLine(line, "pad=")
 
-	filename, _ := line.consumeUntil(whitespace)
-	if filename.isEmpty() {
-		a.addError(filename, "invalid filename")
+	s, remain := line.consumeUntilChar(',')
+	if remain.isEmpty() {
+		a.addError(s, "invalid padding")
 		return errParse
 	}
 
-	file, err := os.Open(filename.str)
+	valExpr, _, err := a.exprParser.parse(s, a.scopeLabel, allowParentheses)
 	if err != nil {
-		a.addError(filename, "unable to open '%s'", filename.str)
+		a.addExprErrors()
 		return err
 	}
-	defer file.Close()
 
-	fileIndex := len(a.files)
-	a.files = append(a.files, filename.str)
+	// Attempt to evaluate the pad value expression immediately.
+	if !valExpr.eval(-1, a.macros, a.labels) {
+		a.pushUnevaluated(valExpr)
+	}
 
-	return a.parseFile(bufio.NewScanner(file), fileIndex)
+	a.logLine(line, "padexpr=%s", valExpr.String())
+	switch valExpr.evaluated {
+	case true:
+		a.logLine(line, "val=$%X", valExpr.value)
+	case false:
+		a.logLine(line, "val=(uneval)")
+	}
+
+	s = remain.consume(1).consumeWhitespace()
+	lenExpr, _, err := a.exprParser.parse(s, a.scopeLabel, allowParentheses)
+	if err != nil {
+		a.addExprErrors()
+		return err
+	}
+
+	// Attempt to evaluate the length expression immediately.
+	if !lenExpr.eval(-1, a.macros, a.labels) {
+		a.pushUnevaluated(lenExpr)
+	}
+
+	a.logLine(line, "lenexpr=%s", lenExpr.String())
+	switch lenExpr.evaluated {
+	case true:
+		a.logLine(line, "len=$%X", lenExpr.value)
+	case false:
+		a.logLine(line, "len=(uneval)")
+	}
+
+	seg := &padding{addr: -1, valExpr: valExpr, lenExpr: lenExpr}
+	a.segments = append(a.segments, seg)
+	return nil
 }
 
 // Parse an export pseudo-op
@@ -953,6 +1039,29 @@ func (a *assembler) parseExport(line, label fstring, param interface{}) error {
 	seg := &export{addr: -1, expr: e}
 	a.segments = append(a.segments, seg)
 	return nil
+}
+
+// Parse an include pseudo-op
+func (a *assembler) parseInclude(line, label fstring, param interface{}) error {
+	a.logLine(line, "include")
+
+	filename, _ := line.consumeUntil(whitespace)
+	if filename.isEmpty() {
+		a.addError(filename, "invalid filename")
+		return errParse
+	}
+
+	file, err := os.Open(filename.str)
+	if err != nil {
+		a.addError(filename, "unable to open '%s'", filename.str)
+		return err
+	}
+	defer file.Close()
+
+	fileIndex := len(a.files)
+	a.files = append(a.files, filename.str)
+
+	return a.parseFile(bufio.NewScanner(file), fileIndex)
 }
 
 // Parse a 6502 assembly opcode + operand.

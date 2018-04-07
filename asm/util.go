@@ -2,7 +2,6 @@ package asm
 
 var hex = "0123456789ABCDEF"
 
-// Return the maximum of 2 integers.
 func maxInt(a, b int) int {
 	if a > b {
 		return a

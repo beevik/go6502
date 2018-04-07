@@ -119,7 +119,7 @@ DATA:
 		.DW		0b11110101		; F5 00
 		.DW		$ - .WORDS		; 20 00
 
-		.ALIGN		2
+		.ALIGN		4
 
 .DWORDS		; .DD data works like .DB and .DW, except all numeric values
 		; are stored as 4-byte double-words. String literals are still
@@ -139,7 +139,7 @@ DATA:
 		.DD		0b11110101		; F5 00 00 00
 		.DD		$ - .DWORDS		; 3E 00 00 00
 
-		.ALIGN		2
+		.ALIGN		4
 
 .HEXSTRINGS	; .DH data is expressed as a chain of hexadecimal values,
 		; which are stored directly into the assembled data.
@@ -151,13 +151,18 @@ DATA:
 		.DH		0123456789abcdef	; 01 23 45 67 89 AB CD EF
 		.DB		$ - .HEXSTRINGS		; 12
 
-		.ALIGN		2
+		.ALIGN		4
 
 .TSTRINGS	; .DS data works the same way as .DB, except the last byte
 		; in a string literal has its most significant bit set.
 
 		.DS		"AAA"			; 41 41 C1
 		.DS		"A", 0			; C1 00
-		.DB		$ - .TSTRINGS		; 04
+		.DB		$ - .TSTRINGS		; 05
 		
+		.ALIGN		4
+
+		; Pad the file to a length of 256 bytes. Use FF for padding.
+.PADDING	.PAD		$FF, 256-($-START)
+
 END

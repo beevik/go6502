@@ -316,7 +316,7 @@ func (h *host) CmdAssemble(c cmd.Selection) error {
 	ext := filepath.Ext(filename)
 	filePrefix := filename[0 : len(filename)-len(ext)]
 	binFilename := filePrefix + ".bin"
-	file, err = os.OpenFile(binFilename, os.O_WRONLY|os.O_CREATE, 0600)
+	file, err = os.OpenFile(binFilename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		h.Printf("Failed to create '%s': %v\n", filepath.Base(binFilename), err)
 		return nil
