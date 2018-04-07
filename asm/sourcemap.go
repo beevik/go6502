@@ -343,7 +343,7 @@ func encode57(w *bufio.Writer, v int, f bool) (n int, err error) {
 	if f {
 		b |= fileIndexChanged
 	}
-	if b < 0 {
+	if v < 0 {
 		b |= negative
 		v = -v
 	}

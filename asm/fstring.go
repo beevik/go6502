@@ -5,14 +5,15 @@ import "strings"
 // An fstring is a string that keeps track of its position within the
 // file from which it was read.
 type fstring struct {
-	row    int    // 1-based line number of substring
-	column int    // 0-based column of start of substring
-	str    string // the actual substring of interest
-	full   string // the full line as originally read from the file
+	fileIndex int    // index of file in the assembly
+	row       int    // 1-based line number of substring
+	column    int    // 0-based column of start of substring
+	str       string // the actual substring of interest
+	full      string // the full line as originally read from the file
 }
 
-func newFstring(row int, str string) fstring {
-	return fstring{row, 0, str, str}
+func newFstring(fileIndex, row int, str string) fstring {
+	return fstring{fileIndex, row, 0, str, str}
 }
 
 func (l *fstring) String() string {
@@ -33,16 +34,16 @@ func (l *fstring) advanceColumn(n int) int {
 
 func (l fstring) consume(n int) fstring {
 	col := l.advanceColumn(n)
-	return fstring{l.row, col, l.str[n:], l.full}
+	return fstring{l.fileIndex, l.row, col, l.str[n:], l.full}
 }
 
 func (l fstring) trunc(n int) fstring {
-	return fstring{l.row, l.column, l.str[:n], l.full}
+	return fstring{l.fileIndex, l.row, l.column, l.str[:n], l.full}
 }
 
 func (l fstring) substr(start, stop int) fstring {
 	col := l.advanceColumn(start)
-	return fstring{l.row, col, l.str[start:stop], l.full}
+	return fstring{l.fileIndex, l.row, col, l.str[start:stop], l.full}
 }
 
 func (l *fstring) isEmpty() bool {

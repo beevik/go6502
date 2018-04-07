@@ -15,11 +15,9 @@
 		.EX		DATA
 		.EX		END
 
-
 ; ---------
 ; Constants
 ; ---------
-
 		; .EQ defines a macro. A macro may be a literal (numeric or
 		; character). Or it may be an expression including literals,
 		; address labels, and other macros. Such macros may appear in
@@ -33,6 +31,9 @@ STORE		.EQ		$0200
 
 START:				; Labels may end in ':', which is ignored.
 		LDX		#$EE
+
+		.INCLUDE	include.asm
+
 		PHX
 		JSR LDA_TEST
 		JSR LDX_TEST

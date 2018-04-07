@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
 	"strconv"
 	"strings"
 
@@ -91,6 +92,12 @@ var pseudoOps = map[string]pseudoOpData{
 	".export":  pseudoOpData{fn: (*assembler).parseExport, param: nil},
 }
 
+func init() {
+	// Must be initialized here to prevent an initialization loop in pseudoOps:
+	pseudoOps[".in"] = pseudoOpData{fn: (*assembler).parseInclude, param: nil}
+	pseudoOps[".include"] = pseudoOpData{fn: (*assembler).parseInclude, param: nil}
+}
+
 // A segment is a small chunk of machine code that may represent a single
 // instruction or a group of byte data.
 type segment interface {
@@ -100,11 +107,12 @@ type segment interface {
 // An instruction segment contains a single instruction, including its
 // opcode and operand data.
 type instruction struct {
-	addr    int                 // address assigned to the segment
-	line    int                 // the source code line number
-	opcode  fstring             // opcode string
-	inst    *go6502.Instruction // selected instruction data for the opcode
-	operand operand             // parameter data for the instruction
+	addr      int                 // address assigned to the segment
+	fileIndex int                 // index of file containing the instruction
+	line      int                 // the source code line number
+	opcode    fstring             // opcode string
+	inst      *go6502.Instruction // selected instruction data for the opcode
+	operand   operand             // parameter data for the instruction
 }
 
 func (i *instruction) address() int {
@@ -258,14 +266,13 @@ type assembler struct {
 	origin      int                    // requested origin
 	pc          int                    // the program counter
 	code        []byte                 // generated machine code
-	scanner     *bufio.Scanner         // scans the io reader
+	r           io.Reader              // the reader passed to Assemble
 	scopeLabel  fstring                // label currently in scope
 	macros      map[string]*expr       // macro -> expression
 	labels      map[string]int         // label -> segment index
 	exports     []Export               // exported addresses
 	sourceLines []SourceLine           // source code line mappings
 	files       []string               // processed files
-	fileIndex   int                    // file currently being processed
 	segments    []segment              // segment of machine code
 	unevaluated []uneval               // expressions requiring evaluation
 	verbose     bool                   // verbose output
@@ -335,18 +342,17 @@ func (a *Assembly) WriteTo(w io.Writer) (n int64, err error) {
 // it into 6502 byte code.
 func Assemble(r io.Reader, filename string, verbose bool) (*Assembly, *SourceMap, error) {
 	a := &assembler{
-		arch:      go6502.NMOS,
-		instSet:   go6502.GetInstructionSet(go6502.NMOS),
-		origin:    0x600,
-		pc:        -1,
-		scanner:   bufio.NewScanner(r),
-		macros:    make(map[string]*expr),
-		labels:    make(map[string]int),
-		files:     []string{filename},
-		fileIndex: 0,
-		exports:   make([]Export, 0),
-		segments:  make([]segment, 0, 32),
-		verbose:   verbose,
+		arch:     go6502.NMOS,
+		instSet:  go6502.GetInstructionSet(go6502.NMOS),
+		origin:   0x600,
+		pc:       -1,
+		r:        r,
+		macros:   make(map[string]*expr),
+		labels:   make(map[string]int),
+		files:    []string{filename},
+		exports:  make([]Export, 0),
+		segments: make([]segment, 0, 32),
+		verbose:  verbose,
 	}
 
 	// Assembly consists of the following steps
@@ -376,7 +382,8 @@ func Assemble(r io.Reader, filename string, verbose bool) (*Assembly, *SourceMap
 
 	errors := make([]string, 0, len(a.errors))
 	for _, e := range a.errors {
-		s := fmt.Sprintf("Syntax error line %d, col %d: %s", e.line.row, e.line.column+1, e.msg)
+		filename := a.files[e.line.fileIndex]
+		s := fmt.Sprintf("Syntax error in '%s' line %d, col %d: %s", filename, e.line.row, e.line.column+1, e.msg)
 		errors = append(errors, s)
 	}
 
@@ -400,10 +407,18 @@ func Assemble(r io.Reader, filename string, verbose bool) (*Assembly, *SourceMap
 // list of unevaluated expression trees.
 func (a *assembler) parse() error {
 	a.logSection("Parsing assembly code")
+
+	return a.parseFile(bufio.NewScanner(a.r), 0)
+}
+
+// Parse a single file. This may be called to parse the original file
+// passed to the assembler, or it may be called in response to including
+// a file.
+func (a *assembler) parseFile(scanner *bufio.Scanner, fileIndex int) error {
 	row := 1
-	for a.scanner.Scan() {
-		text := a.scanner.Text()
-		line := newFstring(row, text)
+	for scanner.Scan() {
+		text := scanner.Text()
+		line := newFstring(fileIndex, row, text)
 		err := a.parseLine(line.stripTrailingComment())
 		if err != nil {
 			return err
@@ -465,7 +480,7 @@ func (a *assembler) assignAddresses() error {
 
 			l := SourceLine{
 				Address:   ss.addr,
-				FileIndex: a.fileIndex,
+				FileIndex: ss.fileIndex,
 				Line:      ss.line,
 			}
 			a.sourceLines = append(a.sourceLines, l)
@@ -865,6 +880,7 @@ func (a *assembler) parseHexString(line, label fstring, param interface{}) error
 	return nil
 }
 
+// Parse an align pseudo-op
 func (a *assembler) parseAlign(line, label fstring, param interface{}) error {
 	a.logLine(line, "align=")
 
@@ -884,6 +900,29 @@ func (a *assembler) parseAlign(line, label fstring, param interface{}) error {
 
 	a.segments = append(a.segments, seg)
 	return nil
+}
+
+// Parse an include pseudo-op
+func (a *assembler) parseInclude(line, label fstring, param interface{}) error {
+	a.logLine(line, "include")
+
+	filename, _ := line.consumeUntil(whitespace)
+	if filename.isEmpty() {
+		a.addError(filename, "invalid filename")
+		return errParse
+	}
+
+	file, err := os.Open(filename.str)
+	if err != nil {
+		a.addError(filename, "unable to open '%s'", filename.str)
+		return err
+	}
+	defer file.Close()
+
+	fileIndex := len(a.files)
+	a.files = append(a.files, filename.str)
+
+	return a.parseFile(bufio.NewScanner(file), fileIndex)
 }
 
 // Parse an export pseudo-op
@@ -944,10 +983,11 @@ func (a *assembler) parseInstruction(line fstring) error {
 
 	// Create a code segment for the instruction
 	seg := &instruction{
-		addr:    -1,
-		line:    line.row,
-		opcode:  opcode,
-		operand: operand,
+		addr:      -1,
+		fileIndex: line.fileIndex,
+		line:      line.row,
+		opcode:    opcode,
+		operand:   operand,
 	}
 	a.segments = append(a.segments, seg)
 	return nil
@@ -1039,7 +1079,8 @@ func (a *assembler) addError(l fstring, format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
 	a.errors = append(a.errors, asmerror{l, msg})
 	if a.verbose {
-		fmt.Printf("Syntax error line %d, col %d: %s\n", l.row, l.column+1, msg)
+		filename := a.files[l.fileIndex]
+		fmt.Printf("Syntax error in '%s' line %d, col %d: %s\n", filename, l.row, l.column+1, msg)
 		fmt.Println(l.full)
 		for i := 0; i < l.column; i++ {
 			fmt.Printf("-")
