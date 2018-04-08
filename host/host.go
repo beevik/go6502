@@ -1,3 +1,16 @@
+// Copyright 2018 Brett Vickers.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package host allows you to create a "host" that emulates a computer system
+// with a 6502 CPU, 64K of memory, a built-in assembler, a built-in debugger,
+// and other useful tools.
+//
+// Within the host it is possible to assemble and load machine code into
+// memory, debug and step through machine code, measure the number of CPU
+// cycles elapsed, set address and data breakpoints, dump the contents of
+// memory, disassemble the contents of memory, manipulate CPU registers and
+// memory, and evaluate arbitrary expressions.
 package host
 
 import (
@@ -92,12 +105,8 @@ const (
 	stateStepOverBreakpoint
 )
 
-// A Host represents a fully operational 6502-based system with memory,
-// an assembler, a built-in debugger, and other useful tools. With the host it
-// is possible to assemble and load machine code into memory, debug and step
-// through machine code, set address and data breakpoints, dump the contents
-// of emulated memory, disassemble the contents of emulated memory, manipulate
-// CPU registers and memory, and evaluate arbitrary expressions.
+// A Host represents a fully emulated 6502 system, 64K of memory, a built-in
+// assembler, a built-in debugger, and other useful tools.
 type Host struct {
 	input       *bufio.Scanner
 	output      *bufio.Writer
