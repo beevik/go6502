@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -17,98 +16,61 @@ import (
 	"github.com/beevik/go6502/disasm"
 )
 
-var signature = "56og"
-
 // Create a command tree, where the parameter stored with each command is
-// a host callback to handle the command.
+// a host callback capable of handling the command.
 var cmds = cmd.NewTree("Debugger", []cmd.Command{
-	{Name: "help", Shortcut: "?", Param: (*host).CmdHelp},
-	{Name: "annotate", Description: "Annotate an address", Param: (*host).CmdAnnotate},
-	{Name: "assemble", Shortcut: "a", Description: "Assemble a file", Param: (*host).CmdAssemble},
+	{Name: "help", Shortcut: "?", Param: (*Host).cmdHelp},
+	{Name: "annotate", Description: "Annotate an address", Param: (*Host).cmdAnnotate},
+	{Name: "assemble", Shortcut: "a", Description: "Assemble a file", Param: (*Host).cmdAssemble},
 	{Name: "breakpoint", Shortcut: "b", Description: "Breakpoint commands", Subcommands: cmd.NewTree("Breakpoint", []cmd.Command{
-		{Name: "help", Shortcut: "?", Param: (*host).CmdHelp},
-		{Name: "list", Description: "List breakpoints", Param: (*host).CmdBreakpointList},
-		{Name: "add", Description: "Add a breakpoint", Param: (*host).CmdBreakpointAdd},
-		{Name: "remove", Description: "Remove a breakpoint", Param: (*host).CmdBreakpointRemove},
-		{Name: "enable", Description: "Enable a breakpoint", Param: (*host).CmdBreakpointEnable},
-		{Name: "disable", Description: "Disable a breakpoint", Param: (*host).CmdBreakpointDisable},
+		{Name: "help", Shortcut: "?", Param: (*Host).cmdHelp},
+		{Name: "list", Description: "List breakpoints", Param: (*Host).cmdBreakpointList},
+		{Name: "add", Description: "Add a breakpoint", Param: (*Host).cmdBreakpointAdd},
+		{Name: "remove", Description: "Remove a breakpoint", Param: (*Host).cmdBreakpointRemove},
+		{Name: "enable", Description: "Enable a breakpoint", Param: (*Host).cmdBreakpointEnable},
+		{Name: "disable", Description: "Disable a breakpoint", Param: (*Host).cmdBreakpointDisable},
 	})},
 	{Name: "databreakpoint", Shortcut: "db", Description: "Data breakpoint commands", Subcommands: cmd.NewTree("Data breakpoint", []cmd.Command{
-		{Name: "help", Shortcut: "?", Param: (*host).CmdHelp},
-		{Name: "list", Description: "List data breakpoints", Param: (*host).CmdDataBreakpointList},
-		{Name: "add", Description: "Add a data breakpoint", Param: (*host).CmdDataBreakpointAdd},
-		{Name: "remove", Description: "Remove a data breakpoint", Param: (*host).CmdDataBreakpointRemove},
-		{Name: "enable", Description: "Enable a data breakpoint", Param: (*host).CmdDataBreakpointEnable},
-		{Name: "disable", Description: "Disable a data breakpoint", Param: (*host).CmdDataBreakpointDisable},
+		{Name: "help", Shortcut: "?", Param: (*Host).cmdHelp},
+		{Name: "list", Description: "List data breakpoints", Param: (*Host).cmdDataBreakpointList},
+		{Name: "add", Description: "Add a data breakpoint", Param: (*Host).cmdDataBreakpointAdd},
+		{Name: "remove", Description: "Remove a data breakpoint", Param: (*Host).cmdDataBreakpointRemove},
+		{Name: "enable", Description: "Enable a data breakpoint", Param: (*Host).cmdDataBreakpointEnable},
+		{Name: "disable", Description: "Disable a data breakpoint", Param: (*Host).cmdDataBreakpointDisable},
 	})},
-	{Name: "disassemble", Shortcut: "d", Description: "Disassemble code", Param: (*host).CmdDisassemble},
-	{Name: "exports", Description: "List exported addresses", Param: (*host).CmdExports},
-	{Name: "eval", Shortcut: "e", Description: "Evaluate an expression", Param: (*host).CmdEval},
-	{Name: "load", Description: "Load a binary", Param: (*host).CmdLoad},
+	{Name: "disassemble", Shortcut: "d", Description: "Disassemble code", Param: (*Host).cmdDisassemble},
+	{Name: "exports", Description: "List exported addresses", Param: (*Host).cmdExports},
+	{Name: "eval", Shortcut: "e", Description: "Evaluate an expression", Param: (*Host).cmdEval},
+	{Name: "load", Description: "Load a binary", Param: (*Host).cmdLoad},
 	{Name: "memory", Description: "Memory commands", Subcommands: cmd.NewTree("Memory", []cmd.Command{
-		{Name: "help", Shortcut: "?", Param: (*host).CmdHelp},
-		{Name: "dump", Description: "Dump memory starting at address", Param: (*host).CmdMemoryDump},
+		{Name: "help", Shortcut: "?", Param: (*Host).cmdHelp},
+		{Name: "dump", Description: "Dump memory starting at address", Param: (*Host).cmdMemoryDump},
 	})},
-	{Name: "quit", Description: "Quit the program", Param: (*host).CmdQuit},
-	{Name: "registers", Shortcut: "r", Description: "Display register contents", Param: (*host).CmdRegisters},
-	{Name: "run", Description: "Run the CPU", Param: (*host).CmdRun},
-	{Name: "set", Description: "Set a debugger variable", Param: (*host).CmdSet},
+	{Name: "quit", Description: "Quit the program", Param: (*Host).cmdQuit},
+	{Name: "registers", Shortcut: "r", Description: "Display register contents", Param: (*Host).cmdRegisters},
+	{Name: "run", Description: "Run the CPU", Param: (*Host).cmdRun},
+	{Name: "set", Description: "Set a debugger variable", Param: (*Host).cmdSet},
 	{Name: "step", Description: "Step the debugger", Subcommands: cmd.NewTree("Step", []cmd.Command{
-		{Name: "help", Shortcut: "?", Param: (*host).CmdHelp},
-		{Name: "in", Description: "Step in to routine", Param: (*host).CmdStepIn},
-		{Name: "over", Description: "Step over a routine", Param: (*host).CmdStepOver},
+		{Name: "help", Shortcut: "?", Param: (*Host).cmdHelp},
+		{Name: "in", Description: "Step in to routine", Param: (*Host).cmdStepIn},
+		{Name: "over", Description: "Step over a routine", Param: (*Host).cmdStepOver},
 	})},
 
 	// Shortcuts to nested commands
-	{Name: "ba", Param: (*host).CmdBreakpointAdd},
-	{Name: "br", Param: (*host).CmdBreakpointRemove},
-	{Name: "bl", Param: (*host).CmdBreakpointList},
-	{Name: "be", Param: (*host).CmdBreakpointEnable},
-	{Name: "bd", Param: (*host).CmdBreakpointDisable},
-	{Name: "dbl", Param: (*host).CmdDataBreakpointList},
-	{Name: "dba", Param: (*host).CmdDataBreakpointAdd},
-	{Name: "dbr", Param: (*host).CmdDataBreakpointRemove},
-	{Name: "dbe", Param: (*host).CmdDataBreakpointEnable},
-	{Name: "dbd", Param: (*host).CmdDataBreakpointDisable},
-	{Name: "m", Param: (*host).CmdMemoryDump},
-	{Name: "si", Param: (*host).CmdStepIn},
-	{Name: "s", Param: (*host).CmdStepOver},
+	{Name: "ba", Param: (*Host).cmdBreakpointAdd},
+	{Name: "br", Param: (*Host).cmdBreakpointRemove},
+	{Name: "bl", Param: (*Host).cmdBreakpointList},
+	{Name: "be", Param: (*Host).cmdBreakpointEnable},
+	{Name: "bd", Param: (*Host).cmdBreakpointDisable},
+	{Name: "dbl", Param: (*Host).cmdDataBreakpointList},
+	{Name: "dba", Param: (*Host).cmdDataBreakpointAdd},
+	{Name: "dbr", Param: (*Host).cmdDataBreakpointRemove},
+	{Name: "dbe", Param: (*Host).cmdDataBreakpointEnable},
+	{Name: "dbd", Param: (*Host).cmdDataBreakpointDisable},
+	{Name: "m", Param: (*Host).cmdMemoryDump},
+	{Name: "si", Param: (*Host).cmdStepIn},
+	{Name: "s", Param: (*Host).cmdStepOver},
 })
-
-func main() {
-	h := newHost()
-
-	// Create a goroutine to handle ctrl-C.
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	go func() {
-		for {
-			<-c
-			h.Println()
-			if h.state == stateProcessingCommands {
-				h.Prompt()
-			}
-			h.state = stateProcessingCommands
-		}
-	}()
-
-	// Run commands contained in the command-line files.
-	args := os.Args[1:]
-	if len(args) > 0 {
-		for _, filename := range args {
-			file, err := os.Open(filename)
-			if err != nil {
-				exitOnError(err)
-			}
-			h.RunCommands(file, os.Stdout, false)
-			file.Close()
-		}
-		h.Println()
-	}
-
-	// Start the interactive debugger.
-	h.RunCommands(os.Stdin, os.Stdout, true)
-}
 
 type displayFlags uint8
 
@@ -129,27 +91,32 @@ const (
 	stateStepOverBreakpoint
 )
 
-type host struct {
-	interactive bool
+// A Host represents a fully operational 6502-based system with memory,
+// an assembler, a built-in debugger, and other useful tools. With the host it
+// is possible to assemble and load machine code into memory, debug and step
+// through machine code, set address and data breakpoints, dump the contents
+// of emulated memory, disassemble the contents of emulated memory, manipulate
+// CPU registers and memory, and evaluate arbitrary expressions.
+type Host struct {
 	input       *bufio.Scanner
 	output      *bufio.Writer
-
-	mem      *go6502.FlatMemory
-	cpu      *go6502.CPU
-	debugger *go6502.Debugger
-
+	interactive bool
+	mem         *go6502.FlatMemory
+	cpu         *go6502.CPU
+	debugger    *go6502.Debugger
+	handler     *handler
 	lastCmd     *cmd.Selection
 	exprParser  *exprParser
 	sourceMap   *asm.SourceMap
-	buf         []byte
 	state       state
 	settings    *settings
 	annotations map[uint16]string
 }
 
-func newHost() *host {
-	h := &host{
-		buf:         make([]byte, 3),
+// NewHost creates a new debugger host capable of running and debugging an
+// emulated 6502 CPU.
+func NewHost() *Host {
+	h := &Host{
 		mem:         go6502.NewFlatMemory(),
 		exprParser:  newExprParser(),
 		state:       stateProcessingCommands,
@@ -157,36 +124,42 @@ func newHost() *host {
 		annotations: make(map[uint16]string),
 	}
 
+	// Create the emulated CPU.
 	h.cpu = go6502.NewCPU(go6502.CMOS, h.mem)
-	h.debugger = go6502.NewDebugger(h)
+
+	// Create a handler for the CPU debugger's notifications.
+	h.handler = &handler{h}
+
+	// Create a CPU debugger and attach it to the CPU.
+	h.debugger = go6502.NewDebugger(h.handler)
 	h.cpu.AttachDebugger(h.debugger)
 
 	return h
 }
 
-func (h *host) Write(p []byte) (n int, err error) {
+func (h *Host) write(p []byte) (n int, err error) {
 	return h.output.Write(p)
 }
 
-func (h *host) Print(args ...interface{}) {
+func (h *Host) print(args ...interface{}) {
 	fmt.Fprint(h.output, args...)
 }
 
-func (h *host) Printf(format string, args ...interface{}) {
+func (h *Host) printf(format string, args ...interface{}) {
 	fmt.Fprintf(h.output, format, args...)
-	h.Flush()
+	h.flush()
 }
 
-func (h *host) Println(args ...interface{}) {
+func (h *Host) println(args ...interface{}) {
 	fmt.Fprintln(h.output, args...)
-	h.Flush()
+	h.flush()
 }
 
-func (h *host) Flush() {
+func (h *Host) flush() {
 	h.output.Flush()
 }
 
-func (h *host) GetLine() (string, error) {
+func (h *Host) getLine() (string, error) {
 	if h.input.Scan() {
 		return h.input.Text(), nil
 	}
@@ -196,31 +169,34 @@ func (h *host) GetLine() (string, error) {
 	return "", io.EOF
 }
 
-func (h *host) Prompt() {
+func (h *Host) prompt() {
 	if h.interactive {
-		h.Printf("* ")
-		h.Flush()
+		h.printf("* ")
+		h.flush()
 	}
 }
 
-func (h *host) DisplayPC() {
+func (h *Host) displayPC() {
 	if h.interactive {
-		d, _ := h.Disassemble(h.cpu.Reg.PC, displayAll)
-		h.Println(d)
+		d, _ := h.disassemble(h.cpu.Reg.PC, displayAll)
+		h.println(d)
 	}
 }
 
-func (h *host) RunCommands(r io.Reader, w io.Writer, interactive bool) {
+// RunCommands accepts debugger commands from a reader and outputs the results
+// to a writer. If the commands are interactive, a prompt is displayed while
+// the host waits for the the next command to be entered.
+func (h *Host) RunCommands(r io.Reader, w io.Writer, interactive bool) {
 	h.input = bufio.NewScanner(r)
 	h.output = bufio.NewWriter(w)
 	h.interactive = interactive
 
-	h.DisplayPC()
+	h.displayPC()
 
 	for {
-		h.Prompt()
+		h.prompt()
 
-		line, err := h.GetLine()
+		line, err := h.getLine()
 		if err != nil {
 			break
 		}
@@ -230,13 +206,13 @@ func (h *host) RunCommands(r io.Reader, w io.Writer, interactive bool) {
 			c, err = cmds.Lookup(line)
 			switch {
 			case err == cmd.ErrNotFound:
-				h.Println("Command not found.")
+				h.println("Command not found.")
 				continue
 			case err == cmd.ErrAmbiguous:
-				h.Println("Command is ambiguous.")
+				h.println("Command is ambiguous.")
 				continue
 			case err != nil:
-				h.Printf("ERROR: %v.\n", err)
+				h.printf("ERROR: %v.\n", err)
 				continue
 			}
 		} else if h.lastCmd != nil {
@@ -248,7 +224,7 @@ func (h *host) RunCommands(r io.Reader, w io.Writer, interactive bool) {
 		}
 		h.lastCmd = &c
 
-		handler := c.Command.Param.(func(*host, cmd.Selection) error)
+		handler := c.Command.Param.(func(*Host, cmd.Selection) error)
 		err = handler(h, c)
 		if err != nil {
 			break
@@ -256,15 +232,15 @@ func (h *host) RunCommands(r io.Reader, w io.Writer, interactive bool) {
 	}
 }
 
-func (h *host) CmdAnnotate(c cmd.Selection) error {
+func (h *Host) cmdAnnotate(c cmd.Selection) error {
 	if len(c.Args) < 1 {
-		h.Println("Syntax: annotate [address] [string]")
+		h.println("Syntax: annotate [address] [string]")
 		return nil
 	}
 
-	addr, err := h.ParseExpr(c.Args[0])
+	addr, err := h.parseExpr(c.Args[0])
 	if err != nil {
-		h.Printf("%v\n", err)
+		h.printf("%v\n", err)
 		return nil
 	}
 
@@ -275,18 +251,18 @@ func (h *host) CmdAnnotate(c cmd.Selection) error {
 
 	if annotation == "" {
 		delete(h.annotations, addr)
-		h.Printf("Annotation removed at $%04X.\n", addr)
+		h.printf("Annotation removed at $%04X.\n", addr)
 	} else {
 		h.annotations[addr] = annotation
-		h.Printf("Annotation added at $%04X.\n", addr)
+		h.printf("Annotation added at $%04X.\n", addr)
 	}
 
 	return nil
 }
 
-func (h *host) CmdAssemble(c cmd.Selection) error {
+func (h *Host) cmdAssemble(c cmd.Selection) error {
 	if len(c.Args) < 1 {
-		h.Println("Syntax: assemble [filename]")
+		h.println("Syntax: assemble [filename]")
 		return nil
 	}
 
@@ -297,16 +273,16 @@ func (h *host) CmdAssemble(c cmd.Selection) error {
 
 	file, err := os.Open(filename)
 	if err != nil {
-		h.Printf("Failed to open '%s': %v\n", filepath.Base(filename), err)
+		h.printf("Failed to open '%s': %v\n", filepath.Base(filename), err)
 		return nil
 	}
 	defer file.Close()
 
 	assembly, sourceMap, err := asm.Assemble(file, filename, false)
 	if err != nil {
-		h.Printf("Failed to assemble: %s\n", filepath.Base(filename))
+		h.printf("Failed to assemble: %s\n", filepath.Base(filename))
 		for _, e := range assembly.Errors {
-			h.Println(e)
+			h.println(e)
 		}
 		return nil
 	}
@@ -318,13 +294,13 @@ func (h *host) CmdAssemble(c cmd.Selection) error {
 	binFilename := filePrefix + ".bin"
 	file, err = os.OpenFile(binFilename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
-		h.Printf("Failed to create '%s': %v\n", filepath.Base(binFilename), err)
+		h.printf("Failed to create '%s': %v\n", filepath.Base(binFilename), err)
 		return nil
 	}
 
 	_, err = assembly.WriteTo(file)
 	if err != nil {
-		h.Printf("Failed to save '%s': %v\n", filepath.Base(binFilename), err)
+		h.printf("Failed to save '%s': %v\n", filepath.Base(binFilename), err)
 		return nil
 	}
 
@@ -333,226 +309,226 @@ func (h *host) CmdAssemble(c cmd.Selection) error {
 	mapFilename := filePrefix + ".map"
 	file, err = os.OpenFile(mapFilename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
-		h.Printf("Failed to create '%s': %v\n", filepath.Base(mapFilename), err)
+		h.printf("Failed to create '%s': %v\n", filepath.Base(mapFilename), err)
 		return nil
 	}
 
 	_, err = sourceMap.WriteTo(file)
 	if err != nil {
-		h.Printf("Failed to write '%s': %v\n", filepath.Base(mapFilename), err)
+		h.printf("Failed to write '%s': %v\n", filepath.Base(mapFilename), err)
 		return nil
 	}
 
 	file.Close()
 
-	h.Printf("Assembled '%s' to '%s'.\n", filepath.Base(filename), filepath.Base(binFilename))
+	h.printf("Assembled '%s' to '%s'.\n", filepath.Base(filename), filepath.Base(binFilename))
 	return nil
 }
 
-func (h *host) CmdBreakpointList(c cmd.Selection) error {
-	h.Println("Addr  Enabled")
-	h.Println("----- -------")
+func (h *Host) cmdBreakpointList(c cmd.Selection) error {
+	h.println("Addr  Enabled")
+	h.println("----- -------")
 	for _, b := range h.debugger.GetBreakpoints() {
-		h.Printf("$%04X %v\n", b.Address, !b.Disabled)
+		h.printf("$%04X %v\n", b.Address, !b.Disabled)
 	}
 	return nil
 }
 
-func (h *host) CmdBreakpointAdd(c cmd.Selection) error {
+func (h *Host) cmdBreakpointAdd(c cmd.Selection) error {
 	if len(c.Args) < 1 {
-		h.Printf("Syntax: breakpoint add [addr]\n")
+		h.printf("Syntax: breakpoint add [addr]\n")
 		return nil
 	}
 
-	addr, err := h.ParseExpr(c.Args[0])
+	addr, err := h.parseExpr(c.Args[0])
 	if err != nil {
-		h.Printf("%v\n", err)
+		h.printf("%v\n", err)
 		return nil
 	}
 
 	h.debugger.AddBreakpoint(addr)
-	h.Printf("Breakpoint added at $%04x.\n", addr)
+	h.printf("Breakpoint added at $%04x.\n", addr)
 	return nil
 }
 
-func (h *host) CmdBreakpointRemove(c cmd.Selection) error {
+func (h *Host) cmdBreakpointRemove(c cmd.Selection) error {
 	if len(c.Args) < 1 {
-		h.Printf("Syntax: breakpoint remove [addr]\n")
+		h.printf("Syntax: breakpoint remove [addr]\n")
 		return nil
 	}
 
-	addr, err := h.ParseExpr(c.Args[0])
+	addr, err := h.parseExpr(c.Args[0])
 	if err != nil {
-		h.Printf("%v\n", err)
+		h.printf("%v\n", err)
 		return nil
 	}
 
 	if h.debugger.GetBreakpoint(addr) == nil {
-		h.Printf("No breakpoint was set on $%04X.\n", addr)
+		h.printf("No breakpoint was set on $%04X.\n", addr)
 		return nil
 	}
 
 	h.debugger.RemoveBreakpoint(addr)
-	h.Printf("Breakpoint at $%04x removed.\n", addr)
+	h.printf("Breakpoint at $%04x removed.\n", addr)
 	return nil
 }
 
-func (h *host) CmdBreakpointEnable(c cmd.Selection) error {
+func (h *Host) cmdBreakpointEnable(c cmd.Selection) error {
 	if len(c.Args) < 1 {
-		h.Printf("Syntax: breakpoint enable [addr]\n")
+		h.printf("Syntax: breakpoint enable [addr]\n")
 		return nil
 	}
 
-	addr, err := h.ParseExpr(c.Args[0])
+	addr, err := h.parseExpr(c.Args[0])
 	if err != nil {
-		h.Printf("%v\n", err)
+		h.printf("%v\n", err)
 		return nil
 	}
 
 	b := h.debugger.GetBreakpoint(addr)
 	if b == nil {
-		h.Printf("No breakpoint was set on $%04X.\n", addr)
+		h.printf("No breakpoint was set on $%04X.\n", addr)
 		return nil
 	}
 
 	b.Disabled = false
-	h.Printf("Breakpoint at $%04x enabled.\n", addr)
+	h.printf("Breakpoint at $%04x enabled.\n", addr)
 	return nil
 }
 
-func (h *host) CmdBreakpointDisable(c cmd.Selection) error {
+func (h *Host) cmdBreakpointDisable(c cmd.Selection) error {
 	if len(c.Args) < 1 {
-		h.Printf("Syntax: breakpoint disable [addr]\n")
+		h.printf("Syntax: breakpoint disable [addr]\n")
 		return nil
 	}
 
-	addr, err := h.ParseExpr(c.Args[0])
+	addr, err := h.parseExpr(c.Args[0])
 	if err != nil {
-		h.Printf("%v\n", err)
+		h.printf("%v\n", err)
 		return nil
 	}
 
 	b := h.debugger.GetBreakpoint(addr)
 	if b == nil {
-		h.Printf("No breakpoint was set on $%04X.\n", addr)
+		h.printf("No breakpoint was set on $%04X.\n", addr)
 		return nil
 	}
 
 	b.Disabled = true
-	h.Printf("Breakpoint at $%04x disabled.\n", addr)
+	h.printf("Breakpoint at $%04x disabled.\n", addr)
 	return nil
 }
 
-func (h *host) CmdDataBreakpointList(c cmd.Selection) error {
-	h.Println("Addr  Enabled  Value")
-	h.Println("----- -------  -----")
+func (h *Host) cmdDataBreakpointList(c cmd.Selection) error {
+	h.println("Addr  Enabled  Value")
+	h.println("----- -------  -----")
 	for _, b := range h.debugger.GetDataBreakpoints() {
 		if b.Conditional {
-			h.Printf("$%04X %-5v    $%02X\n", b.Address, !b.Disabled, b.Value)
+			h.printf("$%04X %-5v    $%02X\n", b.Address, !b.Disabled, b.Value)
 		} else {
-			h.Printf("$%04X %-5v    <none>\n", b.Address, !b.Disabled)
+			h.printf("$%04X %-5v    <none>\n", b.Address, !b.Disabled)
 		}
 	}
 	return nil
 }
 
-func (h *host) CmdDataBreakpointAdd(c cmd.Selection) error {
+func (h *Host) cmdDataBreakpointAdd(c cmd.Selection) error {
 	if len(c.Args) < 1 {
-		h.Printf("Syntax: databreakpoint add [addr] [value]\n")
+		h.printf("Syntax: databreakpoint add [addr] [value]\n")
 		return nil
 	}
 
-	addr, err := h.ParseExpr(c.Args[0])
+	addr, err := h.parseExpr(c.Args[0])
 	if err != nil {
-		h.Printf("%v\n", err)
+		h.printf("%v\n", err)
 		return nil
 	}
 
 	if len(c.Args) > 1 {
-		value, err := h.ParseExpr(c.Args[1])
+		value, err := h.parseExpr(c.Args[1])
 		if err != nil {
-			h.Printf("%v\n", err)
+			h.printf("%v\n", err)
 			return nil
 		}
 		h.debugger.AddConditionalDataBreakpoint(addr, byte(value))
-		h.Printf("Conditional data Breakpoint added at $%04x for value $%02X.\n", addr, value)
+		h.printf("Conditional data Breakpoint added at $%04x for value $%02X.\n", addr, value)
 	} else {
 		h.debugger.AddDataBreakpoint(addr)
-		h.Printf("Data breakpoint added at $%04x.\n", addr)
+		h.printf("Data breakpoint added at $%04x.\n", addr)
 	}
 
 	return nil
 }
 
-func (h *host) CmdDataBreakpointRemove(c cmd.Selection) error {
+func (h *Host) cmdDataBreakpointRemove(c cmd.Selection) error {
 	if len(c.Args) < 1 {
-		h.Printf("Syntax: databreakpoint remove [addr]\n")
+		h.printf("Syntax: databreakpoint remove [addr]\n")
 		return nil
 	}
 
-	addr, err := h.ParseExpr(c.Args[0])
+	addr, err := h.parseExpr(c.Args[0])
 	if err != nil {
-		h.Printf("%v\n", err)
+		h.printf("%v\n", err)
 		return nil
 	}
 
 	if h.debugger.GetDataBreakpoint(addr) == nil {
-		h.Printf("No data breakpoint was set on $%04X.\n", addr)
+		h.printf("No data breakpoint was set on $%04X.\n", addr)
 		return nil
 	}
 
 	h.debugger.RemoveDataBreakpoint(addr)
-	h.Printf("Data breakpoint at $%04x removed.\n", addr)
+	h.printf("Data breakpoint at $%04x removed.\n", addr)
 	return nil
 }
 
-func (h *host) CmdDataBreakpointEnable(c cmd.Selection) error {
+func (h *Host) cmdDataBreakpointEnable(c cmd.Selection) error {
 	if len(c.Args) < 1 {
-		h.Printf("Syntax: databreakpoint enable [addr]\n")
+		h.printf("Syntax: databreakpoint enable [addr]\n")
 		return nil
 	}
 
-	addr, err := h.ParseExpr(c.Args[0])
+	addr, err := h.parseExpr(c.Args[0])
 	if err != nil {
-		h.Printf("%v\n", err)
+		h.printf("%v\n", err)
 		return nil
 	}
 
 	b := h.debugger.GetDataBreakpoint(addr)
 	if b == nil {
-		h.Printf("No data breakpoint was set on $%04X.\n", addr)
+		h.printf("No data breakpoint was set on $%04X.\n", addr)
 		return nil
 	}
 
 	b.Disabled = false
-	h.Printf("Data breakpoint at $%04x enabled.\n", addr)
+	h.printf("Data breakpoint at $%04x enabled.\n", addr)
 	return nil
 }
 
-func (h *host) CmdDataBreakpointDisable(c cmd.Selection) error {
+func (h *Host) cmdDataBreakpointDisable(c cmd.Selection) error {
 	if len(c.Args) < 1 {
-		h.Printf("Syntax: databreakpoint disable [addr]\n")
+		h.printf("Syntax: databreakpoint disable [addr]\n")
 		return nil
 	}
 
-	addr, err := h.ParseExpr(c.Args[0])
+	addr, err := h.parseExpr(c.Args[0])
 	if err != nil {
-		h.Printf("%v\n", err)
+		h.printf("%v\n", err)
 		return nil
 	}
 
 	b := h.debugger.GetDataBreakpoint(addr)
 	if b == nil {
-		h.Printf("No data breakpoint was set on $%04X.\n", addr)
+		h.printf("No data breakpoint was set on $%04X.\n", addr)
 		return nil
 	}
 
 	b.Disabled = true
-	h.Printf("Data breakpoint at $%04x disabled.\n", addr)
+	h.printf("Data breakpoint at $%04x disabled.\n", addr)
 	return nil
 }
 
-func (h *host) CmdDisassemble(c cmd.Selection) error {
+func (h *Host) cmdDisassemble(c cmd.Selection) error {
 	if len(c.Args) == 0 {
 		c.Args = []string{"$"}
 	}
@@ -570,9 +546,9 @@ func (h *host) CmdDisassemble(c cmd.Selection) error {
 			addr = h.cpu.Reg.PC
 
 		default:
-			a, err := h.ParseExpr(c.Args[0])
+			a, err := h.parseExpr(c.Args[0])
 			if err != nil {
-				h.Printf("%v\n", err)
+				h.printf("%v\n", err)
 				return nil
 			}
 			addr = a
@@ -581,17 +557,17 @@ func (h *host) CmdDisassemble(c cmd.Selection) error {
 
 	lines := h.settings.DisasmLinesToDisplay
 	if len(c.Args) > 1 {
-		l, err := h.ParseExpr(c.Args[1])
+		l, err := h.parseExpr(c.Args[1])
 		if err != nil {
-			h.Printf("%v\n", err)
+			h.printf("%v\n", err)
 			return nil
 		}
 		lines = int(l)
 	}
 
 	for i := 0; i < lines; i++ {
-		d, next := h.Disassemble(addr, displayAnnotations)
-		h.Println(d)
+		d, next := h.disassemble(addr, displayAnnotations)
+		h.println(d)
 		addr = next
 	}
 
@@ -600,44 +576,44 @@ func (h *host) CmdDisassemble(c cmd.Selection) error {
 	return nil
 }
 
-func (h *host) CmdExports(c cmd.Selection) error {
+func (h *Host) cmdExports(c cmd.Selection) error {
 	for _, e := range h.sourceMap.Exports {
-		h.Printf("%-16s $%04X\n", e.Label, e.Addr)
+		h.printf("%-16s $%04X\n", e.Label, e.Addr)
 	}
 	return nil
 }
 
-func (h *host) CmdEval(c cmd.Selection) error {
+func (h *Host) cmdEval(c cmd.Selection) error {
 	if len(c.Args) < 1 {
-		h.Println("Syntax: eval [expression]")
+		h.println("Syntax: eval [expression]")
 		return nil
 	}
 
 	expr := strings.Join(c.Args, " ")
-	v, err := h.ParseExpr(expr)
+	v, err := h.parseExpr(expr)
 	if err != nil {
-		h.Printf("%v\n", err)
+		h.printf("%v\n", err)
 		return nil
 	}
 
-	h.Printf("$%04X\n", v)
+	h.printf("$%04X\n", v)
 	return nil
 }
 
-func (h *host) CmdHelp(c cmd.Selection) error {
+func (h *Host) cmdHelp(c cmd.Selection) error {
 	commands := c.Command.Tree
-	h.Printf("%s commands:\n", commands.Title)
+	h.printf("%s commands:\n", commands.Title)
 	for _, c := range commands.Commands {
 		if c.Description != "" {
-			h.Printf("    %-15s  %s\n", c.Name, c.Description)
+			h.printf("    %-15s  %s\n", c.Name, c.Description)
 		}
 	}
 	return nil
 }
 
-func (h *host) CmdLoad(c cmd.Selection) error {
+func (h *Host) cmdLoad(c cmd.Selection) error {
 	if len(c.Args) < 1 {
-		h.Println("Syntax: load [filename] [addr]")
+		h.println("Syntax: load [filename] [addr]")
 		return nil
 	}
 
@@ -648,21 +624,21 @@ func (h *host) CmdLoad(c cmd.Selection) error {
 
 	loadAddr := -1
 	if len(c.Args) >= 2 {
-		addr, err := h.ParseExpr(c.Args[1])
+		addr, err := h.parseExpr(c.Args[1])
 		if err != nil {
-			h.Printf("%v\n", err)
+			h.printf("%v\n", err)
 			return nil
 		}
 		loadAddr = int(addr)
 	}
 
-	_, err := h.Load(filename, loadAddr)
+	_, err := h.load(filename, loadAddr)
 	return err
 }
 
-func (h *host) CmdMemoryDump(c cmd.Selection) error {
+func (h *Host) cmdMemoryDump(c cmd.Selection) error {
 	if len(c.Args) < 1 {
-		h.Println("Syntax: memory dump [addr] [bytes]")
+		h.println("Syntax: memory dump [addr] [bytes]")
 		return nil
 	}
 
@@ -679,9 +655,9 @@ func (h *host) CmdMemoryDump(c cmd.Selection) error {
 			addr = h.cpu.Reg.PC
 
 		default:
-			a, err := h.ParseExpr(c.Args[0])
+			a, err := h.parseExpr(c.Args[0])
 			if err != nil {
-				h.Printf("%v\n", err)
+				h.printf("%v\n", err)
 				return nil
 			}
 			addr = a
@@ -691,45 +667,45 @@ func (h *host) CmdMemoryDump(c cmd.Selection) error {
 	bytes := uint16(h.settings.MemDumpBytes)
 	if len(c.Args) >= 2 {
 		var err error
-		bytes, err = h.ParseExpr(c.Args[1])
+		bytes, err = h.parseExpr(c.Args[1])
 		if err != nil {
-			h.Printf("%v\n", err)
+			h.printf("%v\n", err)
 			return nil
 		}
 	}
 
-	h.DumpMemory(addr, bytes)
+	h.dumpMemory(addr, bytes)
 
 	h.settings.NextMemDumpAddr = addr + bytes
 	h.lastCmd.Args = []string{"$", fmt.Sprintf("%d", bytes)}
 	return nil
 }
 
-func (h *host) CmdQuit(c cmd.Selection) error {
+func (h *Host) cmdQuit(c cmd.Selection) error {
 	return errors.New("Exiting program")
 }
 
-func (h *host) CmdRegisters(c cmd.Selection) error {
+func (h *Host) cmdRegisters(c cmd.Selection) error {
 	reg := disasm.GetRegisterString(&h.cpu.Reg)
-	h.Printf("%s\n", reg)
+	h.printf("%s\n", reg)
 	return nil
 }
 
-func (h *host) CmdRun(c cmd.Selection) error {
+func (h *Host) cmdRun(c cmd.Selection) error {
 	if len(c.Args) > 0 {
-		pc, err := h.ParseExpr(c.Args[0])
+		pc, err := h.parseExpr(c.Args[0])
 		if err != nil {
-			h.Printf("%v\n", err)
+			h.printf("%v\n", err)
 			return nil
 		}
 		h.cpu.SetPC(pc)
 	}
 
-	h.Printf("Running from $%04X. Press ctrl-C to break.\n", h.cpu.Reg.PC)
+	h.printf("Running from $%04X. Press ctrl-C to break.\n", h.cpu.Reg.PC)
 
 	h.state = stateRunning
 	for h.state == stateRunning {
-		h.Step()
+		h.step()
 	}
 	h.state = stateProcessingCommands
 
@@ -737,14 +713,14 @@ func (h *host) CmdRun(c cmd.Selection) error {
 	return nil
 }
 
-func (h *host) CmdSet(c cmd.Selection) error {
+func (h *Host) cmdSet(c cmd.Selection) error {
 	switch len(c.Args) {
 	case 0:
-		h.Println("Settings:")
+		h.println("Settings:")
 		h.settings.Display(h.output)
 
 	case 1:
-		h.Println("Syntax: set [name] [value]")
+		h.println("Syntax: set [name] [value]")
 
 	default:
 		key, value := strings.ToLower(c.Args[0]), strings.Join(c.Args[1:], " ")
@@ -782,13 +758,13 @@ func (h *host) CmdSet(c cmd.Selection) error {
 
 			switch sz {
 			case 0:
-				h.Printf("Register %s set to %v.\n", strings.ToUpper(key), intToBool(int(v)))
+				h.printf("Register %s set to %v.\n", strings.ToUpper(key), intToBool(int(v)))
 				return nil
 			case 1:
-				h.Printf("Register %s set to $%02X.\n", strings.ToUpper(key), byte(v))
+				h.printf("Register %s set to $%02X.\n", strings.ToUpper(key), byte(v))
 				return nil
 			case 2:
-				h.Printf("Register %s set to $%04X.\n", strings.ToUpper(key), uint16(v))
+				h.printf("Register %s set to $%04X.\n", strings.ToUpper(key), uint16(v))
 				return nil
 			}
 		}
@@ -814,22 +790,22 @@ func (h *host) CmdSet(c cmd.Selection) error {
 		}
 
 		if err == nil {
-			h.Println("Setting updated.")
+			h.println("Setting updated.")
 		} else {
-			h.Printf("%v\n", err)
+			h.printf("%v\n", err)
 		}
 
-		h.OnSettingsUpdate()
+		h.onSettingsUpdate()
 	}
 
 	return nil
 }
 
-func (h *host) CmdStepIn(c cmd.Selection) error {
+func (h *Host) cmdStepIn(c cmd.Selection) error {
 	// Parse the number of steps.
 	count := 1
 	if len(c.Args) > 0 {
-		n, err := h.ParseExpr(c.Args[0])
+		n, err := h.parseExpr(c.Args[0])
 		if err == nil {
 			count = int(n)
 		}
@@ -838,12 +814,12 @@ func (h *host) CmdStepIn(c cmd.Selection) error {
 	// Step the CPU count times.
 	h.state = stateRunning
 	for i := count - 1; i >= 0 && h.state == stateRunning; i-- {
-		h.Step()
+		h.step()
 		switch {
 		case i == h.settings.StepLinesToDisplay:
-			h.Println("...")
+			h.println("...")
 		case i < h.settings.StepLinesToDisplay:
-			h.DisplayPC()
+			h.displayPC()
 		}
 	}
 	h.state = stateProcessingCommands
@@ -852,11 +828,11 @@ func (h *host) CmdStepIn(c cmd.Selection) error {
 	return nil
 }
 
-func (h *host) CmdStepOver(c cmd.Selection) error {
+func (h *Host) cmdStepOver(c cmd.Selection) error {
 	// Parse the number of steps.
 	count := 1
 	if len(c.Args) > 0 {
-		n, err := h.ParseExpr(c.Args[0])
+		n, err := h.parseExpr(c.Args[0])
 		if err == nil {
 			count = int(n)
 		}
@@ -865,12 +841,12 @@ func (h *host) CmdStepOver(c cmd.Selection) error {
 	// Step over the next instruction count times.
 	h.state = stateRunning
 	for i := count - 1; i >= 0 && h.state == stateRunning; i-- {
-		h.StepOver()
+		h.stepOver()
 		switch {
 		case i == h.settings.StepLinesToDisplay:
-			h.Println("...")
+			h.println("...")
 		case i < h.settings.StepLinesToDisplay:
-			h.DisplayPC()
+			h.displayPC()
 		}
 	}
 	h.state = stateProcessingCommands
@@ -879,16 +855,16 @@ func (h *host) CmdStepOver(c cmd.Selection) error {
 	return nil
 }
 
-func (h *host) Load(filename string, addr int) (origin uint16, err error) {
+func (h *Host) load(filename string, addr int) (origin uint16, err error) {
 	filename, err = filepath.Abs(filename)
 	if err != nil {
-		h.Printf("Failed to open '%s': %v\n", filepath.Base(filename), err)
+		h.printf("Failed to open '%s': %v\n", filepath.Base(filename), err)
 		return 0, nil
 	}
 
 	file, err := os.Open(filename)
 	if err != nil {
-		h.Printf("Failed to open '%s': %v\n", filepath.Base(filename), err)
+		h.printf("Failed to open '%s': %v\n", filepath.Base(filename), err)
 		return 0, nil
 	}
 	defer file.Close()
@@ -896,7 +872,7 @@ func (h *host) Load(filename string, addr int) (origin uint16, err error) {
 	a := &asm.Assembly{}
 	_, err = a.ReadFrom(file)
 	if err != nil {
-		h.Printf("Failed to read '%s': %v\n", filepath.Base(filename), err)
+		h.printf("Failed to read '%s': %v\n", filepath.Base(filename), err)
 		return 0, nil
 	}
 
@@ -905,7 +881,7 @@ func (h *host) Load(filename string, addr int) (origin uint16, err error) {
 	origin = a.Origin
 	if origin == 0 {
 		if addr == -1 {
-			h.Printf("File '%s' has no signature and requires an address\n", filepath.Base(filename))
+			h.printf("File '%s' has no signature and requires an address\n", filepath.Base(filename))
 			return 0, nil
 		}
 		origin = uint16(addr)
@@ -913,7 +889,7 @@ func (h *host) Load(filename string, addr int) (origin uint16, err error) {
 
 	cpu := h.cpu
 	cpu.Mem.StoreBytes(origin, a.Code)
-	h.Printf("Loaded '%s' to $%04X..$%04X\n", filepath.Base(filename), origin, int(origin)+len(a.Code)-1)
+	h.printf("Loaded '%s' to $%04X..$%04X\n", filepath.Base(filename), origin, int(origin)+len(a.Code)-1)
 
 	ext := filepath.Ext(filename)
 	filePrefix := filename[:len(filename)-len(ext)]
@@ -924,9 +900,9 @@ func (h *host) Load(filename string, addr int) (origin uint16, err error) {
 		h.sourceMap = &asm.SourceMap{}
 		_, err = h.sourceMap.ReadFrom(file)
 		if err != nil {
-			h.Printf("Failed to read '%s': %v\n", filepath.Base(filename), err)
+			h.printf("Failed to read '%s': %v\n", filepath.Base(filename), err)
 		} else {
-			h.Printf("Loaded '%s' source map\n", filepath.Base(filename))
+			h.printf("Loaded '%s' source map\n", filepath.Base(filename))
 		}
 	}
 
@@ -936,11 +912,11 @@ func (h *host) Load(filename string, addr int) (origin uint16, err error) {
 	return origin, nil
 }
 
-func (h *host) Step() {
+func (h *Host) step() {
 	h.cpu.Step()
 }
 
-func (h *host) StepOver() {
+func (h *Host) stepOver() {
 	cpu := h.cpu
 
 	// JSR instructions need to be handled specially.
@@ -964,7 +940,7 @@ func (h *host) StepOver() {
 
 	// Run until interrupted.
 	for h.state == stateRunning {
-		h.Step()
+		h.step()
 	}
 	b.StepOver = false
 
@@ -980,34 +956,11 @@ func (h *host) StepOver() {
 	}
 }
 
-func (h *host) OnBreakpoint(cpu *go6502.CPU, b *go6502.Breakpoint) {
-	if b.StepOver {
-		h.state = stateStepOverBreakpoint
-	} else {
-		h.state = stateBreakpoint
-		h.Printf("Breakpoint hit at $%04X.\n", b.Address)
-		h.DisplayPC()
-	}
-}
-
-func (h *host) OnDataBreakpoint(cpu *go6502.CPU, b *go6502.DataBreakpoint) {
-	h.Printf("Data breakpoint hit on address $%04X.\n", b.Address)
-
-	h.state = stateBreakpoint
-
-	if cpu.LastPC != cpu.Reg.PC {
-		d, _ := h.Disassemble(cpu.LastPC, displayAll)
-		h.Println(d)
-	}
-
-	h.DisplayPC()
-}
-
-func (h *host) OnSettingsUpdate() {
+func (h *Host) onSettingsUpdate() {
 	h.exprParser.hexMode = h.settings.HexMode
 }
 
-func (h *host) ParseExpr(expr string) (uint16, error) {
+func (h *Host) parseExpr(expr string) (uint16, error) {
 	v, err := h.exprParser.Parse(expr, h)
 	if err != nil {
 		return 0, err
@@ -1019,7 +972,85 @@ func (h *host) ParseExpr(expr string) (uint16, error) {
 	return uint16(v), nil
 }
 
-func (h *host) ResolveIdentifier(s string) (int64, error) {
+func (h *Host) disassemble(addr uint16, flags displayFlags) (str string, next uint16) {
+	cpu := h.cpu
+
+	var line string
+	line, next = disasm.Disassemble(cpu.Mem, addr)
+
+	l := next - addr
+	b := make([]byte, l)
+	cpu.Mem.LoadBytes(addr, b)
+
+	str = fmt.Sprintf("%04X-   %-8s    %-15s", addr, codeString(b[:l]), line)
+
+	if (flags & displayRegisters) != 0 {
+		str += " " + disasm.GetRegisterString(&h.cpu.Reg)
+	}
+
+	if (flags & displayCycles) != 0 {
+		str += fmt.Sprintf(" C=%-12d", h.cpu.Cycles)
+	}
+
+	if (flags & displayAnnotations) != 0 {
+		if anno, ok := h.annotations[addr]; ok {
+			str += " ; " + anno
+		}
+	}
+
+	return str, next
+}
+
+func (h *Host) dumpMemory(addr0, bytes uint16) {
+	if bytes < 0 {
+		return
+	}
+
+	addr1 := addr0 + bytes - 1
+	if addr1 < addr0 {
+		addr1 = 0xffff
+	}
+
+	buf := []byte("    -" + strings.Repeat(" ", 35))
+
+	// Don't align display for short dumps.
+	if addr1-addr0 < 8 {
+		addrToBuf(addr0, buf[0:4])
+		for a, c1, c2 := addr0, 6, 32; a <= addr1; a, c1, c2 = a+1, c1+3, c2+1 {
+			m := h.cpu.Mem.LoadByte(a)
+			byteToBuf(m, buf[c1:c1+2])
+			buf[c2] = toPrintableChar(m)
+		}
+		h.println(string(buf))
+		return
+	}
+
+	// Align addr0 and addr1 to 8-byte boundaries.
+	start := uint32(addr0) & 0xfff8
+	stop := (uint32(addr1) + 8) & 0xffff8
+	if stop > 0x10000 {
+		stop = 0x10000
+	}
+
+	a := uint16(start)
+	for r := start; r < stop; r += 8 {
+		addrToBuf(a, buf[0:4])
+		for c1, c2 := 6, 32; c1 < 29; c1, c2, a = c1+3, c2+1, a+1 {
+			if a >= addr0 && a <= addr1 {
+				m := h.cpu.Mem.LoadByte(a)
+				byteToBuf(m, buf[c1:c1+2])
+				buf[c2] = toPrintableChar(m)
+			} else {
+				buf[c1] = ' '
+				buf[c1+1] = ' '
+				buf[c2] = ' '
+			}
+		}
+		h.println(string(buf))
+	}
+}
+
+func (h *Host) resolveIdentifier(s string) (int64, error) {
 	s = strings.ToLower(s)
 
 	switch s {
@@ -1046,80 +1077,25 @@ func (h *host) ResolveIdentifier(s string) (int64, error) {
 	return 0, fmt.Errorf("identifier '%s' not found", s)
 }
 
-func (h *host) Disassemble(addr uint16, flags displayFlags) (str string, next uint16) {
-	cpu := h.cpu
-
-	var line string
-	line, next = disasm.Disassemble(cpu.Mem, addr)
-
-	l := next - addr
-	b := h.buf[:l]
-	cpu.Mem.LoadBytes(addr, b)
-
-	str = fmt.Sprintf("%04X-   %-8s    %-15s", addr, codeString(b[:l]), line)
-
-	if (flags & displayRegisters) != 0 {
-		str += " " + disasm.GetRegisterString(&h.cpu.Reg)
+func (h *Host) onBreakpoint(cpu *go6502.CPU, b *go6502.Breakpoint) {
+	if b.StepOver {
+		h.state = stateStepOverBreakpoint
+	} else {
+		h.state = stateBreakpoint
+		h.printf("Breakpoint hit at $%04X.\n", b.Address)
+		h.displayPC()
 	}
-
-	if (flags & displayCycles) != 0 {
-		str += fmt.Sprintf(" C=%-12d", h.cpu.Cycles)
-	}
-
-	if (flags & displayAnnotations) != 0 {
-		if anno, ok := h.annotations[addr]; ok {
-			str += " ; " + anno
-		}
-	}
-
-	return str, next
 }
 
-func (h *host) DumpMemory(addr0, bytes uint16) {
-	if bytes < 0 {
-		return
+func (h *Host) onDataBreakpoint(cpu *go6502.CPU, b *go6502.DataBreakpoint) {
+	h.printf("Data breakpoint hit on address $%04X.\n", b.Address)
+
+	h.state = stateBreakpoint
+
+	if cpu.LastPC != cpu.Reg.PC {
+		d, _ := h.disassemble(cpu.LastPC, displayAll)
+		h.println(d)
 	}
 
-	addr1 := addr0 + bytes - 1
-	if addr1 < addr0 {
-		addr1 = 0xffff
-	}
-
-	buf := []byte("    -" + strings.Repeat(" ", 35))
-
-	// Don't align display for short dumps.
-	if addr1-addr0 < 8 {
-		addrToBuf(addr0, buf[0:4])
-		for a, c1, c2 := addr0, 6, 32; a <= addr1; a, c1, c2 = a+1, c1+3, c2+1 {
-			m := h.cpu.Mem.LoadByte(a)
-			byteToBuf(m, buf[c1:c1+2])
-			buf[c2] = toPrintableChar(m)
-		}
-		h.Println(string(buf))
-		return
-	}
-
-	// Align addr0 and addr1 to 8-byte boundaries.
-	start := uint32(addr0) & 0xfff8
-	stop := (uint32(addr1) + 8) & 0xffff8
-	if stop > 0x10000 {
-		stop = 0x10000
-	}
-
-	a := uint16(start)
-	for r := start; r < stop; r += 8 {
-		addrToBuf(a, buf[0:4])
-		for c1, c2 := 6, 32; c1 < 29; c1, c2, a = c1+3, c2+1, a+1 {
-			if a >= addr0 && a <= addr1 {
-				m := h.cpu.Mem.LoadByte(a)
-				byteToBuf(m, buf[c1:c1+2])
-				buf[c2] = toPrintableChar(m)
-			} else {
-				buf[c1] = ' '
-				buf[c1+1] = ' '
-				buf[c2] = ' '
-			}
-		}
-		h.Println(string(buf))
-	}
+	h.displayPC()
 }

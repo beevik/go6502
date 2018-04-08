@@ -137,7 +137,7 @@ var lex0 = [96]byte{
 }
 
 type resolver interface {
-	ResolveIdentifier(s string) (int64, error)
+	resolveIdentifier(s string) (int64, error)
 }
 
 //
@@ -181,7 +181,7 @@ func (p *exprParser) Parse(expr string, r resolver) (int64, error) {
 			p.output.push(tok)
 
 		case tokenIdentifier:
-			v, err := r.ResolveIdentifier(tok.Value.(string))
+			v, err := r.resolveIdentifier(tok.Value.(string))
 			if err != nil {
 				return 0, err
 			}
