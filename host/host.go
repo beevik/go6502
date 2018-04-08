@@ -1,4 +1,4 @@
-package main
+package host
 
 import (
 	"bufio"
@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -21,7 +22,7 @@ import (
 var cmds = cmd.NewTree("Debugger", []cmd.Command{
 	{Name: "help", Shortcut: "?", Param: (*Host).cmdHelp},
 	{Name: "annotate", Description: "Annotate an address", Param: (*Host).cmdAnnotate},
-	{Name: "assemble", Shortcut: "a", Description: "Assemble a file", Param: (*Host).cmdAssemble},
+	{Name: "assemble", Shortcut: "a", Description: "Assemble a file and save the binary", Param: (*Host).cmdAssemble},
 	{Name: "breakpoint", Shortcut: "b", Description: "Breakpoint commands", Subcommands: cmd.NewTree("Breakpoint", []cmd.Command{
 		{Name: "help", Shortcut: "?", Param: (*Host).cmdHelp},
 		{Name: "list", Description: "List breakpoints", Param: (*Host).cmdBreakpointList},
@@ -39,9 +40,9 @@ var cmds = cmd.NewTree("Debugger", []cmd.Command{
 		{Name: "disable", Description: "Disable a data breakpoint", Param: (*Host).cmdDataBreakpointDisable},
 	})},
 	{Name: "disassemble", Shortcut: "d", Description: "Disassemble code", Param: (*Host).cmdDisassemble},
+	{Name: "evaluate", Shortcut: "e", Description: "Evaluate an expression", Param: (*Host).cmdEval},
 	{Name: "exports", Description: "List exported addresses", Param: (*Host).cmdExports},
-	{Name: "eval", Shortcut: "e", Description: "Evaluate an expression", Param: (*Host).cmdEval},
-	{Name: "load", Description: "Load a binary", Param: (*Host).cmdLoad},
+	{Name: "load", Description: "Load a binary file", Param: (*Host).cmdLoad},
 	{Name: "memory", Description: "Memory commands", Subcommands: cmd.NewTree("Memory", []cmd.Command{
 		{Name: "help", Shortcut: "?", Param: (*Host).cmdHelp},
 		{Name: "dump", Description: "Dump memory starting at address", Param: (*Host).cmdMemoryDump},
@@ -49,7 +50,7 @@ var cmds = cmd.NewTree("Debugger", []cmd.Command{
 	{Name: "quit", Description: "Quit the program", Param: (*Host).cmdQuit},
 	{Name: "registers", Shortcut: "r", Description: "Display register contents", Param: (*Host).cmdRegisters},
 	{Name: "run", Description: "Run the CPU", Param: (*Host).cmdRun},
-	{Name: "set", Description: "Set a debugger variable", Param: (*Host).cmdSet},
+	{Name: "set", Description: "Set a host setting", Param: (*Host).cmdSet},
 	{Name: "step", Description: "Step the debugger", Subcommands: cmd.NewTree("Step", []cmd.Command{
 		{Name: "help", Shortcut: "?", Param: (*Host).cmdHelp},
 		{Name: "in", Description: "Step in to routine", Param: (*Host).cmdStepIn},
@@ -113,9 +114,8 @@ type Host struct {
 	annotations map[uint16]string
 }
 
-// NewHost creates a new debugger host capable of running and debugging an
-// emulated 6502 CPU.
-func NewHost() *Host {
+// New creates a new 6502 host environment.
+func New() *Host {
 	h := &Host{
 		mem:         go6502.NewFlatMemory(),
 		exprParser:  newExprParser(),
@@ -190,6 +190,14 @@ func (h *Host) RunCommands(r io.Reader, w io.Writer, interactive bool) {
 	h.input = bufio.NewScanner(r)
 	h.output = bufio.NewWriter(w)
 	h.interactive = interactive
+
+	// Handle ctrl-C for interactive command sessions.
+	if interactive {
+		h.println()
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt)
+		go h.handleInterrupt(c)
+	}
 
 	h.displayPC()
 
@@ -577,6 +585,10 @@ func (h *Host) cmdDisassemble(c cmd.Selection) error {
 }
 
 func (h *Host) cmdExports(c cmd.Selection) error {
+	if h.sourceMap == nil || len(h.sourceMap.Exports) == 0 {
+		h.println("No active exports.")
+		return nil
+	}
 	for _, e := range h.sourceMap.Exports {
 		h.printf("%-16s $%04X\n", e.Label, e.Addr)
 	}
@@ -1098,4 +1110,16 @@ func (h *Host) onDataBreakpoint(cpu *go6502.CPU, b *go6502.DataBreakpoint) {
 	}
 
 	h.displayPC()
+}
+
+func (h *Host) handleInterrupt(c chan os.Signal) {
+	for {
+		<-c
+		h.println()
+
+		if h.state == stateProcessingCommands {
+			h.prompt()
+		}
+		h.state = stateProcessingCommands
+	}
 }

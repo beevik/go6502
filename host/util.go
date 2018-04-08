@@ -1,8 +1,7 @@
-package main
+package host
 
 import (
 	"fmt"
-	"os"
 	"strings"
 )
 
@@ -31,11 +30,6 @@ func endsWith(s, m string) bool {
 		return false
 	}
 	return s[len(s)-len(m):] == m
-}
-
-func exitOnError(err error) {
-	fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
-	os.Exit(1)
 }
 
 func stringToBool(s string) (bool, error) {

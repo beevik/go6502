@@ -1,4 +1,4 @@
-package main
+package host
 
 import "github.com/beevik/go6502"
 
