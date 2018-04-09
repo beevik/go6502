@@ -114,11 +114,10 @@ type Host struct {
 	mem         *go6502.FlatMemory
 	cpu         *go6502.CPU
 	debugger    *go6502.Debugger
-	handler     *handler
 	lastCmd     *cmd.Selection
+	state       state
 	exprParser  *exprParser
 	sourceMap   *asm.SourceMap
-	state       state
 	settings    *settings
 	annotations map[uint16]string
 }
@@ -126,73 +125,24 @@ type Host struct {
 // New creates a new 6502 host environment.
 func New() *Host {
 	h := &Host{
-		mem:         go6502.NewFlatMemory(),
-		exprParser:  newExprParser(),
 		state:       stateProcessingCommands,
+		exprParser:  newExprParser(),
 		settings:    newSettings(),
 		annotations: make(map[uint16]string),
 	}
 
-	// Create the emulated CPU.
+	// Create the emulated CPU and memory.
+	h.mem = go6502.NewFlatMemory()
 	h.cpu = go6502.NewCPU(go6502.CMOS, h.mem)
 
-	// Create a handler for the CPU debugger's notifications.
-	h.handler = &handler{h}
-
 	// Create a CPU debugger and attach it to the CPU.
-	h.debugger = go6502.NewDebugger(h.handler)
+	h.debugger = go6502.NewDebugger(newDebugHandler(h))
 	h.cpu.AttachDebugger(h.debugger)
 
 	return h
 }
 
-func (h *Host) write(p []byte) (n int, err error) {
-	return h.output.Write(p)
-}
-
-func (h *Host) print(args ...interface{}) {
-	fmt.Fprint(h.output, args...)
-}
-
-func (h *Host) printf(format string, args ...interface{}) {
-	fmt.Fprintf(h.output, format, args...)
-	h.flush()
-}
-
-func (h *Host) println(args ...interface{}) {
-	fmt.Fprintln(h.output, args...)
-	h.flush()
-}
-
-func (h *Host) flush() {
-	h.output.Flush()
-}
-
-func (h *Host) getLine() (string, error) {
-	if h.input.Scan() {
-		return h.input.Text(), nil
-	}
-	if h.input.Err() != nil {
-		return "", h.input.Err()
-	}
-	return "", io.EOF
-}
-
-func (h *Host) prompt() {
-	if h.interactive {
-		h.printf("* ")
-		h.flush()
-	}
-}
-
-func (h *Host) displayPC() {
-	if h.interactive {
-		d, _ := h.disassemble(h.cpu.Reg.PC, displayAll)
-		h.println(d)
-	}
-}
-
-// RunCommands accepts debugger commands from a reader and outputs the results
+// RunCommands accepts host commands from a reader and outputs the results
 // to a writer. If the commands are interactive, a prompt is displayed while
 // the host waits for the the next command to be entered.
 func (h *Host) RunCommands(r io.Reader, w io.Writer, interactive bool) {
@@ -246,6 +196,52 @@ func (h *Host) RunCommands(r io.Reader, w io.Writer, interactive bool) {
 		if err != nil {
 			break
 		}
+	}
+}
+
+func (h *Host) write(p []byte) (n int, err error) {
+	return h.output.Write(p)
+}
+
+func (h *Host) print(args ...interface{}) {
+	fmt.Fprint(h.output, args...)
+}
+
+func (h *Host) printf(format string, args ...interface{}) {
+	fmt.Fprintf(h.output, format, args...)
+	h.flush()
+}
+
+func (h *Host) println(args ...interface{}) {
+	fmt.Fprintln(h.output, args...)
+	h.flush()
+}
+
+func (h *Host) flush() {
+	h.output.Flush()
+}
+
+func (h *Host) getLine() (string, error) {
+	if h.input.Scan() {
+		return h.input.Text(), nil
+	}
+	if h.input.Err() != nil {
+		return "", h.input.Err()
+	}
+	return "", io.EOF
+}
+
+func (h *Host) prompt() {
+	if h.interactive {
+		h.printf("* ")
+		h.flush()
+	}
+}
+
+func (h *Host) displayPC() {
+	if h.interactive {
+		d, _ := h.disassemble(h.cpu.Reg.PC, displayAll)
+		h.println(d)
 	}
 }
 
