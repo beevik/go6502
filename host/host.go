@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -150,12 +149,8 @@ func (h *Host) RunCommands(r io.Reader, w io.Writer, interactive bool) {
 	h.output = bufio.NewWriter(w)
 	h.interactive = interactive
 
-	// Handle ctrl-C for interactive command sessions.
 	if interactive {
 		h.println()
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt)
-		go h.handleInterrupt(c)
 	}
 
 	h.displayPC()
@@ -197,6 +192,19 @@ func (h *Host) RunCommands(r io.Reader, w io.Writer, interactive bool) {
 			break
 		}
 	}
+}
+
+// Break interrupts a running CPU.
+func (h *Host) Break() {
+	h.println()
+
+	if h.state == stateRunning {
+		h.displayPC()
+	}
+	if h.state == stateProcessingCommands {
+		h.prompt()
+	}
+	h.state = stateProcessingCommands
 }
 
 func (h *Host) write(p []byte) (n int, err error) {
@@ -1115,16 +1123,4 @@ func (h *Host) onDataBreakpoint(cpu *go6502.CPU, b *go6502.DataBreakpoint) {
 	}
 
 	h.displayPC()
-}
-
-func (h *Host) handleInterrupt(c chan os.Signal) {
-	for {
-		<-c
-		h.println()
-
-		if h.state == stateProcessingCommands {
-			h.prompt()
-		}
-		h.state = stateProcessingCommands
-	}
 }

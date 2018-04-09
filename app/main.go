@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
 
 	"github.com/beevik/go6502/host"
 )
@@ -23,8 +24,20 @@ func main() {
 		}
 	}
 
+	// Break on Ctrl-C.
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go handleInterrupt(h, c)
+
 	// Run commands interactively.
 	h.RunCommands(os.Stdin, os.Stdout, true)
+}
+
+func handleInterrupt(h *host.Host, c chan os.Signal) {
+	for {
+		<-c
+		h.Break()
+	}
 }
 
 func exitOnError(err error) {
