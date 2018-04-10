@@ -24,14 +24,14 @@ import (
 	"strings"
 
 	"github.com/beevik/cmd"
-	"github.com/beevik/go6502"
 	"github.com/beevik/go6502/asm"
+	"github.com/beevik/go6502/cpu"
 	"github.com/beevik/go6502/disasm"
 )
 
 // Create a command tree, where the parameter stored with each command is
 // a host callback capable of handling the command.
-var cmds = cmd.NewTree("Debugger", []cmd.Command{
+var cmds = cmd.NewTree("go6502", []cmd.Command{
 	{Name: "help", Shortcut: "?", Param: (*Host).cmdHelp},
 	{Name: "annotate", Description: "Annotate an address", Param: (*Host).cmdAnnotate},
 	{Name: "assemble", Shortcut: "a", Description: "Assemble a file and save the binary", Param: (*Host).cmdAssemble},
@@ -110,9 +110,9 @@ type Host struct {
 	input       *bufio.Scanner
 	output      *bufio.Writer
 	interactive bool
-	mem         *go6502.FlatMemory
-	cpu         *go6502.CPU
-	debugger    *go6502.Debugger
+	mem         *cpu.FlatMemory
+	cpu         *cpu.CPU
+	debugger    *cpu.Debugger
 	lastCmd     *cmd.Selection
 	state       state
 	exprParser  *exprParser
@@ -131,11 +131,11 @@ func New() *Host {
 	}
 
 	// Create the emulated CPU and memory.
-	h.mem = go6502.NewFlatMemory()
-	h.cpu = go6502.NewCPU(go6502.CMOS, h.mem)
+	h.mem = cpu.NewFlatMemory()
+	h.cpu = cpu.NewCPU(cpu.CMOS, h.mem)
 
 	// Create a CPU debugger and attach it to the CPU.
-	h.debugger = go6502.NewDebugger(newDebugHandler(h))
+	h.debugger = cpu.NewDebugger(newDebugHandler(h))
 	h.cpu.AttachDebugger(h.debugger)
 
 	return h
@@ -1102,7 +1102,7 @@ func (h *Host) resolveIdentifier(s string) (int64, error) {
 	return 0, fmt.Errorf("identifier '%s' not found", s)
 }
 
-func (h *Host) onBreakpoint(cpu *go6502.CPU, b *go6502.Breakpoint) {
+func (h *Host) onBreakpoint(cpu *cpu.CPU, b *cpu.Breakpoint) {
 	if b.StepOver {
 		h.state = stateStepOverBreakpoint
 	} else {
@@ -1112,7 +1112,7 @@ func (h *Host) onBreakpoint(cpu *go6502.CPU, b *go6502.Breakpoint) {
 	}
 }
 
-func (h *Host) onDataBreakpoint(cpu *go6502.CPU, b *go6502.DataBreakpoint) {
+func (h *Host) onDataBreakpoint(cpu *cpu.CPU, b *cpu.DataBreakpoint) {
 	h.printf("Data breakpoint hit on address $%04X.\n", b.Address)
 
 	h.state = stateBreakpoint

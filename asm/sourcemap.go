@@ -1,3 +1,7 @@
+// Copyright 2014-2018 Brett Vickers. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package asm
 
 import (
@@ -213,7 +217,7 @@ func decodeSourceLine(r *bufio.Reader, prev SourceLine) (line SourceLine, n int,
 }
 
 func decode7(r *bufio.Reader) (value int, n int, err error) {
-	var shift uint = 0
+	var shift uint
 	for {
 		var b byte
 		b, err = r.ReadByte()

@@ -1,14 +1,14 @@
-package go6502_test
+package cpu_test
 
 import (
 	"strings"
 	"testing"
 
-	"github.com/beevik/go6502"
 	"github.com/beevik/go6502/asm"
+	"github.com/beevik/go6502/cpu"
 )
 
-func runCPU(t *testing.T, asmString string, steps int) *go6502.CPU {
+func runCPU(t *testing.T, asmString string, steps int) *cpu.CPU {
 	b := strings.NewReader(asmString)
 	r, _, err := asm.Assemble(b, "test.asm", false)
 	if err != nil {
@@ -16,8 +16,8 @@ func runCPU(t *testing.T, asmString string, steps int) *go6502.CPU {
 		return nil
 	}
 
-	mem := go6502.NewFlatMemory()
-	cpu := go6502.NewCPU(go6502.NMOS, mem)
+	mem := cpu.NewFlatMemory()
+	cpu := cpu.NewCPU(cpu.NMOS, mem)
 	mem.StoreBytes(r.Origin, r.Code)
 	cpu.SetPC(r.Origin)
 
@@ -28,25 +28,25 @@ func runCPU(t *testing.T, asmString string, steps int) *go6502.CPU {
 	return cpu
 }
 
-func expectPC(t *testing.T, cpu *go6502.CPU, pc uint16) {
+func expectPC(t *testing.T, cpu *cpu.CPU, pc uint16) {
 	if cpu.Reg.PC != pc {
 		t.Errorf("PC incorrect. exp: $%04X, got: $%04X", pc, cpu.Reg.PC)
 	}
 }
 
-func expectCycles(t *testing.T, cpu *go6502.CPU, cycles uint64) {
+func expectCycles(t *testing.T, cpu *cpu.CPU, cycles uint64) {
 	if cpu.Cycles != cycles {
 		t.Errorf("Cycles incorrect. exp: %d, got: %d", cycles, cpu.Cycles)
 	}
 }
 
-func expectACC(t *testing.T, cpu *go6502.CPU, acc byte) {
+func expectACC(t *testing.T, cpu *cpu.CPU, acc byte) {
 	if cpu.Reg.A != acc {
 		t.Errorf("Accumulator incorrect. exp: $%02X, got: $%02X", acc, cpu.Reg.A)
 	}
 }
 
-func expectMem(t *testing.T, cpu *go6502.CPU, addr uint16, v byte) {
+func expectMem(t *testing.T, cpu *cpu.CPU, addr uint16, v byte) {
 	got := cpu.Mem.LoadByte(addr)
 	if got != v {
 		t.Errorf("Memory at $%04X incorrect. exp: $%02X, got: $%02X", addr, v, got)

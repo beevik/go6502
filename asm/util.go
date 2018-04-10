@@ -1,3 +1,7 @@
+// Copyright 2014-2018 Brett Vickers. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package asm
 
 var hex = "0123456789ABCDEF"

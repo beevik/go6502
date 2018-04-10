@@ -31,10 +31,8 @@ STORE		.EQ		$0200
 
 START:				; Labels may end in ':', which is ignored.
 		LDX		#$EE
-
-		.INCLUDE	include.asm
-
-		PHX
+		LDA		#$05
+		JSR JSR_TEST
 		JSR LDA_TEST
 		JSR LDX_TEST
 		JSR LDY_TEST
@@ -43,6 +41,9 @@ START:				; Labels may end in ':', which is ignored.
 		LDA /DATA	; Upper byte of DATA
 		LDX #DATA	; Lower byte of DATA
 .1		BRK		; .1 label is valid only within START scope.
+
+JSR_TEST	LDA #$FF
+		RTS
 
 LDA_TEST	LDA #$20	; Immediate
 		LDA $20		; Zero page

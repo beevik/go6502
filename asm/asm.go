@@ -1,4 +1,4 @@
-// Copyright 2014 Brett Vickers. All rights reserved.
+// Copyright 2014-2018 Brett Vickers. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/beevik/go6502"
+	"github.com/beevik/go6502/cpu"
 )
 
 var (
@@ -109,12 +109,12 @@ type segment interface {
 // An instruction segment contains a single instruction, including its
 // opcode and operand data.
 type instruction struct {
-	addr      int                 // address assigned to the segment
-	fileIndex int                 // index of file containing the instruction
-	line      int                 // the source code line number
-	opcode    fstring             // opcode string
-	inst      *go6502.Instruction // selected instruction data for the opcode
-	operand   operand             // parameter data for the instruction
+	addr      int              // address assigned to the segment
+	fileIndex int              // index of file containing the instruction
+	line      int              // the source code line number
+	opcode    fstring          // opcode string
+	inst      *cpu.Instruction // selected instruction data for the opcode
+	operand   operand          // parameter data for the instruction
 }
 
 func (i *instruction) address() int {
@@ -125,7 +125,7 @@ func (i *instruction) address() int {
 func (i *instruction) codeString() string {
 	sz := i.inst.Length - 1
 	switch {
-	case i.inst.Mode == go6502.REL:
+	case i.inst.Mode == cpu.REL:
 		offset, _ := relOffset(i.operand.getValue(), i.addr+int(i.inst.Length))
 		return byteString([]byte{i.inst.Opcode, offset})
 	case sz == 0:
@@ -154,11 +154,11 @@ func (i *instruction) operandString() string {
 
 // An operand represents the parameter(s) of an assembly instruction.
 type operand struct {
-	modeGuess     go6502.Mode // addressing mode guesed based on operand string
-	expr          *expr       // expression tree, used to resolve value
-	forceAbsolute bool        // operand must use 2-byte absolute address
-	forceLSB      bool        // operand must use least significant byte
-	forceMSB      bool        // operand must use most significant byte
+	modeGuess     cpu.Mode // addressing mode guesed based on operand string
+	expr          *expr    // expression tree, used to resolve value
+	forceAbsolute bool     // operand must use 2-byte absolute address
+	forceLSB      bool     // operand must use least significant byte
+	forceMSB      bool     // operand must use most significant byte
 }
 
 func (o *operand) getValue() int {
@@ -180,7 +180,7 @@ func (o *operand) getValue() int {
 // Return the size of the operand in bytes.
 func (o *operand) size() int {
 	switch {
-	case o.modeGuess == go6502.IMP:
+	case o.modeGuess == cpu.IMP:
 		return 0
 	case o.forceLSB || o.forceMSB:
 		return 1
@@ -276,23 +276,23 @@ type uneval struct {
 // The assembler is a state object used during the assembly of
 // machine code from assembly code.
 type assembler struct {
-	arch        go6502.Architecture    // requested architecture
-	instSet     *go6502.InstructionSet // instructions on current arch
-	origin      int                    // requested origin
-	pc          int                    // the program counter
-	code        []byte                 // generated machine code
-	r           io.Reader              // the reader passed to Assemble
-	scopeLabel  fstring                // label currently in scope
-	macros      map[string]*expr       // macro -> expression
-	labels      map[string]int         // label -> segment index
-	exports     []Export               // exported addresses
-	sourceLines []SourceLine           // source code line mappings
-	files       []string               // processed files
-	segments    []segment              // segment of machine code
-	unevaluated []uneval               // expressions requiring evaluation
-	verbose     bool                   // verbose output
-	exprParser  exprParser             // used to parse math expressions
-	errors      []asmerror             // errors encountered during assembly
+	arch        cpu.Architecture    // requested architecture
+	instSet     *cpu.InstructionSet // instructions on current arch
+	origin      int                 // requested origin
+	pc          int                 // the program counter
+	code        []byte              // generated machine code
+	r           io.Reader           // the reader passed to Assemble
+	scopeLabel  fstring             // label currently in scope
+	macros      map[string]*expr    // macro -> expression
+	labels      map[string]int      // label -> segment index
+	exports     []Export            // exported addresses
+	sourceLines []SourceLine        // source code line mappings
+	files       []string            // processed files
+	segments    []segment           // segment of machine code
+	unevaluated []uneval            // expressions requiring evaluation
+	verbose     bool                // verbose output
+	exprParser  exprParser          // used to parse math expressions
+	errors      []asmerror          // errors encountered during assembly
 }
 
 // An Export describes an exported address.
@@ -357,8 +357,8 @@ func (a *Assembly) WriteTo(w io.Writer) (n int64, err error) {
 // it into 6502 byte code.
 func Assemble(r io.Reader, filename string, verbose bool) (*Assembly, *SourceMap, error) {
 	a := &assembler{
-		arch:     go6502.NMOS,
-		instSet:  go6502.GetInstructionSet(go6502.NMOS),
+		arch:     cpu.NMOS,
+		instSet:  cpu.GetInstructionSet(cpu.NMOS),
 		origin:   0x600,
 		pc:       -1,
 		r:        r,
@@ -594,7 +594,7 @@ func (a *assembler) generateCode() error {
 			switch {
 			case ss.inst.Length == 1:
 				a.log("%04X-   %-8s    %s", ss.addr, ss.codeString(), ss.opcode.str)
-			case ss.inst.Mode == go6502.REL:
+			case ss.inst.Mode == cpu.REL:
 				offset, err := relOffset(ss.operand.getValue(), ss.addr+int(ss.inst.Length))
 				if err != nil {
 					a.addError(ss.opcode, "branch offset out of bounds")
@@ -786,15 +786,15 @@ func (a *assembler) parseArch(line, label fstring, param interface{}) error {
 
 	switch {
 	case arch == "6502" || arch == "nmos":
-		a.arch = go6502.NMOS
+		a.arch = cpu.NMOS
 	case arch == "65c02" || arch == "cmos":
-		a.arch = go6502.CMOS
+		a.arch = cpu.CMOS
 	default:
 		a.addError(line, "invalid architecture '%s'", archl.str)
 		return errParse
 	}
 
-	a.instSet = go6502.GetInstructionSet(a.arch)
+	a.instSet = cpu.GetInstructionSet(a.arch)
 	return nil
 }
 
@@ -1107,7 +1107,7 @@ func (a *assembler) parseInstruction(line fstring) error {
 func (a *assembler) parseOperand(line fstring) (o operand, remain fstring, err error) {
 	switch {
 	case line.isEmpty():
-		o.modeGuess, remain = go6502.IMP, line
+		o.modeGuess, remain = cpu.IMP, line
 		return
 
 	case line.startsWithChar('('):
@@ -1124,7 +1124,7 @@ func (a *assembler) parseOperand(line fstring) (o operand, remain fstring, err e
 		}
 
 	case line.startsWithChar('#'):
-		o.modeGuess = go6502.IMM
+		o.modeGuess = cpu.IMM
 		o.forceLSB = true
 		o.expr, remain, err = a.exprParser.parse(line.consume(1), a.scopeLabel, allowParentheses)
 		if err != nil {
@@ -1133,7 +1133,7 @@ func (a *assembler) parseOperand(line fstring) (o operand, remain fstring, err e
 		}
 
 	case line.startsWithChar('/'):
-		o.modeGuess = go6502.IMM
+		o.modeGuess = cpu.IMM
 		o.forceMSB = true
 		o.expr, remain, err = a.exprParser.parse(line.consume(1), a.scopeLabel, allowParentheses)
 		if err != nil {
@@ -1264,40 +1264,40 @@ func relOffset(addr1, addr2 int) (byte, error) {
 // Given an opcode and operand data, select the best 6502
 // instruction match. Prefer the instruction with the shortest
 // total length.
-func (a *assembler) findMatchingInstruction(opcode fstring, operand operand) *go6502.Instruction {
+func (a *assembler) findMatchingInstruction(opcode fstring, operand operand) *cpu.Instruction {
 	bestqual := 3
-	var found *go6502.Instruction
+	var found *cpu.Instruction
 	for _, inst := range a.instSet.GetInstructions(opcode.str) {
 		match, qual := false, 0
 		switch {
-		case inst.Mode == go6502.IMP || inst.Mode == go6502.ACC:
-			match, qual = (operand.modeGuess == go6502.IMP) && (operand.size() == 0), 0
+		case inst.Mode == cpu.IMP || inst.Mode == cpu.ACC:
+			match, qual = (operand.modeGuess == cpu.IMP) && (operand.size() == 0), 0
 		case operand.size() == 0:
 			match = false
-		case inst.Mode == go6502.IMM:
-			match, qual = (operand.modeGuess == go6502.IMM) && (operand.size() == 1), 1
-		case inst.Mode == go6502.REL:
-			match, qual = (operand.modeGuess == go6502.ABS), 1
-		case inst.Mode == go6502.ZPG:
-			match, qual = (operand.modeGuess == go6502.ABS) && (operand.size() == 1), 1
-		case inst.Mode == go6502.ZPX:
-			match, qual = (operand.modeGuess == go6502.ABX) && (operand.size() == 1), 1
-		case inst.Mode == go6502.ZPY:
-			match, qual = (operand.modeGuess == go6502.ABY) && (operand.size() == 1), 1
-		case inst.Mode == go6502.ABS:
-			match, qual = (operand.modeGuess == go6502.ABS), 2
-		case inst.Mode == go6502.ABX:
-			match, qual = (operand.modeGuess == go6502.ABX), 2
-		case inst.Mode == go6502.ABY:
-			match, qual = (operand.modeGuess == go6502.ABY), 2
-		case inst.Mode == go6502.IND && inst.Length == 3:
-			match, qual = (operand.modeGuess == go6502.IND), 2
-		case inst.Mode == go6502.IND && inst.Length == 2:
-			match, qual = (operand.modeGuess == go6502.IND) && (operand.size() == 1), 1
-		case inst.Mode == go6502.IDX:
-			match, qual = (operand.modeGuess == go6502.IDX) && (operand.size() == 1), 1
-		case inst.Mode == go6502.IDY:
-			match, qual = (operand.modeGuess == go6502.IDY) && (operand.size() == 1), 1
+		case inst.Mode == cpu.IMM:
+			match, qual = (operand.modeGuess == cpu.IMM) && (operand.size() == 1), 1
+		case inst.Mode == cpu.REL:
+			match, qual = (operand.modeGuess == cpu.ABS), 1
+		case inst.Mode == cpu.ZPG:
+			match, qual = (operand.modeGuess == cpu.ABS) && (operand.size() == 1), 1
+		case inst.Mode == cpu.ZPX:
+			match, qual = (operand.modeGuess == cpu.ABX) && (operand.size() == 1), 1
+		case inst.Mode == cpu.ZPY:
+			match, qual = (operand.modeGuess == cpu.ABY) && (operand.size() == 1), 1
+		case inst.Mode == cpu.ABS:
+			match, qual = (operand.modeGuess == cpu.ABS), 2
+		case inst.Mode == cpu.ABX:
+			match, qual = (operand.modeGuess == cpu.ABX), 2
+		case inst.Mode == cpu.ABY:
+			match, qual = (operand.modeGuess == cpu.ABY), 2
+		case inst.Mode == cpu.IND && inst.Length == 3:
+			match, qual = (operand.modeGuess == cpu.IND), 2
+		case inst.Mode == cpu.IND && inst.Length == 2:
+			match, qual = (operand.modeGuess == cpu.IND) && (operand.size() == 1), 1
+		case inst.Mode == cpu.IDX:
+			match, qual = (operand.modeGuess == cpu.IDX) && (operand.size() == 1), 1
+		case inst.Mode == cpu.IDY:
+			match, qual = (operand.modeGuess == cpu.IDY) && (operand.size() == 1), 1
 		}
 		if match && qual < bestqual {
 			bestqual, found = qual, inst
@@ -1309,16 +1309,16 @@ func (a *assembler) findMatchingInstruction(opcode fstring, operand operand) *go
 // Consume an operand expression starting with '(' until
 // an indirect addressing mode substring is reached. Return
 // the candidate addressing mode and expression substring.
-func (l fstring) consumeIndirect() (mode go6502.Mode, expr fstring, remain fstring, err error) {
+func (l fstring) consumeIndirect() (mode cpu.Mode, expr fstring, remain fstring, err error) {
 	expr, remain = l.consumeUntil(func(c byte) bool { return c == ',' || c == ')' })
 
 	switch {
 	case remain.startsWithString(",X)"):
-		mode, remain = go6502.IDX, remain.consume(3)
+		mode, remain = cpu.IDX, remain.consume(3)
 	case remain.startsWithString("),Y"):
-		mode, remain = go6502.IDY, remain.consume(3)
+		mode, remain = cpu.IDY, remain.consume(3)
 	case remain.startsWithChar(')'):
-		mode, remain = go6502.IND, remain.consume(1)
+		mode, remain = cpu.IND, remain.consume(1)
 	default:
 		err = errParse
 	}
@@ -1334,16 +1334,16 @@ func (l fstring) consumeIndirect() (mode go6502.Mode, expr fstring, remain fstri
 // Consume an absolute operand expression until an absolute
 // addressing mode substring is reached. Guess the addressing mode,
 // and return the expression substring.
-func (l fstring) consumeAbsolute() (mode go6502.Mode, expr fstring, remain fstring, err error) {
+func (l fstring) consumeAbsolute() (mode cpu.Mode, expr fstring, remain fstring, err error) {
 	expr, remain = l.consumeUntilChar(',')
 
 	switch {
 	case remain.startsWithString(",X"):
-		mode, remain = go6502.ABX, remain.consume(2)
+		mode, remain = cpu.ABX, remain.consume(2)
 	case remain.startsWithString(",Y"):
-		mode, remain = go6502.ABY, remain.consume(2)
+		mode, remain = cpu.ABY, remain.consume(2)
 	default:
-		mode = go6502.ABS
+		mode = cpu.ABS
 	}
 
 	remain = remain.consumeWhitespace()

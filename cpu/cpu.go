@@ -1,10 +1,10 @@
-// Copyright 2014 Brett Vickers. All rights reserved.
+// Copyright 2014-2018 Brett Vickers. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package go6502 implements a 6502 CPU instruction
+// Package cpu implements a 6502 CPU instruction
 // set and emulator.
-package go6502
+package cpu
 
 // Architecture selects the CPU chip: 6502 or 65c02
 type Architecture byte

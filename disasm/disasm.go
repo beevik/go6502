@@ -1,4 +1,4 @@
-// Copyright 2014 Brett Vickers. All rights reserved.
+// Copyright 2014-2018 Brett Vickers. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -9,7 +9,7 @@ package disasm
 import (
 	"fmt"
 
-	"github.com/beevik/go6502"
+	"github.com/beevik/go6502/cpu"
 )
 
 // Disassembler formatting for addressing modes
@@ -47,16 +47,16 @@ func hexString(b []byte) string {
 // Disassemble the machine code in memory 'm' at address 'addr'. Return a
 // 'line' string representing the disassembled instruction and a 'next'
 // address that starts the following line of machine code.
-func Disassemble(m go6502.Memory, addr uint16) (line string, next uint16) {
+func Disassemble(m cpu.Memory, addr uint16) (line string, next uint16) {
 	opcode := m.LoadByte(addr)
-	set := go6502.GetInstructionSet(go6502.CMOS)
+	set := cpu.GetInstructionSet(cpu.CMOS)
 	inst := set.Lookup(opcode)
 
 	var buf [2]byte
 	operand := buf[:inst.Length-1]
 	m.LoadBytes(addr+1, operand)
 
-	if inst.Mode == go6502.REL {
+	if inst.Mode == cpu.REL {
 		// Convert relative offset to absolute address.
 		operand = buf[:2]
 		braddr := int(addr) + int(inst.Length+operand[0])
@@ -74,7 +74,7 @@ func Disassemble(m go6502.Memory, addr uint16) (line string, next uint16) {
 
 // GetRegisterString returns a string describing the contents of the 6502
 // register.
-func GetRegisterString(r *go6502.Registers) string {
+func GetRegisterString(r *cpu.Registers) string {
 	v := func(bit bool, ch byte) byte {
 		if bit {
 			return ch
