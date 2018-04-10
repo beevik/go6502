@@ -38,173 +38,225 @@ func init() {
 		{
 			Name:     "help",
 			Shortcut: "?",
-			Param:    (*Host).cmdHelp,
+			Data:     (*Host).cmdHelp,
 		},
 		{
-			Name:        "annotate",
-			Description: "Annotate an address",
-			HelpText:    "Syntax: annotate <address> <string>",
-			Param:       (*Host).cmdAnnotate,
+			Name:  "annotate",
+			Brief: "Annotate an address",
+			Description: "Provide a code annotation at a memory address." +
+				" When disassembling code at this address, the annotation will" +
+				" be displayed.",
+			HelpText: "annotate <address> <string>",
+			Data:     (*Host).cmdAnnotate,
 		},
 		{
-			Name:        "assemble",
-			Shortcut:    "a",
-			Description: "Assemble a file and save the binary",
-			HelpText:    "Syntax: assemble <filename>",
-			Param:       (*Host).cmdAssemble,
+			Name:     "assemble",
+			Shortcut: "a",
+			Brief:    "Assemble a file and save the binary",
+			Description: "Run the cross-assembler on the specified file," +
+				" producing a binary file and source map file if successful.",
+			HelpText: "assemble <filename>",
+			Data:     (*Host).cmdAssemble,
 		},
 		{
-			Name:        "breakpoint",
-			Shortcut:    "b",
-			Description: "Breakpoint commands",
+			Name:     "breakpoint",
+			Shortcut: "b",
+			Brief:    "Breakpoint commands",
 			Subcommands: cmd.NewTree("Breakpoint", []cmd.Command{
 				{
 					Name:        "list",
-					Description: "List breakpoints",
-					HelpText:    "Syntax: breakpoint list",
-					Param:       (*Host).cmdBreakpointList,
+					Brief:       "List breakpoints",
+					Description: "List all current breakpoints.",
+					HelpText:    "breakpoint list",
+					Data:        (*Host).cmdBreakpointList,
 				},
 				{
-					Name:        "add",
-					Description: "Add a breakpoint",
-					HelpText:    "Syntax: breakpoint add <address>",
-					Param:       (*Host).cmdBreakpointAdd,
+					Name:  "add",
+					Brief: "Add a breakpoint",
+					Description: "Add a breakpoint at the specified address." +
+						" The breakpoints starts enabled.",
+					HelpText: "breakpoint add <address>",
+					Data:     (*Host).cmdBreakpointAdd,
 				},
 				{
 					Name:        "remove",
-					Description: "Remove a breakpoint",
-					HelpText:    "Syntax: breakpoint remove <address>",
-					Param:       (*Host).cmdBreakpointRemove,
+					Brief:       "Remove a breakpoint",
+					Description: "Remove a breakpoint at the specified address.",
+					HelpText:    "breakpoint remove <address>",
+					Data:        (*Host).cmdBreakpointRemove,
 				},
 				{
 					Name:        "enable",
-					Description: "Enable a breakpoint",
-					HelpText:    "Syntax: breakpoint enable <address>",
-					Param:       (*Host).cmdBreakpointEnable,
+					Brief:       "Enable a breakpoint",
+					Description: "Enable a previously added breakpoint.",
+					HelpText:    "breakpoint enable <address>",
+					Data:        (*Host).cmdBreakpointEnable,
 				},
 				{
-					Name:        "disable",
-					Description: "Disable a breakpoint",
-					HelpText:    "Syntax: breakpoint disable <address>",
-					Param:       (*Host).cmdBreakpointDisable,
+					Name:  "disable",
+					Brief: "Disable a breakpoint",
+					Description: "Disable a previously added breakpoint. This" +
+						" prevents the breakpoint from being hit when running the" +
+						" CPU",
+					HelpText: "breakpoint disable <address>",
+					Data:     (*Host).cmdBreakpointDisable,
 				},
 			}),
 		},
 		{
-			Name:        "databreakpoint",
-			Shortcut:    "db",
-			Description: "Data breakpoint commands",
+			Name:     "databreakpoint",
+			Shortcut: "db",
+			Brief:    "Data breakpoint commands",
 			Subcommands: cmd.NewTree("Data breakpoint", []cmd.Command{
 				{
 					Name:        "list",
-					Description: "List data breakpoints",
-					HelpText:    "Syntax: databreakpoint list",
-					Param:       (*Host).cmdDataBreakpointList,
+					Brief:       "List data breakpoints",
+					Description: "List all current data breakpoints.",
+					HelpText:    "databreakpoint list",
+					Data:        (*Host).cmdDataBreakpointList,
 				},
 				{
-					Name:        "add",
-					Description: "Add a data breakpoint",
-					HelpText:    "Syntax: databreakpoint add <address> [<value>]",
-					Param:       (*Host).cmdDataBreakpointAdd,
+					Name:  "add",
+					Brief: "Add a data breakpoint",
+					Description: "Add a new data breakpoint at the specified" +
+						" memory address. When the CPU stores data at this address, the " +
+						" breakpoint will stop the CPU. Optionally, a byte " +
+						" value may be specified, and the CPU will stop only " +
+						" when this value is stored. The data breakpoint starts" +
+						" enabled.",
+					HelpText: "databreakpoint add <address> [<value>]",
+					Data:     (*Host).cmdDataBreakpointAdd,
 				},
 				{
-					Name:        "remove",
-					Description: "Remove a data breakpoint",
-					HelpText:    "Syntax: databreakpoint remove <address>",
-					Param:       (*Host).cmdDataBreakpointRemove,
+					Name:  "remove",
+					Brief: "Remove a data breakpoint",
+					Description: "Remove a previously added data breakpoint at" +
+						" the specified memory address.",
+					HelpText: "databreakpoint remove <address>",
+					Data:     (*Host).cmdDataBreakpointRemove,
 				},
 				{
 					Name:        "enable",
-					Description: "Enable a data breakpoint",
-					HelpText:    "Syntax: databreakpoint enable <address>",
-					Param:       (*Host).cmdDataBreakpointEnable,
+					Brief:       "Enable a data breakpoint",
+					Description: "Enable a previously added breakpoint.",
+					HelpText:    "databreakpoint enable <address>",
+					Data:        (*Host).cmdDataBreakpointEnable,
 				},
 				{
 					Name:        "disable",
-					Description: "Disable a data breakpoint",
-					HelpText:    "Syntax: databreakpoint disable <address>",
-					Param:       (*Host).cmdDataBreakpointDisable,
+					Brief:       "Disable a data breakpoint",
+					Description: "Disable a previously added breakpoint.",
+					HelpText:    "databreakpoint disable <address>",
+					Data:        (*Host).cmdDataBreakpointDisable,
 				},
 			}),
 		},
 		{
-			Name:        "disassemble",
-			Shortcut:    "d",
-			Description: "Disassemble code",
-			HelpText:    "Syntax: disassemble <address> [<count>]",
-			Param:       (*Host).cmdDisassemble,
+			Name:     "disassemble",
+			Shortcut: "d",
+			Brief:    "Disassemble code",
+			Description: "Disassemble machine code starting at the requested" +
+				" address. The number of instructions to disassemble may be" +
+				" specified as an option.",
+			HelpText: "disassemble <address> [<count>]",
+			Data:     (*Host).cmdDisassemble,
 		},
 		{
 			Name:        "evaluate",
 			Shortcut:    "e",
-			Description: "Evaluate an expression",
-			HelpText:    "Syntax: evaluate <expression>",
-			Param:       (*Host).cmdEval,
+			Brief:       "Evaluate an expression",
+			Description: "Evaluate a mathemetical expression.",
+			HelpText:    "evaluate <expression>",
+			Data:        (*Host).cmdEval,
 		},
 		{
-			Name:        "exports",
-			Description: "List exported addresses",
-			HelpText:    "Syntax: exports",
-			Param:       (*Host).cmdExports,
+			Name:  "exports",
+			Brief: "List exported addresses",
+			Description: "Display a list of all memory addresses exported by" +
+				" loaded binary files. Exported addresses are stored in a binary" +
+				" file's associated source map file.",
+			HelpText: "exports",
+			Data:     (*Host).cmdExports,
 		},
 		{
-			Name:        "load",
-			Description: "Load a binary file",
-			HelpText:    "Syntax: load <filename>",
-			Param:       (*Host).cmdLoad,
+			Name:  "load",
+			Brief: "Load a binary file",
+			Description: "Load the contents of a binary file into the emulated" +
+				" system's memory. If the file has an associated source map, it" +
+				" will be loaded too. If the file contains raw binary data, you must" +
+				" specify the address where the data will be loaded.",
+			HelpText: "load <filename> [<address>]",
+			Data:     (*Host).cmdLoad,
 		},
 		{
-			Name:        "memory",
-			Description: "Memory commands",
+			Name:  "memory",
+			Brief: "Memory commands",
 			Subcommands: cmd.NewTree("Memory", []cmd.Command{
 				{
-					Name:        "dump",
-					Description: "Dump memory starting at address",
-					HelpText:    "Syntax: memory <address> [<count>]",
-					Param:       (*Host).cmdMemoryDump,
+					Name:  "dump",
+					Brief: "Dump memory at address",
+					Description: "Dump the contents of memory starting from the" +
+						" specified address. The number of bytes to dump may be" +
+						" specified as an option.",
+					HelpText: "memory <address> [<bytes>]",
+					Data:     (*Host).cmdMemoryDump,
 				},
 			}),
 		},
 		{
 			Name:        "quit",
-			Description: "Quit the program",
-			HelpText:    "Syntax: quit",
-			Param:       (*Host).cmdQuit,
+			Brief:       "Quit the program",
+			Description: "Quit the program.",
+			HelpText:    "quit",
+			Data:        (*Host).cmdQuit,
 		},
 		{
-			Name:        "registers",
-			Shortcut:    "r",
-			Description: "Display register contents",
-			HelpText:    "Syntax: registers",
-			Param:       (*Host).cmdRegisters,
+			Name:     "registers",
+			Shortcut: "r",
+			Brief:    "Display register contents",
+			Description: "Display the current contents of all CPU registers, and" +
+				" disassemble the instruction at the current program counter address.",
+			HelpText: "registers",
+			Data:     (*Host).cmdRegisters,
 		},
 		{
-			Name:        "run",
-			Description: "Run the CPU",
-			HelpText:    "Syntax: run",
-			Param:       (*Host).cmdRun,
+			Name:  "run",
+			Brief: "Run the CPU",
+			Description: "Run the CPU until a breakpoint is hit or until the " +
+				"user types Ctrl-C.",
+			HelpText: "run",
+			Data:     (*Host).cmdRun,
 		},
 		{
-			Name:        "set",
-			Description: "Set a host setting",
-			HelpText:    "Syntax: set <setting> <value>",
-			Param:       (*Host).cmdSet,
+			Name:  "set",
+			Brief: "Set a configuration variable",
+			Description: "Set the value of a configuration variable. Type the set" +
+				" command without a variable name or value to display the current" +
+				" values of all configuration variables.",
+			HelpText: "set <var> <value>",
+			Data:     (*Host).cmdSet,
 		},
 		{
-			Name:        "step",
-			Description: "Step the debugger",
+			Name:  "step",
+			Brief: "Step the debugger",
 			Subcommands: cmd.NewTree("Step", []cmd.Command{
 				{
-					Name:        "in",
-					Description: "Step in to routine",
-					HelpText:    "Syntax: step in [<count>]",
-					Param:       (*Host).cmdStepIn,
+					Name:  "in",
+					Brief: "Step into next instruction",
+					Description: "Step the CPU by a single instruction. If the" +
+						" instruction is a subroutine call, step into the subroutine." +
+						" The number of steps may be specified as an option.",
+					HelpText: "step in [<count>]",
+					Data:     (*Host).cmdStepIn,
 				},
 				{
-					Name:        "over",
-					Description: "Step over a routine",
-					HelpText:    "Syntax: step over [<count>]",
-					Param:       (*Host).cmdStepOver,
+					Name:  "over",
+					Brief: "Step over next instruction",
+					Description: "Step the CPU by a single instruction. If the" +
+						" instruction is a subroutine call, step over the subroutine." +
+						" The number of steps may be specified as an option.",
+					HelpText: "step over [<count>]",
+					Data:     (*Host).cmdStepOver,
 				},
 			}),
 		},
@@ -327,7 +379,7 @@ func (h *Host) RunCommands(r io.Reader, w io.Writer, interactive bool) {
 		}
 		h.lastCmd = &c
 
-		handler := c.Command.Param.(func(*Host, cmd.Selection) error)
+		handler := c.Command.Data.(func(*Host, cmd.Selection) error)
 		err = handler(h, c)
 		if err != nil {
 			break
@@ -769,7 +821,7 @@ func (h *Host) cmdEval(c cmd.Selection) error {
 func (h *Host) cmdHelp(c cmd.Selection) error {
 	switch {
 	case len(c.Args) == 0:
-		h.displayCommandList(cmds)
+		h.displayCommands(cmds)
 	default:
 		s, err := cmds.Lookup(strings.Join(c.Args, " "))
 		if err != nil {
@@ -777,9 +829,17 @@ func (h *Host) cmdHelp(c cmd.Selection) error {
 		} else {
 			switch {
 			case s.Command.Subcommands != nil:
-				h.displayCommandList(s.Command.Subcommands)
+				h.displayCommands(s.Command.Subcommands)
 			default:
-				h.displayHelpText(s.Command)
+				if s.Command.HelpText != "" {
+					h.printf("Syntax: %s\n\n", s.Command.HelpText)
+				}
+				switch {
+				case s.Command.Description != "":
+					h.printf("Description:\n%s\n\n", indentWrap(3, s.Command.Description))
+				case s.Command.Brief != "":
+					h.printf("Description:\n%s.\n\n", indentWrap(3, s.Command.Brief))
+				}
 			}
 		}
 	}
@@ -891,7 +951,7 @@ func (h *Host) cmdRun(c cmd.Selection) error {
 func (h *Host) cmdSet(c cmd.Selection) error {
 	switch len(c.Args) {
 	case 0:
-		h.println("Settings:")
+		h.println("Variables:")
 		h.settings.Display(h.output)
 
 	case 1:
@@ -1227,17 +1287,17 @@ func (h *Host) dumpMemory(addr0, bytes uint16) {
 
 func (h *Host) displayHelpText(c *cmd.Command) {
 	if c.HelpText != "" {
-		h.println(c.HelpText)
+		h.printf("Syntax: %s\n", c.HelpText)
 	} else {
-		h.println()
+		h.println("<no help text>")
 	}
 }
 
-func (h *Host) displayCommandList(commands *cmd.Tree) {
+func (h *Host) displayCommands(commands *cmd.Tree) {
 	h.printf("%s commands:\n", commands.Title)
 	for _, c := range commands.Commands {
-		if c.Description != "" {
-			h.printf("    %-15s  %s\n", c.Name, c.Description)
+		if c.Brief != "" {
+			h.printf("    %-15s  %s\n", c.Name, c.Brief)
 		}
 	}
 }

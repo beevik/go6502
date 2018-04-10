@@ -7,7 +7,7 @@ go6502 is a collection of go packages that emulate a 6502 or 65C02 CPU. It
 includes a CPU emulator, a cross-assembler, a disassembler, a debugger, and a
 host that wraps them all together.
 
-The interactive go6502 console application is in the root directory provides
+The interactive go6502 console application in the root directory provides
 access to all of these features.
 
 # Tutorial
@@ -64,9 +64,9 @@ Register PC set to $1000.
 *
 ```
 
-The output shows the result of go6502 running each command in the sample
-script. Once the script is finished running, go6502 enters interactive mode
-and provides a `*` prompt for further input.
+The output shows the result of running each sample script command. Once the
+script has finished running, go6502 enters interactive mode and displays a `*`
+prompt for further input.
 
 Just before the prompt is a line starting with `1000-`. This line displays the
 disassembly of the instruction at the current program counter address and the
@@ -93,7 +93,7 @@ go6502 commands:
     quit             Quit the program
     registers        Display register contents
     run              Run the CPU
-    set              Set a host setting
+    set              Set a configuration variable
     step             Step the debugger
 ```
 
@@ -104,12 +104,39 @@ the command. Let's try `help step`.
 ```
 * help step
 Step commands:
-    in               Step in to routine
-    over             Step over a routine
+    in               Step into next instruction
+    over             Step over next instruction
 ```
 
 This output tells you that the `step` command requires an `in` or `over`
-subcommand.  For example, to step the debugger into a routine, type `step in`.
+subcommand.  For example, if you wanted to step the debugger into an 
+instruction, you would need to type `step in`.
+
+Now let's get help on the `step in` command.
+
+```
+* help step in
+Syntax: step in [<count>]
+
+Description:
+   Step the CPU by a single instruction. If the instruction is a subroutine
+   call, step into the subroutine. The number of steps may be specified as an
+   option.
+
+*
+```
+
+## Abbreviating commands
+
+The go6502 application uses a "shortest unambiguous match" parser to process
+commands. This means that when entering a command, you may type the smallest
+number of characters that uniquely identify it.  For instance, instead of
+typing `quit`, you may type `q` because there are no other commands that
+start with the letter Q.
+
+Many commands also have shortcuts. For instance, the shortcut for `breakpoint add`
+is `ba`. To discover a command's shortcuts, use the `help` command on it
+(_coming soon_).
 
 ## Stepping the CPU
 
@@ -125,16 +152,15 @@ instruction. Type `step in`.
 
 By typing `step in`, you told the emulated CPU to execute the `LDX #$EE`
 instruction at address `1000`. This advanced the program counter to `1002`,
-loaded the value `EE` into the X register, and advanced the CPU cycle counter
+loaded the value `EE` into the X register, and increased the CPU cycle counter
 by 2 cycles.
 
 Each time go6502 advances the program counter interactively, it disassembles
-the instruction to be executed next (i.e., the instruction at the current
-program counter address). It also displays the current values of the CPU
-registers and cycle counter.
+the instruction to be executed next. It also displays the current values of
+the CPU registers and cycle counter.
 
-Many go6502 commands have aliases. The alias for the `step in` command is
-`si`. Now, type `si 4` to step into the next 4 instructions:
+The shortcut for the `step in` command is `si`. Let's type `si 4` to step the
+CPU by 4 instructions:
 
 ```
 1002-   A9 05       LDA   #$05      A=00 X=EE Y=00 PS=[N-----] SP=FF PC=1002 C=2
@@ -146,18 +172,18 @@ Many go6502 commands have aliases. The alias for the `step in` command is
 *
 ```
 
-This output shows that the CPU has stepped into the next 4 instructions
-starting at address `1002`.  Each executed instruction is disassembled and
-displayed along with the CPU's register values at the start of each
-instruction. In total, 18 CPU cycles have elapsed, and the program counter
-ends at address `1007`.  The instruction at `1007` is waiting to be executed.
+This output shows that the CPU has stepped the next 4 instructions starting at
+address `1002`.  Each executed instruction is disassembled and displayed along
+with the CPU's register values at the start of each instruction. In total, 18
+CPU cycles have elapsed, and the program counter ends at address `1007`.  The
+instruction at `1007` is waiting to be executed.
 
 Note that the `step in` command stepped _into_ the `JSR $1019` subroutine call
 rather than stepping _over_ it.  If you weren't interested in stepping through
 all the code inside the subroutine, you could have used the `step over`
 command instead. This would have caused the debugger to invisibly execute all
-instructions inside the subroutine, returning control to the application only
-after the `RTS` instruction has executed.
+instructions inside the subroutine, returning control to the go6502
+application only after the `RTS` instruction has executed.
 
 Since the CPU is about to execute another `JSR` instruction, let's try the
 `step over` command (or `s` for short).
@@ -173,11 +199,10 @@ After stepping over the `JSR` call at address `1007`, all of the instructions
 inside the subroutine at `101C` have been executed, and control has returned
 to go6502 at address `100A` after 52 CPU cycles have elapsed.
 
-## Shortcut: Hit Enter!
+## Another shortcut: hit Enter!
 
-One shortcut you will probably use frequently is entering a blank line at
-the command prompt. This causes go6502 to repeat the previously entered
-command.
+A shortcut you will probably use frequently is entering a blank line at the
+command prompt. This causes go6502 to repeat the previously entered command.
 
 Let's try hitting Enter twice to repeat the `step over` command two more
 times.
@@ -191,14 +216,14 @@ times.
 *
 ```
 
-As you can see, go6502 has stepped over two more `JSR` instructions,
-elapsing another 66 CPU cycles and leaving the program counter at `1010`.
+go6502 has stepped over two more `JSR` instructions, elapsing another 66 CPU
+cycles and leaving the program counter at `1010`.
 
 ## Disassembling code
 
 Now let's disassemble code at the current program counter address to get a
-preview of the code about to be executed. To do this, you can either type
-the `disassemble` command or the its shortcut, `d`.
+preview of the code about to be executed. To do this, you should type the
+`disassemble` command or its shortcut, `d`.
 
 ```
 * d .
@@ -215,9 +240,9 @@ the `disassemble` command or the its shortcut, `d`.
 *
 ```
 
-The `.` is shorthand for the current program counter address.  You may also
-pass an address or mathematical expression to disassemble code starting at any
-address:
+Note the `.` after the `d` command.  This is shorthand for the current program
+counter address.  You may also pass an address or mathematical expression to
+disassemble code starting from any address:
 
 ```
 * d START+2

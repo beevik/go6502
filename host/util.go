@@ -56,6 +56,39 @@ func intToBool(v int) bool {
 	return v != 0
 }
 
+func indentWrap(indent int, s string) string {
+	ss := strings.Fields(s)
+	if len(ss) == 0 {
+		return ""
+	}
+
+	counts := make([]int, 0)
+	count := 1
+	l := indent + len(ss[0])
+	for i := 1; i < len(ss); i++ {
+		if l+1+len(ss[i]) < 80 {
+			count++
+			l += 1 + len(ss[i])
+			continue
+		}
+
+		counts = append(counts, count)
+		count = 1
+		l = indent + len(ss[i])
+	}
+	counts = append(counts, count)
+
+	var lines []string
+	i := 0
+	for _, c := range counts {
+		line := strings.Repeat(" ", indent) + strings.Join(ss[i:i+c], " ")
+		lines = append(lines, line)
+		i += c
+	}
+
+	return strings.Join(lines, "\n")
+}
+
 var hexString = "0123456789ABCDEF"
 
 func addrToBuf(addr uint16, b []byte) {
