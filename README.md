@@ -116,12 +116,14 @@ Now let's get help on the `step in` command.
 
 ```
 * help step in
-Syntax: step in [<count>]
+Usage: step in [<count>]
 
 Description:
    Step the CPU by a single instruction. If the instruction is a subroutine
    call, step into the subroutine. The number of steps may be specified as an
    option.
+
+Shortcut: si
 
 *
 ```
@@ -221,9 +223,9 @@ cycles and leaving the program counter at `1010`.
 
 ## Disassembling code
 
-Now let's disassemble code at the current program counter address to get a
-preview of the code about to be executed. To do this, you should type the
-`disassemble` command or its shortcut, `d`.
+Now let's disassemble some code at the current program counter address to get
+a preview of the code about to be executed.  To do this, use the `disassemble`
+command or its shortcut `d`.
 
 ```
 * d .
@@ -260,7 +262,8 @@ disassemble code starting from any address:
 ```
 
 By default, go6502 disassembles 10 instructions, but you can disassemble a
-different number of instructions by specifying a second argument:
+different number of instructions by specifying a second argument to the
+command.
 
 ```
 * d . 3
@@ -271,7 +274,7 @@ different number of instructions by specifying a second argument:
 ```
 
 If you hit Enter after using a disassemble command, go6502 will continue
-disassembly from where it left off.
+disassembling code from where it left off.
 
 ```
 *
@@ -281,8 +284,8 @@ disassembly from where it left off.
 *
 ```
 
-If you don't like the number of instructions that go6502 disassembles by
-default, you can change it with the `set` command:
+If you don't like the number of instructions that go6502 is configured to
+disassemble by default, you can change it with the `set` command:
 
 ```
 * set DisasmLinesToDisplay 20
