@@ -36,6 +36,15 @@ const (
 	fileIndexChanged byte = 1 << 5
 )
 
+// NewSourceMap creates an empty source map.
+func NewSourceMap() *SourceMap {
+	return &SourceMap{
+		Files:   []string{},
+		Lines:   []SourceLine{},
+		Exports: []Export{},
+	}
+}
+
 // Search searches the source map for a mapping with the requested address.
 func (s *SourceMap) Search(addr int) (filename string, line int) {
 	i := sort.Search(len(s.Lines), func(i int) bool {
@@ -45,6 +54,77 @@ func (s *SourceMap) Search(addr int) (filename string, line int) {
 		return s.Files[s.Lines[i].FileIndex], s.Lines[i].Line
 	}
 	return "", -1
+}
+
+type merge struct {
+	addr     int
+	line     int
+	filename string
+	source   int
+}
+
+type byAddr []SourceLine
+
+func (a byAddr) Len() int           { return len(a) }
+func (a byAddr) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a byAddr) Less(i, j int) bool { return a[i].Address < a[j].Address }
+
+// MergeSourceMaps merges two source maps into one. Use this when you
+// are loading multiple source binaries into a single address space.
+func MergeSourceMaps(s1, s2 *SourceMap) *SourceMap {
+	fileCounter := make(map[string]int)
+	mergeByAddr := make(map[int]merge)
+
+	for _, l := range s1.Lines {
+		filename := s1.Files[l.FileIndex]
+		fileCounter[filename]++
+		mergeByAddr[l.Address] = merge{l.Address, l.Line, filename, 1}
+	}
+	for _, l := range s2.Lines {
+		filename := s2.Files[l.FileIndex]
+		fileCounter[filename]++
+		if m, ok := mergeByAddr[l.Address]; ok {
+			fileCounter[m.filename]--
+		}
+		mergeByAddr[l.Address] = merge{l.Address, l.Line, filename, 2}
+	}
+
+	files := make([]string, 0, len(fileCounter))
+	idCounter := 0
+	for k, v := range fileCounter {
+		if v > 0 {
+			fileCounter[k] = idCounter
+			idCounter++
+			files = append(files, k)
+		}
+	}
+
+	lines := make([]SourceLine, 0, len(mergeByAddr))
+	for k, v := range mergeByAddr {
+		line := SourceLine{k, fileCounter[v.filename], v.line}
+		lines = append(lines, line)
+	}
+
+	sort.Sort(byAddr(lines))
+
+	exportMap := make(map[string]bool)
+	exports := make([]Export, 0, len(s1.Exports)+len(s2.Exports))
+	for _, e := range s2.Exports {
+		exports = append(exports, e)
+		exportMap[e.Label] = true
+	}
+	for _, e := range s1.Exports {
+		if _, ok := exportMap[e.Label]; !ok {
+			exports = append(exports, e)
+			exportMap[e.Label] = true
+		}
+	}
+
+	return &SourceMap{
+		Files:   files,
+		Exports: exports,
+		Lines:   lines,
+	}
 }
 
 // ReadFrom reads the contents of an assembly source map.
@@ -79,7 +159,7 @@ func (s *SourceMap) ReadFrom(r io.Reader) (n int64, err error) {
 		s.Files[i] = file[:len(file)-1]
 	}
 
-	s.Lines = make([]SourceLine, lineCount)
+	s.Lines = make([]SourceLine, 0, lineCount)
 	if lineCount > 0 {
 		var line SourceLine
 		for i := 0; i < lineCount; i++ {

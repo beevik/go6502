@@ -267,6 +267,7 @@ func init() {
 	// Add command shortcuts.
 	root.AddShortcut("?", "help")
 	root.AddShortcut("a", "assemble")
+	root.AddShortcut("b", "breakpoint")
 	root.AddShortcut("bp", "breakpoint")
 	root.AddShortcut("ba", "breakpoint add")
 	root.AddShortcut("br", "breakpoint remove")
@@ -274,6 +275,7 @@ func init() {
 	root.AddShortcut("be", "breakpoint enable")
 	root.AddShortcut("bd", "breakpoint disable")
 	root.AddShortcut("d", "disassemble")
+	root.AddShortcut("db", "databreakpoint")
 	root.AddShortcut("dbp", "databreakpoint")
 	root.AddShortcut("dbl", "databreakpoint list")
 	root.AddShortcut("dba", "databreakpoint add")
@@ -330,6 +332,7 @@ func New() *Host {
 	h := &Host{
 		state:       stateProcessingCommands,
 		exprParser:  newExprParser(),
+		sourceMap:   asm.NewSourceMap(),
 		settings:    newSettings(),
 		annotations: make(map[uint16]string),
 	}
@@ -807,7 +810,7 @@ func (h *Host) cmdDisassemble(c cmd.Selection) error {
 }
 
 func (h *Host) cmdExports(c cmd.Selection) error {
-	if h.sourceMap == nil || len(h.sourceMap.Exports) == 0 {
+	if len(h.sourceMap.Exports) == 0 {
 		h.println("No active exports.")
 		return nil
 	}
@@ -1156,12 +1159,17 @@ func (h *Host) load(filename string, addr int) (origin uint16, err error) {
 
 	file, err = os.Open(filename)
 	if err == nil {
-		h.sourceMap = &asm.SourceMap{}
-		_, err = h.sourceMap.ReadFrom(file)
+		sourceMap := asm.NewSourceMap()
+		_, err = sourceMap.ReadFrom(file)
 		if err != nil {
-			h.printf("Failed to read '%s': %v\n", filepath.Base(filename), err)
+			h.printf("Failed to read source map '%s': %v\n", filepath.Base(filename), err)
 		} else {
-			h.printf("Loaded '%s' source map\n", filepath.Base(filename))
+			h.printf("Loaded source map from '%s'\n", filepath.Base(filename))
+			if len(h.sourceMap.Files) == 0 {
+				h.sourceMap = sourceMap
+			} else {
+				h.sourceMap = asm.MergeSourceMaps(h.sourceMap, sourceMap)
+			}
 		}
 	}
 
@@ -1352,11 +1360,9 @@ func (h *Host) resolveIdentifier(s string) (int64, error) {
 		return int64(h.cpu.Reg.PC), nil
 	}
 
-	if h.sourceMap != nil {
-		for _, e := range h.sourceMap.Exports {
-			if strings.ToLower(e.Label) == s {
-				return int64(e.Addr), nil
-			}
+	for _, e := range h.sourceMap.Exports {
+		if strings.ToLower(e.Label) == s {
+			return int64(e.Addr), nil
 		}
 	}
 
