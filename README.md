@@ -1,3 +1,6 @@
+[![Build Status](https://travis-ci.org/beevik/go6502.svg?branch=master)](https://travis-ci.org/beevik/go6502)
+[![GoDoc](https://godoc.org/github.com/beevik/go6502?status.svg)](https://godoc.org/github.com/beevik/go6502)
+
 go6502
 ======
 
@@ -95,6 +98,8 @@ go6502 commands:
     run              Run the CPU
     set              Set a configuration variable
     step             Step the debugger
+
+*
 ```
 
 To get further help about a command, type `help` followed by the command name.
@@ -106,11 +111,13 @@ the command. Let's try `help step`.
 Step commands:
     in               Step into next instruction
     over             Step over next instruction
+
+*
 ```
 
-This output tells you that the `step` command requires an `in` or `over`
-subcommand.  For example, if you wanted to step the debugger into an 
-instruction, you would need to type `step in`.
+This response indicates that the `step` command has two possible subcommands.
+For example, if you wanted to step the CPU into the next instruction, you
+would type `step in`.
 
 Now let's get help on the `step in` command.
 
@@ -128,17 +135,20 @@ Shortcut: si
 *
 ```
 
+Every command has help text like this. Included in the help text is a
+description, a list of shortcuts that can be used to invoke the command, and a
+usage hint indicating the arguments the command accepts.
+
 ## Abbreviating commands
 
 The go6502 application uses a "shortest unambiguous match" parser to process
-commands. This means that when entering a command, you may type the smallest
-number of characters that uniquely identify it.  For instance, instead of
-typing `quit`, you may type `q` because there are no other commands that
-start with the letter Q.
+commands. This means that when entering a command, you need only type the
+smallest number of characters that uniquely identify it.  For instance,
+instead of typing `quit`, you can type `q` because no other commands start
+with the letter Q.
 
 Many commands also have shortcuts. For instance, the shortcut for `breakpoint add`
-is `ba`. To discover a command's shortcuts, use the `help` command on it
-(_coming soon_).
+is `ba`. To discover a command's shortcuts, use `help`.
 
 ## Stepping the CPU
 
@@ -176,16 +186,16 @@ CPU by 4 instructions:
 
 This output shows that the CPU has stepped the next 4 instructions starting at
 address `1002`.  Each executed instruction is disassembled and displayed along
-with the CPU's register values at the start of each instruction. In total, 18
-CPU cycles have elapsed, and the program counter ends at address `1007`.  The
-instruction at `1007` is waiting to be executed.
+with the CPU's register values at the start of each instruction. In this
+example, a total of 18 CPU cycles have elapsed, and the program counter ends
+at address `1007`.  The instruction at `1007` is waiting to be executed.
 
 Note that the `step in` command stepped _into_ the `JSR $1019` subroutine call
 rather than stepping _over_ it.  If you weren't interested in stepping through
 all the code inside the subroutine, you could have used the `step over`
 command instead. This would have caused the debugger to invisibly execute all
-instructions inside the subroutine, returning control to the go6502
-application only after the `RTS` instruction has executed.
+instructions inside the subroutine, returning the prompt only after the `RTS`
+instruction has executed.
 
 Since the CPU is about to execute another `JSR` instruction, let's try the
 `step over` command (or `s` for short).
@@ -199,7 +209,7 @@ Since the CPU is about to execute another `JSR` instruction, let's try the
 
 After stepping over the `JSR` call at address `1007`, all of the instructions
 inside the subroutine at `101C` have been executed, and control has returned
-to go6502 at address `100A` after 52 CPU cycles have elapsed.
+at address `100A` after 52 CPU cycles have elapsed.
 
 ## Another shortcut: hit Enter!
 
