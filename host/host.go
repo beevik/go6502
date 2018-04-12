@@ -199,6 +199,15 @@ func init() {
 		Usage: "memory dump <address> [<bytes>]",
 		Data:  (*Host).cmdMemoryDump,
 	})
+	mem.AddCommand(cmd.Command{
+		Name:  "set",
+		Brief: "Set memory at address",
+		Description: "Set the contents of memory starting from the specified" +
+			" address. The values to assign to memory should be a series of" +
+			" space-separated hexadecimal byte values.",
+		Usage: "memory set <address> <byte> [<byte> ...]",
+		Data:  (*Host).cmdMemorySet,
+	})
 	root.AddCommand(cmd.Command{
 		Name:    "memory",
 		Brief:   "Memory commands",
@@ -284,6 +293,7 @@ func init() {
 	root.AddShortcut("dbd", "databreakpoint disable")
 	root.AddShortcut("e", "evaluate")
 	root.AddShortcut("m", "memory dump")
+	root.AddShortcut("ms", "memory set")
 	root.AddShortcut("r", "registers")
 	root.AddShortcut("s", "step over")
 	root.AddShortcut("si", "step in")
@@ -906,23 +916,11 @@ func (h *Host) cmdMemoryDump(c cmd.Selection) error {
 
 	var addr uint16
 	if len(c.Args) > 0 {
-		switch c.Args[0] {
-		case "$":
-			addr = h.settings.NextMemDumpAddr
-			if addr == 0 {
-				addr = h.cpu.Reg.PC
-			}
-
-		case ".":
-			addr = h.cpu.Reg.PC
-
-		default:
-			a, err := h.parseExpr(c.Args[0])
-			if err != nil {
-				h.printf("%v\n", err)
-				return nil
-			}
-			addr = a
+		var err error
+		addr, err = h.parseAddr(c.Args[0])
+		if err != nil {
+			h.printf("%v\n", err)
+			return nil
 		}
 	}
 
@@ -940,6 +938,38 @@ func (h *Host) cmdMemoryDump(c cmd.Selection) error {
 
 	h.settings.NextMemDumpAddr = addr + bytes
 	h.lastCmd.Args = []string{"$", fmt.Sprintf("%d", bytes)}
+	return nil
+}
+
+func (h *Host) cmdMemorySet(c cmd.Selection) error {
+	if len(c.Args) < 2 {
+		h.displayUsage(c.Command)
+		return nil
+	}
+
+	addr, err := h.parseAddr(c.Args[0])
+	if err != nil {
+		h.printf("%v\n", err)
+		return nil
+	}
+
+	// Temporarily switch to hex mode.
+	hexModeOrig := h.exprParser.hexMode
+	h.exprParser.hexMode = true
+
+	for i := 1; i < len(c.Args); i++ {
+		v, err := h.parseExpr(c.Args[i])
+		if err != nil {
+			h.printf("%v\n", err)
+			return nil
+		}
+		h.mem.StoreByte(addr, byte(v))
+		addr++
+	}
+
+	// Restore original hex mode setting.
+	h.exprParser.hexMode = hexModeOrig
+
 	return nil
 }
 
@@ -1225,6 +1255,24 @@ func (h *Host) stepOver() {
 
 func (h *Host) onSettingsUpdate() {
 	h.exprParser.hexMode = h.settings.HexMode
+}
+
+func (h *Host) parseAddr(s string) (uint16, error) {
+	switch s {
+	case "$":
+		addr := h.settings.NextMemDumpAddr
+		if addr == 0 {
+			return h.cpu.Reg.PC, nil
+		} else {
+			return addr, nil
+		}
+
+	case ".":
+		return h.cpu.Reg.PC, nil
+
+	default:
+		return h.parseExpr(s)
+	}
 }
 
 func (h *Host) parseExpr(expr string) (uint16, error) {
