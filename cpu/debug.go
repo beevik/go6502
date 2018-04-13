@@ -4,6 +4,8 @@
 
 package cpu
 
+import "sort"
+
 // The Debugger interface may be implemented to intercept instructions before
 // and after they are executed on the emulated CPU.
 type Debugger struct {
@@ -45,6 +47,12 @@ func NewDebugger(handler DebuggerHandler) *Debugger {
 	}
 }
 
+type byBPAddr []*Breakpoint
+
+func (a byBPAddr) Len() int           { return len(a) }
+func (a byBPAddr) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a byBPAddr) Less(i, j int) bool { return a[i].Address < a[j].Address }
+
 // GetBreakpoint looks up a breakpoint by address and returns it if found.
 // Otherwise it returns nil.
 func (d *Debugger) GetBreakpoint(addr uint16) *Breakpoint {
@@ -60,6 +68,7 @@ func (d *Debugger) GetBreakpoints() []*Breakpoint {
 	for _, b := range d.breakpoints {
 		breakpoints = append(breakpoints, b)
 	}
+	sort.Sort(byBPAddr(breakpoints))
 	return breakpoints
 }
 
@@ -78,6 +87,12 @@ func (d *Debugger) RemoveBreakpoint(addr uint16) {
 	}
 }
 
+type byDBPAddr []*DataBreakpoint
+
+func (a byDBPAddr) Len() int           { return len(a) }
+func (a byDBPAddr) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a byDBPAddr) Less(i, j int) bool { return a[i].Address < a[j].Address }
+
 // GetDataBreakpoint looks up a data breakpoint on the provided address
 // and returns it if found. Otherwise it returns nil.
 func (d *Debugger) GetDataBreakpoint(addr uint16) *DataBreakpoint {
@@ -94,6 +109,7 @@ func (d *Debugger) GetDataBreakpoints() []*DataBreakpoint {
 	for _, b := range d.dataBreakpoints {
 		breakpoints = append(breakpoints, b)
 	}
+	sort.Sort(byDBPAddr(breakpoints))
 	return breakpoints
 }
 

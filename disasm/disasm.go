@@ -58,11 +58,8 @@ func Disassemble(m cpu.Memory, addr uint16) (line string, next uint16) {
 
 	if inst.Mode == cpu.REL {
 		// Convert relative offset to absolute address.
-		operand = buf[:2]
-		braddr := int(addr) + int(inst.Length+operand[0])
-		if operand[0] > 0x7f {
-			braddr -= 256
-		}
+		operand = buf[:]
+		braddr := int(addr) + int(inst.Length) + byteToInt(operand[0])
 		operand[0] = byte(braddr)
 		operand[1] = byte(braddr >> 8)
 	}
@@ -92,4 +89,11 @@ func GetRegisterString(r *cpu.Registers) string {
 
 	return fmt.Sprintf("A=%02X X=%02X Y=%02X PS=[%s] SP=%02X PC=%04X",
 		r.A, r.X, r.Y, string(b), r.SP, r.PC)
+}
+
+func byteToInt(b byte) int {
+	if b >= 0x80 {
+		return int(b) - 256
+	}
+	return int(b)
 }

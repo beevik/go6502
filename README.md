@@ -19,7 +19,7 @@ Let's start by considering the go6502 `sample.cmd` script:
 
 ```
 load monitor $F800
-assemble sample
+assemble file sample
 load sample
 set PC START
 d .

@@ -48,17 +48,39 @@ func init() {
 		Usage: "annotate <address> <string>",
 		Data:  (*Host).cmdAnnotate,
 	})
+
+	ass := cmd.NewTree("Assemble")
 	root.AddCommand(cmd.Command{
-		Name:  "assemble",
-		Brief: "Assemble a file and save the binary",
+		Name:    "assemble",
+		Brief:   "Assemble commands",
+		Subtree: ass,
+	})
+	ass.AddCommand(cmd.Command{
+		Name:  "file",
+		Brief: "Assemble a file from disk and save the binary to disk",
 		Description: "Run the cross-assembler on the specified file," +
 			" producing a binary file and source map file if successful.",
-		Usage: "assemble <filename>",
-		Data:  (*Host).cmdAssemble,
+		Usage: "assemble file <filename>",
+		Data:  (*Host).cmdAssembleFile,
+	})
+	ass.AddCommand(cmd.Command{
+		Name:  "interactive",
+		Brief: "Start interactive assembly mode",
+		Description: "Start the interactive assembler mode. A new prompt will" +
+			" appear, allowing you to end assembly language instructions that" +
+			" will be assembled and stored to memory starting at the specified" +
+			" address.",
+		Usage: "assemble interactive <address>",
+		Data:  (*Host).cmdAssembleInteractive,
 	})
 
 	// Breakpoint commands
 	bp := cmd.NewTree("Breakpoint")
+	root.AddCommand(cmd.Command{
+		Name:    "breakpoint",
+		Brief:   "Breakpoint commands",
+		Subtree: bp,
+	})
 	bp.AddCommand(cmd.Command{
 		Name:        "list",
 		Brief:       "List breakpoints",
@@ -97,14 +119,14 @@ func init() {
 		Usage: "breakpoint disable <address>",
 		Data:  (*Host).cmdBreakpointDisable,
 	})
-	root.AddCommand(cmd.Command{
-		Name:    "breakpoint",
-		Brief:   "Breakpoint commands",
-		Subtree: bp,
-	})
 
 	// Data breakpoint commands
 	dbp := cmd.NewTree("Data breakpoint")
+	root.AddCommand(cmd.Command{
+		Name:    "databreakpoint",
+		Brief:   "Data breakpoint commands",
+		Subtree: dbp,
+	})
 	dbp.AddCommand(cmd.Command{
 		Name:        "list",
 		Brief:       "List data breakpoints",
@@ -146,19 +168,15 @@ func init() {
 		Usage:       "databreakpoint disable <address>",
 		Data:        (*Host).cmdDataBreakpointDisable,
 	})
-	root.AddCommand(cmd.Command{
-		Name:    "databreakpoint",
-		Brief:   "Data breakpoint commands",
-		Subtree: dbp,
-	})
 
 	root.AddCommand(cmd.Command{
 		Name:  "disassemble",
 		Brief: "Disassemble code",
 		Description: "Disassemble machine code starting at the requested" +
 			" address. The number of instructions to disassemble may be" +
-			" specified as an option.",
-		Usage: "disassemble <address> [<count>]",
+			" specified as an option. If no address is specified, the" +
+			" disassembly continues from where the last disassembly left off.",
+		Usage: "disassemble [<address>] [<count>]",
 		Data:  (*Host).cmdDisassemble,
 	})
 	root.AddCommand(cmd.Command{
@@ -190,28 +208,30 @@ func init() {
 
 	// Memory commands
 	mem := cmd.NewTree("Memory")
+	root.AddCommand(cmd.Command{
+		Name:    "memory",
+		Brief:   "Memory commands",
+		Subtree: mem,
+	})
 	mem.AddCommand(cmd.Command{
 		Name:  "dump",
 		Brief: "Dump memory at address",
 		Description: "Dump the contents of memory starting from the" +
 			" specified address. The number of bytes to dump may be" +
-			" specified as an option.",
-		Usage: "memory dump <address> [<bytes>]",
+			" specified as an option. If no address is specified, the" +
+			" memory dump continues from where the last dump left off.",
+		Usage: "memory dump [<address>] [<bytes>]",
 		Data:  (*Host).cmdMemoryDump,
 	})
 	mem.AddCommand(cmd.Command{
 		Name:  "set",
 		Brief: "Set memory at address",
 		Description: "Set the contents of memory starting from the specified" +
-			" address. The values to assign to memory should be a series of" +
-			" space-separated hexadecimal byte values.",
+			" address. The values to assign should be a series of" +
+			" space-separated byte values. You may use an expression for each" +
+			" byte value.",
 		Usage: "memory set <address> <byte> [<byte> ...]",
 		Data:  (*Host).cmdMemorySet,
-	})
-	root.AddCommand(cmd.Command{
-		Name:    "memory",
-		Brief:   "Memory commands",
-		Subtree: mem,
 	})
 
 	root.AddCommand(cmd.Command{
@@ -240,15 +260,20 @@ func init() {
 	root.AddCommand(cmd.Command{
 		Name:  "set",
 		Brief: "Set a configuration variable",
-		Description: "Set the value of a configuration variable. Type the set" +
-			" command without a variable name or value to display the current" +
-			" values of all configuration variables.",
-		Usage: "set <var> <value>",
+		Description: "Set the value of a configuration variable. To see the" +
+			" current values of all configuration variables, type set" +
+			" without any arguments.",
+		Usage: "set [<var> <value>]",
 		Data:  (*Host).cmdSet,
 	})
 
 	// Step commands
 	step := cmd.NewTree("Step")
+	root.AddCommand(cmd.Command{
+		Name:    "step",
+		Brief:   "Step the debugger",
+		Subtree: step,
+	})
 	step.AddCommand(cmd.Command{
 		Name:  "in",
 		Brief: "Step into next instruction",
@@ -267,15 +292,10 @@ func init() {
 		Usage: "step over [<count>]",
 		Data:  (*Host).cmdStepOver,
 	})
-	root.AddCommand(cmd.Command{
-		Name:    "step",
-		Brief:   "Step the debugger",
-		Subtree: step,
-	})
 
 	// Add command shortcuts.
-	root.AddShortcut("?", "help")
-	root.AddShortcut("a", "assemble")
+	root.AddShortcut("a", "assemble file")
+	root.AddShortcut("ai", "assemble interactive")
 	root.AddShortcut("b", "breakpoint")
 	root.AddShortcut("bp", "breakpoint")
 	root.AddShortcut("ba", "breakpoint add")
@@ -297,6 +317,8 @@ func init() {
 	root.AddShortcut("r", "registers")
 	root.AddShortcut("s", "step over")
 	root.AddShortcut("si", "step in")
+	root.AddShortcut("?", "help")
+	root.AddShortcut(".", "registers")
 
 	cmds = root
 }
@@ -503,7 +525,7 @@ func (h *Host) cmdAnnotate(c cmd.Selection) error {
 	return nil
 }
 
-func (h *Host) cmdAssemble(c cmd.Selection) error {
+func (h *Host) cmdAssembleFile(c cmd.Selection) error {
 	if len(c.Args) < 1 {
 		h.displayUsage(c.Command)
 		return nil
@@ -568,11 +590,27 @@ func (h *Host) cmdAssemble(c cmd.Selection) error {
 	return nil
 }
 
+func (h *Host) cmdAssembleInteractive(c cmd.Selection) error {
+	return nil
+}
+
 func (h *Host) cmdBreakpointList(c cmd.Selection) error {
-	h.println("Addr  Enabled")
-	h.println("----- -------")
-	for _, b := range h.debugger.GetBreakpoints() {
-		h.printf("$%04X %v\n", b.Address, !b.Disabled)
+	bp := h.debugger.GetBreakpoints()
+	if len(bp) == 0 {
+		h.println("No breakpoints set.")
+		return nil
+	}
+
+	disabled := func(b *cpu.Breakpoint) string {
+		if b.Disabled {
+			return "(disabled)"
+		}
+		return ""
+	}
+
+	h.println("Breakpoints:")
+	for _, b := range bp {
+		h.printf("   $%04X %s\n", b.Address, disabled(b))
 	}
 	return nil
 }
@@ -663,13 +701,25 @@ func (h *Host) cmdBreakpointDisable(c cmd.Selection) error {
 }
 
 func (h *Host) cmdDataBreakpointList(c cmd.Selection) error {
-	h.println("Addr  Enabled  Value")
-	h.println("----- -------  -----")
+	bp := h.debugger.GetDataBreakpoints()
+	if len(bp) == 0 {
+		h.println("No data breakpoints set.")
+		return nil
+	}
+
+	disabled := func(d *cpu.DataBreakpoint) string {
+		if d.Disabled {
+			return "(disabled)"
+		}
+		return ""
+	}
+
+	h.println("Data breakpoints:")
 	for _, b := range h.debugger.GetDataBreakpoints() {
 		if b.Conditional {
-			h.printf("$%04X %-5v    $%02X\n", b.Address, !b.Disabled, b.Value)
+			h.printf("   $%04X on value $%02X %s\n", b.Address, b.Value, disabled(b))
 		} else {
-			h.printf("$%04X %-5v    <none>\n", b.Address, !b.Disabled)
+			h.printf("   $%04X %s\n", b.Address, disabled(b))
 		}
 	}
 	return nil
@@ -776,26 +826,10 @@ func (h *Host) cmdDisassemble(c cmd.Selection) error {
 		c.Args = []string{"$"}
 	}
 
-	var addr uint16
-	if len(c.Args) > 0 {
-		switch c.Args[0] {
-		case "$":
-			addr = h.settings.NextDisasmAddr
-			if addr == 0 {
-				addr = h.cpu.Reg.PC
-			}
-
-		case ".":
-			addr = h.cpu.Reg.PC
-
-		default:
-			a, err := h.parseExpr(c.Args[0])
-			if err != nil {
-				h.printf("%v\n", err)
-				return nil
-			}
-			addr = a
-		}
+	addr, err := h.parseAddr(c.Args[0], h.settings.NextDisasmAddr)
+	if err != nil {
+		h.printf("%v\n", err)
+		return nil
 	}
 
 	lines := h.settings.DisasmLinesToDisplay
@@ -909,15 +943,14 @@ func (h *Host) cmdLoad(c cmd.Selection) error {
 }
 
 func (h *Host) cmdMemoryDump(c cmd.Selection) error {
-	if len(c.Args) < 1 {
-		h.displayUsage(c.Command)
-		return nil
+	if len(c.Args) == 0 {
+		c.Args = []string{"$"}
 	}
 
 	var addr uint16
 	if len(c.Args) > 0 {
 		var err error
-		addr, err = h.parseAddr(c.Args[0])
+		addr, err = h.parseAddr(c.Args[0], h.settings.NextMemDumpAddr)
 		if err != nil {
 			h.printf("%v\n", err)
 			return nil
@@ -947,15 +980,11 @@ func (h *Host) cmdMemorySet(c cmd.Selection) error {
 		return nil
 	}
 
-	addr, err := h.parseAddr(c.Args[0])
+	addr, err := h.parseAddr(c.Args[0], h.settings.NextMemDumpAddr)
 	if err != nil {
 		h.printf("%v\n", err)
 		return nil
 	}
-
-	// Temporarily switch to hex mode.
-	hexModeOrig := h.exprParser.hexMode
-	h.exprParser.hexMode = true
 
 	for i := 1; i < len(c.Args); i++ {
 		v, err := h.parseExpr(c.Args[i])
@@ -966,9 +995,6 @@ func (h *Host) cmdMemorySet(c cmd.Selection) error {
 		h.mem.StoreByte(addr, byte(v))
 		addr++
 	}
-
-	// Restore original hex mode setting.
-	h.exprParser.hexMode = hexModeOrig
 
 	return nil
 }
@@ -1257,15 +1283,13 @@ func (h *Host) onSettingsUpdate() {
 	h.exprParser.hexMode = h.settings.HexMode
 }
 
-func (h *Host) parseAddr(s string) (uint16, error) {
+func (h *Host) parseAddr(s string, next uint16) (uint16, error) {
 	switch s {
 	case "$":
-		addr := h.settings.NextMemDumpAddr
-		if addr == 0 {
-			return h.cpu.Reg.PC, nil
-		} else {
-			return addr, nil
+		if next != 0 {
+			return next, nil
 		}
+		fallthrough
 
 	case ".":
 		return h.cpu.Reg.PC, nil

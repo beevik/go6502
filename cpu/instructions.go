@@ -526,7 +526,7 @@ func newInstructionSet(arch Architecture) *InstructionSet {
 		symToImpl[impl[i].sym] = &impl[i]
 	}
 
-	// Create a map from instruction name to the slice  of all instruction
+	// Create a map from instruction name to the slice of all instruction
 	// variants matching that name.
 	set.variants = make(map[string][]*Instruction)
 
