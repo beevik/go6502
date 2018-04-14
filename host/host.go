@@ -1224,7 +1224,7 @@ func (h *Host) load(filename string, addr int) (origin uint16, err error) {
 			if len(h.sourceMap.Files) == 0 {
 				h.sourceMap = sourceMap
 			} else {
-				h.sourceMap = asm.MergeSourceMaps(h.sourceMap, sourceMap)
+				h.sourceMap.Merge(sourceMap, int(origin), len(a.Code))
 			}
 		}
 	}

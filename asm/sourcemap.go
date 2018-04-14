@@ -69,62 +69,70 @@ func (a byAddr) Len() int           { return len(a) }
 func (a byAddr) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a byAddr) Less(i, j int) bool { return a[i].Address < a[j].Address }
 
-// MergeSourceMaps merges two source maps into one. Use this when you
-// are loading multiple source binaries into a single address space.
-func MergeSourceMaps(s1, s2 *SourceMap) *SourceMap {
-	fileCounter := make(map[string]int)
-	mergeByAddr := make(map[int]merge)
+// Merge merges another source map (s2) into this source map.
+func (s *SourceMap) Merge(s2 *SourceMap, origin2, size2 int) {
+	min := uint16(origin2)
+	max := uint16(origin2 + size2)
 
-	for _, l := range s1.Lines {
-		filename := s1.Files[l.FileIndex]
-		fileCounter[filename]++
-		mergeByAddr[l.Address] = merge{l.Address, l.Line, filename, 1}
-	}
-	for _, l := range s2.Lines {
-		filename := s2.Files[l.FileIndex]
-		fileCounter[filename]++
-		if m, ok := mergeByAddr[l.Address]; ok {
-			fileCounter[m.filename]--
-		}
-		mergeByAddr[l.Address] = merge{l.Address, l.Line, filename, 2}
-	}
-
-	files := make([]string, 0, len(fileCounter))
-	idCounter := 0
-	for k, v := range fileCounter {
-		if v > 0 {
-			fileCounter[k] = idCounter
-			idCounter++
-			files = append(files, k)
+	// Filter out original exports covered by the new map's address range.
+	exports := make([]Export, 0, len(s.Exports)+len(s2.Exports))
+	for _, e := range s.Exports {
+		if e.Addr < min || e.Addr > max {
+			exports = append(exports, e)
 		}
 	}
 
-	lines := make([]SourceLine, 0, len(mergeByAddr))
-	for k, v := range mergeByAddr {
-		line := SourceLine{k, fileCounter[v.filename], v.line}
-		lines = append(lines, line)
-	}
-
-	sort.Sort(byAddr(lines))
-
-	exportMap := make(map[string]bool)
-	exports := make([]Export, 0, len(s1.Exports)+len(s2.Exports))
+	// Add exports from the new map.
 	for _, e := range s2.Exports {
 		exports = append(exports, e)
-		exportMap[e.Label] = true
 	}
-	for _, e := range s1.Exports {
-		if _, ok := exportMap[e.Label]; !ok {
-			exports = append(exports, e)
-			exportMap[e.Label] = true
+
+	// Filter out original source lines covered by the new map's address
+	// range. Track only the files that remain referenced.
+	fileCount := 0
+	fileMap := make(map[string]int) // filename -> file index
+	lines := make([]SourceLine, 0, maxInt(len(s.Lines), len(s2.Lines)))
+	for _, l := range s.Lines {
+		if uint16(l.Address) < min || uint16(l.Address) >= max {
+			filename := s.Files[l.FileIndex]
+			if fileIndex, ok := fileMap[filename]; ok {
+				l.FileIndex = fileIndex
+			} else {
+				fileIndex = fileCount
+				fileMap[filename] = fileIndex
+				l.FileIndex = fileIndex
+				fileCount++
+			}
+			lines = append(lines, l)
 		}
 	}
 
-	return &SourceMap{
-		Files:   files,
-		Exports: exports,
-		Lines:   lines,
+	// Add source lines from the new map.
+	for _, l := range s2.Lines {
+		filename := s2.Files[l.FileIndex]
+		if fileIndex, ok := fileMap[filename]; ok {
+			l.FileIndex = fileIndex
+		} else {
+			fileIndex = fileCount
+			fileMap[filename] = fileIndex
+			l.FileIndex = fileIndex
+			fileCount++
+		}
+		lines = append(lines, l)
 	}
+
+	// Sort lines by address
+	sort.Sort(byAddr(lines))
+
+	// Build the files array from the file map.
+	files := make([]string, len(fileMap))
+	for f, i := range fileMap {
+		files[i] = f
+	}
+
+	s.Files = files
+	s.Lines = lines
+	s.Exports = exports
 }
 
 // ReadFrom reads the contents of an assembly source map.
