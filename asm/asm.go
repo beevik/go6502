@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"io/ioutil"
 	"os"
@@ -305,52 +306,24 @@ type Export struct {
 // the machine code.
 type Assembly struct {
 	Code   []byte   // Assembled machine code
-	Origin uint16   // Origin address of machine code
 	Errors []string // Errors encountered during assembly
 }
 
 // ReadFrom reads machine code from a binary input source.
 func (a *Assembly) ReadFrom(r io.Reader) (n int64, err error) {
-	b, err := ioutil.ReadAll(r)
-	n = int64(len(b))
-	if err != nil {
-		return n, err
-	}
-
-	a.Code = b
-	if len(b) >= 8 && string(b[:4]) == binSignature {
-		if b[4] != versionMajor || b[5] != versionMinor {
-			return n, errors.New("invalid file version")
-		}
-		a.Origin = uint16(b[6]) | uint16(b[7])<<8
-		a.Code = b[8:]
-	}
-
-	if int(a.Origin)+len(a.Code) > 0x10000 {
-		return n, fmt.Errorf("assembly exceeded 64K memory bounds")
-	}
-
 	a.Errors = []string{}
-	return n, nil
+	a.Code, err = ioutil.ReadAll(r)
+	n = int64(len(a.Code))
+	if n > 0x10000 {
+		return n, fmt.Errorf("code exceeded 64K size")
+	}
+	return n, err
 }
 
 // WriteTo saves machine code as binary data into an output writer.
 func (a *Assembly) WriteTo(w io.Writer) (n int64, err error) {
-	var hdr [8]byte
-	copy(hdr[:4], []byte(binSignature))
-	hdr[4] = versionMajor
-	hdr[5] = versionMinor
-	hdr[6] = byte(a.Origin)
-	hdr[7] = byte(a.Origin >> 8)
-	nn, err := w.Write(hdr[:])
-	n += int64(nn)
-	if err != nil {
-		return 0, err
-	}
-
-	nn, err = w.Write(a.Code)
-	n += int64(nn)
-	return n, err
+	nn, err := w.Write(a.Code)
+	return int64(nn), err
 }
 
 // Assemble reads data from the provided stream and attempts to assemble it
@@ -404,23 +377,19 @@ func Assemble(r io.Reader, filename string, verbose bool) (*Assembly, *SourceMap
 
 	assembly := &Assembly{
 		Code:   a.code,
-		Origin: uint16(a.origin),
 		Errors: errors,
 	}
 
 	sourceMap := &SourceMap{
+		Origin:  uint16(a.origin),
+		Size:    uint32(len(a.code)),
+		CRC:     crc32.ChecksumIEEE(a.code),
 		Files:   a.files,
 		Lines:   a.sourceLines,
 		Exports: a.exports,
 	}
 
 	return assembly, sourceMap, err
-}
-
-// ParseInstruction attempts to parse a line of assembly code. If successful
-// the best matching CPU instruction is returned.
-func ParseInstruction(line string) (inst *cpu.Instruction, err error) {
-	return nil, nil
 }
 
 // Read the assembly code and perform the initial parsing. Build up

@@ -17,8 +17,11 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
+	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -399,6 +402,63 @@ func (h *Host) cmdAssembleInteractive(c cmd.Selection) error {
 
 	h.println("Begin entering assembly instructions.")
 	h.println("Type END to assemble. Type Ctrl-C to cancel.")
+	return nil
+}
+
+func (h *Host) cmdAssembleMap(c cmd.Selection) error {
+	if len(c.Args) < 2 {
+		h.displayUsage(c.Command)
+		return nil
+	}
+
+	addr, err := h.parseAddr(c.Args[1], 0)
+	if err != nil {
+		h.println("Invalid origin address.")
+		return nil
+	}
+
+	filename := c.Args[0]
+	if path.Ext(filename) == "" {
+		filename = filename + ".bin"
+	}
+
+	file, err := os.Open(filename)
+	if err != nil {
+		h.printf("%v\n", err)
+		return nil
+	}
+	defer file.Close()
+
+	code, err := ioutil.ReadAll(file)
+	if err != nil {
+		h.printf("%v\n", err)
+		return nil
+	}
+	file.Close()
+
+	sourceMap := asm.NewSourceMap()
+	sourceMap.Origin = addr
+	sourceMap.Size = uint32(len(code))
+	sourceMap.CRC = crc32.ChecksumIEEE(code)
+
+	ext := filepath.Ext(filename)
+	filePrefix := filename[:len(filename)-len(ext)]
+	filename = filePrefix + ".map"
+
+	file, err = os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		h.printf("%v\n", err)
+		return nil
+	}
+
+	_, err = sourceMap.WriteTo(file)
+	if err != nil {
+		h.printf("%v\n", err)
+		return nil
+	}
+	file.Close()
+
+	h.printf("Saved source map '%s'.\n", filename)
 	return nil
 }
 
@@ -983,14 +1043,15 @@ func (h *Host) cmdStepOver(c cmd.Selection) error {
 
 func (h *Host) load(filename string, addr int) (origin uint16, err error) {
 	filename, err = filepath.Abs(filename)
+	basefile := filepath.Base(filename)
 	if err != nil {
-		h.printf("Failed to open '%s': %v\n", filepath.Base(filename), err)
+		h.printf("Failed to open '%s': %v\n", basefile, err)
 		return 0, nil
 	}
 
 	file, err := os.Open(filename)
 	if err != nil {
-		h.printf("Failed to open '%s': %v\n", filepath.Base(filename), err)
+		h.printf("Failed to open '%s': %v\n", basefile, err)
 		return 0, nil
 	}
 	defer file.Close()
@@ -998,48 +1059,60 @@ func (h *Host) load(filename string, addr int) (origin uint16, err error) {
 	a := &asm.Assembly{}
 	_, err = a.ReadFrom(file)
 	if err != nil {
-		h.printf("Failed to read '%s': %v\n", filepath.Base(filename), err)
+		h.printf("Failed to read '%s': %v\n", basefile, err)
 		return 0, nil
 	}
 
 	file.Close()
 
-	origin = a.Origin
-	if origin == 0 {
-		if addr == -1 {
-			h.printf("File '%s' has no signature and requires an address\n", filepath.Base(filename))
-			return 0, nil
-		}
-		origin = uint16(addr)
-	}
-
-	cpu := h.cpu
-	cpu.Mem.StoreBytes(origin, a.Code)
-	h.printf("Loaded '%s' to $%04X..$%04X\n", filepath.Base(filename), origin, int(origin)+len(a.Code)-1)
-
 	ext := filepath.Ext(filename)
 	filePrefix := filename[:len(filename)-len(ext)]
 	filename = filePrefix + ".map"
 
+	// Try loading a source map file if it exists.
 	file, err = os.Open(filename)
+	var sourceMap *asm.SourceMap
 	if err == nil {
-		sourceMap := asm.NewSourceMap()
+		sourceMap = asm.NewSourceMap()
 		_, err = sourceMap.ReadFrom(file)
 		if err != nil {
-			h.printf("Failed to read source map '%s': %v\n", filepath.Base(filename), err)
+			h.printf("Failed to read source map '%s': %v\n", basefile, err)
+			sourceMap = nil
 		} else {
-			h.printf("Loaded source map from '%s'\n", filepath.Base(filename))
-			if len(h.sourceMap.Files) == 0 {
-				h.sourceMap = sourceMap
+			if crc32.ChecksumIEEE(a.Code) == sourceMap.CRC {
+				h.printf("Loaded source map from '%s'.\n", basefile)
+				if len(h.sourceMap.Files) == 0 {
+					h.sourceMap = sourceMap
+				} else {
+					h.sourceMap.Merge(sourceMap)
+				}
 			} else {
-				h.sourceMap.Merge(sourceMap, int(origin), len(a.Code))
+				h.printf("Source map CRC doesn't match for '%s'.\n", basefile)
+				sourceMap = nil
 			}
 		}
 	}
-
 	file.Close()
 
-	cpu.SetPC(origin)
+	// Set the origin address using either the value from the source map file
+	// or the value passed to this function.
+	originSet := false
+	if sourceMap != nil {
+		origin, originSet = sourceMap.Origin, true
+	}
+	if addr != -1 {
+		origin, originSet = uint16(addr), true
+	}
+	if !originSet {
+		h.printf("File '%s' has no source map and requires an origin address.\n", basefile)
+		return 0, nil
+	}
+
+	// Copy the code to the CPU memory and adjust the program counter.
+	h.cpu.Mem.StoreBytes(origin, a.Code)
+	h.printf("Loaded '%s' to $%04X..$%04X.\n", basefile, origin, int(origin)+len(a.Code)-1)
+
+	h.settings.NextDisasmAddr = origin
 	return origin, nil
 }
 

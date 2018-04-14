@@ -16,6 +16,9 @@ import (
 // A SourceMap describes the mapping between source code line numbers and
 // assembly code addresses.
 type SourceMap struct {
+	Origin  uint16
+	Size    uint32
+	CRC     uint32
 	Files   []string
 	Lines   []SourceLine
 	Exports []Export
@@ -115,10 +118,10 @@ func (s *SourceMap) ClearRange(origin, size int) {
 }
 
 // Merge merges another source map (s2) into this source map.
-func (s *SourceMap) Merge(s2 *SourceMap, origin2, size2 int) {
+func (s *SourceMap) Merge(s2 *SourceMap) {
 	// Clear the portion of the original source map that references addresses
 	// in the new map's range.
-	s.ClearRange(origin2, size2)
+	s.ClearRange(int(s2.Origin), int(s2.Size))
 
 	// Add exports from the new map.
 	for _, e := range s2.Exports {
@@ -163,7 +166,7 @@ func (s *SourceMap) Merge(s2 *SourceMap, origin2, size2 int) {
 func (s *SourceMap) ReadFrom(r io.Reader) (n int64, err error) {
 	rr := bufio.NewReader(r)
 
-	b := make([]byte, 16)
+	b := make([]byte, 26)
 	nn, err := io.ReadFull(rr, b)
 	n += int64(nn)
 	if err != nil {
@@ -177,9 +180,12 @@ func (s *SourceMap) ReadFrom(r io.Reader) (n int64, err error) {
 		return n, errors.New("invalid source map version")
 	}
 
-	fileCount := int(binary.LittleEndian.Uint16(b[6:8]))
-	lineCount := int(binary.LittleEndian.Uint32(b[8:12]))
-	exportCount := int(binary.LittleEndian.Uint32(b[12:16]))
+	s.Origin = binary.LittleEndian.Uint16(b[6:8])
+	s.Size = binary.LittleEndian.Uint32(b[8:12])
+	s.CRC = binary.LittleEndian.Uint32(b[12:16])
+	fileCount := int(binary.LittleEndian.Uint16(b[16:18]))
+	lineCount := int(binary.LittleEndian.Uint32(b[18:22]))
+	exportCount := int(binary.LittleEndian.Uint32(b[22:26]))
 
 	s.Files = make([]string, fileCount)
 	for i := 0; i < fileCount; i++ {
@@ -234,13 +240,16 @@ func (s *SourceMap) WriteTo(w io.Writer) (n int64, err error) {
 
 	ww := bufio.NewWriter(w)
 
-	var hdr [16]byte
+	var hdr [26]byte
 	copy(hdr[:], []byte(sourceMapSignature))
 	hdr[4] = versionMajor
 	hdr[5] = versionMinor
-	binary.LittleEndian.PutUint16(hdr[6:8], fileCount)
-	binary.LittleEndian.PutUint32(hdr[8:12], lineCount)
-	binary.LittleEndian.PutUint32(hdr[12:16], exportCount)
+	binary.LittleEndian.PutUint16(hdr[6:8], s.Origin)
+	binary.LittleEndian.PutUint32(hdr[8:12], s.Size)
+	binary.LittleEndian.PutUint32(hdr[12:16], s.CRC)
+	binary.LittleEndian.PutUint16(hdr[16:18], fileCount)
+	binary.LittleEndian.PutUint32(hdr[18:22], lineCount)
+	binary.LittleEndian.PutUint32(hdr[22:26], exportCount)
 	nn, err := ww.Write(hdr[:])
 	n += int64(nn)
 	if err != nil {

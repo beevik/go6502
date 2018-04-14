@@ -47,6 +47,15 @@ func init() {
 		Usage: "assemble interactive <address>",
 		Data:  (*Host).cmdAssembleInteractive,
 	})
+	ass.AddCommand(cmd.Command{
+		Name:  "map",
+		Brief: "Create a source map file",
+		Description: "Create an empty source map file for an existing binary" +
+			" file. Pass the name of the binary file and the origin address it" +
+			" should load at.",
+		Usage: "assemble map <filename> <origin>",
+		Data:  (*Host).cmdAssembleMap,
+	})
 
 	// Breakpoint commands
 	bp := cmd.NewTree("Breakpoint")
@@ -270,6 +279,7 @@ func init() {
 	// Add command shortcuts.
 	root.AddShortcut("a", "assemble file")
 	root.AddShortcut("ai", "assemble interactive")
+	root.AddShortcut("am", "assemble map")
 	root.AddShortcut("b", "breakpoint")
 	root.AddShortcut("bp", "breakpoint")
 	root.AddShortcut("ba", "breakpoint add")

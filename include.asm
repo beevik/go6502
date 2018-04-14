@@ -1,6 +1,0 @@
-
-FIVE	.EQ	$05
-
-	LDA	#FIVE
-	LDX	#FIVE+1
-	LDY	#FIVE+2
