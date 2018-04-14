@@ -10,7 +10,7 @@ import (
 
 func runCPU(t *testing.T, asmString string, steps int) *cpu.CPU {
 	b := strings.NewReader(asmString)
-	r, _, err := asm.Assemble(b, "test.asm", false)
+	r, sm, err := asm.Assemble(b, "test.asm", false)
 	if err != nil {
 		t.Error(err)
 		return nil
@@ -18,8 +18,8 @@ func runCPU(t *testing.T, asmString string, steps int) *cpu.CPU {
 
 	mem := cpu.NewFlatMemory()
 	cpu := cpu.NewCPU(cpu.NMOS, mem)
-	mem.StoreBytes(r.Origin, r.Code)
-	cpu.SetPC(r.Origin)
+	mem.StoreBytes(sm.Origin, r.Code)
+	cpu.SetPC(sm.Origin)
 
 	for i := 0; i < steps; i++ {
 		cpu.Step()

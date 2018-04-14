@@ -13,14 +13,30 @@ host that wraps them all together.
 The interactive go6502 console application in the root directory provides
 access to all of these features.
 
+
+# Building the application
+
+Make sure you have all the application's dependencies.
+
+```
+go get -u github.com/beevik/go6502
+```
+
+Then build go6502.
+
+```
+go build
+```
+
+
 # Tutorial
 
 Let's start by considering the go6502 `sample.cmd` script:
 
 ```
-load monitor $F800
-assemble file sample
-load sample
+load monitor.bin $F800
+assemble file sample.asm
+load sample.bin
 set PC START
 d .
 ```
@@ -30,10 +46,11 @@ for now know that they do the following things:
 1. Load the `monitor.bin` binary file at memory address `F800`.
 2. Assemble the `sample.asm` file using the go6502 cross-assembler, generating
    a `sample.bin` binary file and a `sample.map` source map file.
-3. Load the `sample.bin` binary file at the origin address specified by the
-   `sample.asm` file.
-4. Set the program counter to the `START` address, which was exported by
-   `sample.asm`.
+3. Load the `sample.bin` binary file and its corresponding `sample.map` source
+   map file. The binary data is loaded into memory at the origin address
+   exported during assembly into the `sample.map` file.
+4. Set the program counter to the `START` address, which is an address
+   exported during assembly into the `sample.map` file.
 5. Disassemble the first few lines of machine code starting from the program
    counter address.
 
@@ -85,7 +102,7 @@ commands.
 * help
 go6502 commands:
     annotate         Annotate an address
-    assemble         Assemble a file and save the binary
+    assemble         Assemble commands
     breakpoint       Breakpoint commands
     databreakpoint   Data breakpoint commands
     disassemble      Disassemble code
@@ -102,9 +119,9 @@ go6502 commands:
 *
 ```
 
-To get further help about a command, type `help` followed by the command name.
-In some cases, you will be shown a list of subcommands that must be used with
-the command. Let's try `help step`.
+To get more information about a command, type `help` followed by the command
+name. In some cases, you will be shown a list of subcommands that must be used
+with the command. Let's try `help step`.
 
 ```
 * help step
@@ -136,24 +153,26 @@ Shortcut: si
 ```
 
 Every command has help text like this. Included in the help text is a
-description, a list of shortcuts that can be used to invoke the command, and a
-usage hint indicating the arguments the command accepts.
+description of the command, a list of shortcuts that can be used to invoke the
+command, and a usage hint indicating the arguments accepted by the command.
+Usage arguments appear inside `<angle-brackets>`. Optional usage arguments
+appear inside square `[<brackets>]`.
 
 ## Abbreviating commands
 
 The go6502 application uses a "shortest unambiguous match" parser to process
 commands. This means that when entering a command, you need only type the
 smallest number of characters that uniquely identify it.  For instance,
-instead of typing `quit`, you can type `q` because no other commands start
-with the letter Q.
+instead of typing `quit`, you can type `q` since no other commands start with
+the letter Q.
 
-Many commands also have shortcuts. For instance, the shortcut for `breakpoint add`
-is `ba`. To discover a command's shortcuts, use `help`.
+Most commands also have shortcuts. To discover a command's shortcuts, use
+`help`.
 
 ## Stepping the CPU
 
-Let's use one of the `step` subcommands to step the CPU by a single
-instruction. Type `step in`.
+Let's use one of the `step` commands to step the CPU by a single instruction.
+Type `step in`.
 
 ```
 1000-   A2 EE       LDX   #$EE      A=00 X=00 Y=00 PS=[------] SP=FF PC=1000 C=0
@@ -162,14 +181,14 @@ instruction. Type `step in`.
 *
 ```
 
-By typing `step in`, you told the emulated CPU to execute the `LDX #$EE`
-instruction at address `1000`. This advanced the program counter to `1002`,
-loaded the value `EE` into the X register, and increased the CPU cycle counter
+By typing `step in`, you are telling the emulated CPU to execute the `LDX #$EE`
+instruction at address `1000`. This advances the program counter to `1002`,
+loads the value `EE` into the X register, and increases the CPU cycle counter
 by 2 cycles.
 
 Each time go6502 advances the program counter interactively, it disassembles
-the instruction to be executed next. It also displays the current values of
-the CPU registers and cycle counter.
+and displays the instruction to be executed next. It also displays the current
+values of the CPU registers and cycle counter.
 
 The shortcut for the `step in` command is `si`. Let's type `si 4` to step the
 CPU by 4 instructions:
@@ -213,10 +232,11 @@ at address `100A` after 52 CPU cycles have elapsed.
 
 ## Another shortcut: hit Enter!
 
-A shortcut you will probably use frequently is entering a blank line at the
-command prompt. This causes go6502 to repeat the previously entered command.
+One shortcut you will probably use frequently is the blank-line short cut.
+Whenever you hit the Enter key instead of typing a command, the go6502
+application repeats the previously entered command.
 
-Let's try hitting Enter twice to repeat the `step over` command two more
+Let's try hitting enter twice to repeat the `step over` command two more
 times.
 
 ```
@@ -283,8 +303,8 @@ command.
 *
 ```
 
-If you hit Enter after using a disassemble command, go6502 will continue
-disassembling code from where it left off.
+If you hit the Enter key after using a disassemble command, go6502 will
+continue disassembling code from where it left off.
 
 ```
 *
@@ -298,7 +318,7 @@ If you don't like the number of instructions that go6502 is configured to
 disassemble by default, you can change it with the `set` command:
 
 ```
-* set DisasmLinesToDisplay 20
+* set DisasmLines 20
 ```
 
 
