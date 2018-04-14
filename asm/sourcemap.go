@@ -45,8 +45,9 @@ func NewSourceMap() *SourceMap {
 	}
 }
 
-// Search searches the source map for a mapping with the requested address.
-func (s *SourceMap) Search(addr int) (filename string, line int) {
+// Find searches the source map for a source code line corresponding to the
+// requested address.
+func (s *SourceMap) Find(addr int) (filename string, line int) {
 	i := sort.Search(len(s.Lines), func(i int) bool {
 		return s.Lines[i].Address >= addr
 	})
@@ -56,12 +57,11 @@ func (s *SourceMap) Search(addr int) (filename string, line int) {
 	return "", -1
 }
 
-type merge struct {
-	addr     int
-	line     int
-	filename string
-	source   int
-}
+type byEAddr []Export
+
+func (a byEAddr) Len() int           { return len(a) }
+func (a byEAddr) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a byEAddr) Less(i, j int) bool { return a[i].Addr < a[j].Addr }
 
 type byAddr []SourceLine
 
@@ -69,29 +69,25 @@ func (a byAddr) Len() int           { return len(a) }
 func (a byAddr) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a byAddr) Less(i, j int) bool { return a[i].Address < a[j].Address }
 
-// Merge merges another source map (s2) into this source map.
-func (s *SourceMap) Merge(s2 *SourceMap, origin2, size2 int) {
-	min := uint16(origin2)
-	max := uint16(origin2 + size2)
+// ClearRange clears portions of the source map that reference the
+// address range between `origin` and `origin+size``.
+func (s *SourceMap) ClearRange(origin, size int) {
+	min := uint16(origin)
+	max := uint16(origin + size)
 
 	// Filter out original exports covered by the new map's address range.
-	exports := make([]Export, 0, len(s.Exports)+len(s2.Exports))
+	exports := make([]Export, 0, len(s.Exports))
 	for _, e := range s.Exports {
 		if e.Addr < min || e.Addr > max {
 			exports = append(exports, e)
 		}
 	}
 
-	// Add exports from the new map.
-	for _, e := range s2.Exports {
-		exports = append(exports, e)
-	}
-
 	// Filter out original source lines covered by the new map's address
 	// range. Track only the files that remain referenced.
 	fileCount := 0
 	fileMap := make(map[string]int) // filename -> file index
-	lines := make([]SourceLine, 0, maxInt(len(s.Lines), len(s2.Lines)))
+	lines := make([]SourceLine, 0, len(s.Lines))
 	for _, l := range s.Lines {
 		if uint16(l.Address) < min || uint16(l.Address) >= max {
 			filename := s.Files[l.FileIndex]
@@ -107,6 +103,38 @@ func (s *SourceMap) Merge(s2 *SourceMap, origin2, size2 int) {
 		}
 	}
 
+	// Build the files array from the file map.
+	files := make([]string, len(fileMap))
+	for f, i := range fileMap {
+		files[i] = f
+	}
+
+	s.Files = files
+	s.Lines = lines
+	s.Exports = exports
+}
+
+// Merge merges another source map (s2) into this source map.
+func (s *SourceMap) Merge(s2 *SourceMap, origin2, size2 int) {
+	// Clear the portion of the original source map that references addresses
+	// in the new map's range.
+	s.ClearRange(origin2, size2)
+
+	// Add exports from the new map.
+	for _, e := range s2.Exports {
+		s.Exports = append(s.Exports, e)
+	}
+
+	// Sort exports by address.
+	sort.Sort(byEAddr(s.Exports))
+
+	// Build a mapping from filename to file index.
+	fileCount := 0
+	fileMap := make(map[string]int)
+	for i, f := range s.Files {
+		fileMap[f] = i
+	}
+
 	// Add source lines from the new map.
 	for _, l := range s2.Lines {
 		filename := s2.Files[l.FileIndex]
@@ -118,21 +146,17 @@ func (s *SourceMap) Merge(s2 *SourceMap, origin2, size2 int) {
 			l.FileIndex = fileIndex
 			fileCount++
 		}
-		lines = append(lines, l)
+		s.Lines = append(s.Lines, l)
 	}
 
-	// Sort lines by address
-	sort.Sort(byAddr(lines))
+	// Sort lines by address.
+	sort.Sort(byAddr(s.Lines))
 
 	// Build the files array from the file map.
-	files := make([]string, len(fileMap))
+	s.Files = make([]string, len(fileMap))
 	for f, i := range fileMap {
-		files[i] = f
+		s.Files[i] = f
 	}
-
-	s.Files = files
-	s.Lines = lines
-	s.Exports = exports
 }
 
 // ReadFrom reads the contents of an assembly source map.

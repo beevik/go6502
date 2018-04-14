@@ -66,10 +66,10 @@ func init() {
 	ass.AddCommand(cmd.Command{
 		Name:  "interactive",
 		Brief: "Start interactive assembly mode",
-		Description: "Start the interactive assembler mode. A new prompt will" +
-			" appear, allowing you to end assembly language instructions that" +
-			" will be assembled and stored to memory starting at the specified" +
-			" address.",
+		Description: "Start interactive assembler mode. A new prompt will" +
+			" appear, allowing you to enter assembly language instructions" +
+			" interactively.  Once you type END, the instructions will be" +
+			" assembled and stored in memory at the specified address.",
 		Usage: "assemble interactive <address>",
 		Data:  (*Host).cmdAssembleInteractive,
 	})
@@ -337,6 +337,7 @@ type state byte
 
 const (
 	stateProcessingCommands state = iota
+	stateMiniAssembler
 	stateRunning
 	stateBreakpoint
 	stateStepOverBreakpoint
@@ -353,6 +354,8 @@ type Host struct {
 	debugger    *cpu.Debugger
 	lastCmd     *cmd.Selection
 	state       state
+	miniAddr    uint16
+	assembly    []string
 	exprParser  *exprParser
 	sourceMap   *asm.SourceMap
 	settings    *settings
@@ -402,52 +405,125 @@ func (h *Host) RunCommands(r io.Reader, w io.Writer, interactive bool) {
 			break
 		}
 
-		var c cmd.Selection
-		if line != "" {
-			c, err = cmds.Lookup(line)
-			switch {
-			case err == cmd.ErrNotFound:
-				h.println("Command not found.")
-				continue
-			case err == cmd.ErrAmbiguous:
-				h.println("Command is ambiguous.")
-				continue
-			case err != nil:
-				h.printf("ERROR: %v.\n", err)
-				continue
-			}
-		} else if h.lastCmd != nil {
-			c = *h.lastCmd
+		switch h.state {
+		case stateProcessingCommands:
+			err = h.processCommand(line)
+		case stateMiniAssembler:
+			err = h.processMiniAssembler(line)
+		default:
+			panic("invalid state")
 		}
 
-		if c.Command == nil {
-			continue
-		}
-		if c.Command.Data == nil && c.Command.Subtree != nil {
-			h.displayCommands(c.Command.Subtree, nil)
-			continue
-		}
-
-		h.lastCmd = &c
-
-		handler := c.Command.Data.(func(*Host, cmd.Selection) error)
-		err = handler(h, c)
 		if err != nil {
 			break
 		}
 	}
 }
 
+func (h *Host) processCommand(line string) error {
+	var c cmd.Selection
+	if line != "" {
+		var err error
+		c, err = cmds.Lookup(line)
+		switch {
+		case err == cmd.ErrNotFound:
+			h.println("Command not found.")
+			return nil
+		case err == cmd.ErrAmbiguous:
+			h.println("Command is ambiguous.")
+			return nil
+		case err != nil:
+			h.printf("ERROR: %v.\n", err)
+			return nil
+		}
+	} else if h.lastCmd != nil {
+		c = *h.lastCmd
+	}
+
+	if c.Command == nil {
+		return nil
+	}
+	if c.Command.Data == nil && c.Command.Subtree != nil {
+		h.displayCommands(c.Command.Subtree, nil)
+		return nil
+	}
+
+	h.lastCmd = &c
+
+	handler := c.Command.Data.(func(*Host, cmd.Selection) error)
+	return handler(h, c)
+}
+
+func (h *Host) processMiniAssembler(line string) error {
+	line = strings.ToUpper(line)
+
+	fields := strings.Fields(line)
+	switch {
+	case len(fields) == 0:
+		return nil
+	case fields[0] == "END":
+		return h.assembleInline()
+	}
+
+	h.assembly = append(h.assembly, line)
+	return nil
+}
+
+func (h *Host) assembleInline() error {
+	defer func() {
+		h.assembly = nil
+		h.miniAddr = 0
+		h.state = stateProcessingCommands
+	}()
+
+	if len(h.assembly) == 0 {
+		h.println("No assembly code entered.")
+		return nil
+	}
+
+	h.println("Assembling inline code...")
+	s := strings.Join(h.assembly, "\n")
+	a, _, err := asm.Assemble(strings.NewReader(s), "inline", false)
+
+	if err != nil {
+		for _, e := range a.Errors {
+			h.println(e)
+		}
+		h.println("Assembly failed.")
+		return nil
+	}
+
+	h.mem.StoreBytes(h.miniAddr, a.Code)
+	h.sourceMap.ClearRange(int(h.miniAddr), len(a.Code))
+
+	for addr, end := int(h.miniAddr), int(h.miniAddr)+len(a.Code); addr < end; {
+		d, next := h.disassemble(uint16(addr), 0)
+		h.println(d)
+		addr = int(next)
+	}
+
+	h.printf("Inline code successfully assembled at $%04X.\n", h.miniAddr)
+	return nil
+}
+
 // Break interrupts a running CPU.
 func (h *Host) Break() {
 	h.println()
 
-	if h.state == stateRunning {
+	switch h.state {
+	case stateRunning:
 		h.displayPC()
-	}
-	if h.state == stateProcessingCommands {
+
+	case stateProcessingCommands:
+		h.prompt()
+		return
+
+	case stateMiniAssembler:
+		h.println("Interactive assembly canceled.")
+		h.state = stateProcessingCommands
 		h.prompt()
 	}
+
 	h.state = stateProcessingCommands
 }
 
@@ -484,10 +560,17 @@ func (h *Host) getLine() (string, error) {
 }
 
 func (h *Host) prompt() {
-	if h.interactive {
-		h.printf("* ")
-		h.flush()
+	if !h.interactive {
+		return
 	}
+
+	switch h.state {
+	case stateProcessingCommands:
+		h.printf("* ")
+	case stateMiniAssembler:
+		h.printf("%2d  ", len(h.assembly)+1)
+	}
+	h.flush()
 }
 
 func (h *Host) displayPC() {
@@ -591,6 +674,25 @@ func (h *Host) cmdAssembleFile(c cmd.Selection) error {
 }
 
 func (h *Host) cmdAssembleInteractive(c cmd.Selection) error {
+	if len(c.Args) == 0 {
+		h.displayUsage(c.Command)
+		return nil
+	}
+
+	addr, err := h.parseAddr(c.Args[0], 0)
+	if err != nil {
+		h.printf("%v\n", err)
+		return nil
+	}
+
+	h.lastCmd = nil
+
+	h.state = stateMiniAssembler
+	h.miniAddr = addr
+	h.assembly = nil
+
+	h.println("Begin entering assembly instructions.")
+	h.println("Type END to assemble. Type Ctrl-C to cancel.")
 	return nil
 }
 
@@ -832,7 +934,7 @@ func (h *Host) cmdDisassemble(c cmd.Selection) error {
 		return nil
 	}
 
-	lines := h.settings.DisasmLinesToDisplay
+	lines := h.settings.DisasmLines
 	if len(c.Args) > 1 {
 		l, err := h.parseExpr(c.Args[1])
 		if err != nil {

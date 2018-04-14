@@ -15,22 +15,22 @@ import (
 )
 
 type settings struct {
-	DisasmLinesToDisplay int
-	MemDumpBytes         int
-	StepLinesToDisplay   int
-	NextDisasmAddr       uint16
-	NextMemDumpAddr      uint16
-	HexMode              bool
+	HexMode            bool
+	DisasmLines        int
+	MemDumpBytes       int
+	StepLinesToDisplay int
+	NextDisasmAddr     uint16
+	NextMemDumpAddr    uint16
 }
 
 func newSettings() *settings {
 	return &settings{
-		DisasmLinesToDisplay: 10,
-		MemDumpBytes:         64,
-		StepLinesToDisplay:   20,
-		NextDisasmAddr:       0,
-		NextMemDumpAddr:      0,
-		HexMode:              false,
+		HexMode:            false,
+		DisasmLines:        10,
+		MemDumpBytes:       64,
+		StepLinesToDisplay: 20,
+		NextDisasmAddr:     0,
+		NextMemDumpAddr:    0,
 	}
 }
 

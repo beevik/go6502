@@ -353,13 +353,13 @@ func (a *Assembly) WriteTo(w io.Writer) (n int64, err error) {
 	return n, err
 }
 
-// Assemble reads data from the provided stream and attempts to assemble
-// it into 6502 byte code.
+// Assemble reads data from the provided stream and attempts to assemble it
+// into 6502 byte code.
 func Assemble(r io.Reader, filename string, verbose bool) (*Assembly, *SourceMap, error) {
 	a := &assembler{
 		arch:     cpu.NMOS,
 		instSet:  cpu.GetInstructionSet(cpu.NMOS),
-		origin:   0x600,
+		origin:   0x1000,
 		pc:       -1,
 		r:        r,
 		macros:   make(map[string]*expr),
@@ -415,6 +415,12 @@ func Assemble(r io.Reader, filename string, verbose bool) (*Assembly, *SourceMap
 	}
 
 	return assembly, sourceMap, err
+}
+
+// ParseInstruction attempts to parse a line of assembly code. If successful
+// the best matching CPU instruction is returned.
+func ParseInstruction(line string) (inst *cpu.Instruction, err error) {
+	return nil, nil
 }
 
 // Read the assembly code and perform the initial parsing. Build up
@@ -941,14 +947,14 @@ func (a *assembler) parseAlign(line, label fstring, param interface{}) error {
 	a.logLine(line, "align=")
 
 	s, remain := line.consumeWhile(decimal)
-	if !remain.isEmpty() {
+	if s.isEmpty() || !remain.isEmpty() {
 		a.addError(remain, "invalid alignment")
 		return errParse
 	}
 
 	v, _ := strconv.ParseInt(s.str, 10, 32)
-	if (v&(v-1)) != 0 || v > 0x100 {
-		a.addError(s, "alignment must be power of 2")
+	if v == 0 || (v&(v-1)) != 0 || v > 0x100 {
+		a.addError(s, "alignment must be a power of 2")
 		return errParse
 	}
 
@@ -1071,7 +1077,7 @@ func (a *assembler) parseInstruction(line fstring) error {
 
 	// No opcode characters? Or opcode has invalid suffix?
 	if opcode.isEmpty() || (!remain.isEmpty() && !remain.startsWith(whitespace)) {
-		a.addError(remain, "invalid opcode '%s'", opcode.str)
+		a.addError(remain, "invalid opcode '%s'", remain.str)
 		return errParse
 	}
 
