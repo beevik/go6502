@@ -418,14 +418,16 @@ func (h *Host) cmdAssembleMap(c cmd.Selection) error {
 	}
 
 	filename := c.Args[0]
-	if path.Ext(filename) == "" {
-		filename = filename + ".bin"
-	}
-
 	file, err := os.Open(filename)
 	if err != nil {
-		h.printf("%v\n", err)
-		return nil
+		if path.Ext(filename) == "" {
+			filename = filename + ".bin"
+			file, err = os.Open(filename)
+		}
+		if err != nil {
+			h.printf("%v\n", err)
+			return nil
+		}
 	}
 	defer file.Close()
 
@@ -732,7 +734,7 @@ func (h *Host) cmdExports(c cmd.Selection) error {
 	return nil
 }
 
-func (h *Host) cmdEval(c cmd.Selection) error {
+func (h *Host) cmdEvaluate(c cmd.Selection) error {
 	if len(c.Args) < 1 {
 		h.displayUsage(c.Command)
 		return nil
@@ -746,6 +748,28 @@ func (h *Host) cmdEval(c cmd.Selection) error {
 	}
 
 	h.printf("$%04X\n", v)
+	return nil
+}
+
+func (h *Host) cmdExecute(c cmd.Selection) error {
+	if len(c.Args) < 1 {
+		h.displayUsage(c.Command)
+		return nil
+	}
+
+	file, err := os.Open(c.Args[0])
+	if err != nil {
+		h.printf("%v\n", err)
+		return nil
+	}
+	defer file.Close()
+
+	input, interactive := h.input, h.interactive
+
+	h.RunCommands(file, h.output, false)
+
+	h.input, h.interactive = input, interactive
+
 	return nil
 }
 
@@ -792,9 +816,6 @@ func (h *Host) cmdLoad(c cmd.Selection) error {
 	}
 
 	filename := c.Args[0]
-	if filepath.Ext(filename) == "" {
-		filename += ".bin"
-	}
 
 	loadAddr := -1
 	if len(c.Args) >= 2 {
@@ -1080,21 +1101,27 @@ func (h *Host) load(filename string, addr int) (origin uint16, err error) {
 	filename, err = filepath.Abs(filename)
 	basefile := filepath.Base(filename)
 	if err != nil {
-		h.printf("Failed to open '%s': %v\n", basefile, err)
+		h.printf("%v\n", err)
 		return 0, nil
 	}
 
 	file, err := os.Open(filename)
 	if err != nil {
-		h.printf("Failed to open '%s': %v\n", basefile, err)
-		return 0, nil
+		if path.Ext(filename) == "" {
+			filename = filename + ".bin"
+			file, err = os.Open(filename)
+		}
+		if err != nil {
+			h.printf("%v\n", err)
+			return 0, nil
+		}
 	}
 	defer file.Close()
 
 	a := &asm.Assembly{}
 	_, err = a.ReadFrom(file)
 	if err != nil {
-		h.printf("Failed to read '%s': %v\n", basefile, err)
+		h.printf("%v\n", err)
 		return 0, nil
 	}
 

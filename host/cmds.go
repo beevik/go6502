@@ -167,7 +167,15 @@ func init() {
 		Brief:       "Evaluate an expression",
 		Description: "Evaluate a mathemetical expression.",
 		Usage:       "evaluate <expression>",
-		Data:        (*Host).cmdEval,
+		Data:        (*Host).cmdEvaluate,
+	})
+	root.AddCommand(cmd.Command{
+		Name:  "execute",
+		Brief: "Execute a go6502 script file",
+		Description: "Load a go6502 script file from disk and execute the" +
+			" commands it contains.",
+		Usage: "execute <filename>",
+		Data:  (*Host).cmdExecute,
 	})
 	root.AddCommand(cmd.Command{
 		Name:  "exports",

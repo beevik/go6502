@@ -98,7 +98,6 @@ Let's enter our first interactive command. Type `help` to see a list of all
 commands.
 
 ```
-* help
 go6502 commands:
     annotate         Annotate an address
     assemble         Assemble commands
@@ -106,6 +105,7 @@ go6502 commands:
     databreakpoint   Data breakpoint commands
     disassemble      Disassemble code
     evaluate         Evaluate an expression
+    execute          Execute a go6502 script file
     exports          List exported addresses
     load             Load a binary file
     memory           Memory commands
@@ -115,7 +115,7 @@ go6502 commands:
     set              Set a configuration variable
     step             Step the debugger
 
-*
+* 
 ```
 
 To get more information about a command, type `help` followed by the command
