@@ -84,6 +84,7 @@ var ops = []op{
 const (
 	lNil byte = iota
 	lNum
+	lCha
 	lIde
 	lLPa
 	lRPa
@@ -108,6 +109,7 @@ var lexeme = []struct {
 }{
 	/*lNil*/ {TokenType: tokenNil, OpType: opNil},
 	/*lNum*/ {TokenType: tokenNumber, OpType: opNil, Parse: (*exprParser).parseNumber},
+	/*lCha*/ {TokenType: tokenNumber, OpType: opNil, Parse: (*exprParser).parseChar},
 	/*lIde*/ {TokenType: tokenIdentifier, OpType: opNil, Parse: (*exprParser).parseIdentifier},
 	/*lLPa*/ {TokenType: tokenLParen, OpType: opNil},
 	/*lRPa*/ {TokenType: tokenRParen, OpType: opNil},
@@ -126,7 +128,7 @@ var lexeme = []struct {
 
 // A table mapping the first char of a lexeme to a lexeme identifier.
 var lex0 = [96]byte{
-	lNil, lNil, lNil, lNil, lNum, lMod, lAnd, lNil, // 32..39
+	lNil, lNil, lNil, lNil, lNum, lMod, lAnd, lCha, // 32..39
 	lLPa, lRPa, lMul, lAdd, lNil, lSub, lIde, lDiv, // 40..47
 	lNum, lNum, lNum, lNum, lNum, lNum, lNum, lNum, // 48..55
 	lNum, lNum, lNil, lNil, lShl, lNil, lShr, lNil, // 56..63
@@ -314,6 +316,15 @@ func (p *exprParser) parseNumber(t tstring) (tok token, remain tstring, err erro
 
 	tok = token{tokenNumber, v}
 	return tok, remain, nil
+}
+
+func (p *exprParser) parseChar(t tstring) (tok token, remain tstring, err error) {
+	if len(t) < 3 || t[2] != '\'' {
+		return tok, t, errExprParse
+	}
+
+	tok = token{tokenNumber, int64(t[1])}
+	return tok, t.consume(3), nil
 }
 
 func (p *exprParser) parseIdentifier(t tstring) (tok token, remain tstring, err error) {

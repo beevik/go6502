@@ -320,5 +320,127 @@ disassemble by default, you can change it with the `set` command:
 * set DisasmLines 20
 ```
 
+## Annotating code
+
+It's often useful to annotate a line of code with a comment. I use annotations
+to leave notes to myself when I'm trying to understand how some piece of
+machine code works.
+
+Let's consider again the code loaded by the sample script.
+
+```
+* d $1000
+1000-   A2 EE       LDX   #$EE     
+1002-   A9 05       LDA   #$05     
+1004-   20 19 10    JSR   $1019    
+1007-   20 1C 10    JSR   $101C
+100A-   20 36 10    JSR   $1036    
+100D-   20 46 10    JSR   $1046    
+1010-   F0 06       BEQ   $1018    
+1012-   A0 3B       LDY   #$3B     
+1014-   A9 10       LDA   #$10     
+1016-   A2 56       LDX   #$56     
+*
+```
+
+The `JSR` instruction at address `1007` calls a subroutine that uses all
+the addressing mode variants of the `LDA` command.  Let's add an annotation
+to that line of code to remind ourselves later what its purpose is.
+
+```
+* annotate $1007 Use different forms of the LDA command
+*
+```
+
+Now whenever we disassemble code that includes the instruction at address
+`1007`, we will see our annotation.
+
+```
+* d $1000
+1000-   A2 EE       LDX   #$EE     
+1002-   A9 05       LDA   #$05     
+1004-   20 19 10    JSR   $1019    
+1007-   20 1C 10    JSR   $101C     ; Use different forms of the LDA command
+100A-   20 36 10    JSR   $1036    
+100D-   20 46 10    JSR   $1046    
+1010-   F0 06       BEQ   $1018    
+1012-   A0 3B       LDY   #$3B     
+1014-   A9 10       LDA   #$10     
+1016-   A2 56       LDX   #$56     
+*
+```
+
+## Dumping memory
+
+Another common task is dumping the contents of memory.  To do this, use the
+`memory dump` command, or `m` for short.
+
+```
+* m $1000
+1000- A2 EE A9 05 20 19 10 20   "n). .. 
+1008- 1C 10 20 36 10 20 46 10   .. 6. F.
+1010- F0 06 A0 3B A9 10 A2 56   p. ;)."V
+1018- 00 A9 FF 60 A9 20 A5 20   .).`) % 
+1020- B5 20 A1 20 B1 20 AD 00   5 ! 1 -.
+1028- 02 AD 20 00 BD 00 02 B9   .- .=..9
+1030- 00 02 8D 00 03 60 A2 20   .....`" 
+1038- A6 20 B6 20 AE 00 02 AE   & 6 ....
+*
+```
+
+Memory dumps include hexadecimal and ASCII representations of the dumped
+memory, starting from the address you specified. By default, the memory
+dump shows 64 bytes, but you can specify a different number of bytes to
+dump with a second argument.
+
+```
+* m $1000 16
+1000- A2 EE A9 05 20 19 10 20   "n). .. 
+1008- 1C 10 20 36 10 20 46 10   .. 6. F.
+*
+```
+
+As with the `disassemble` command, you can enter a blank line to continue
+dumping memory from where you left off:
+
+```
+* 
+1010- F0 06 A0 3B A9 10 A2 56   p. ;)."V
+1018- 00 A9 FF 60 A9 20 A5 20   .).`) % 
+* 
+1020- B5 20 A1 20 B1 20 AD 00   5 ! 1 -.
+1028- 02 AD 20 00 BD 00 02 B9   .- .=..9
+*
+```
+
+To change the default number of bytes that are dumped by a `memory dump`
+command, use the `set` command:
+
+```
+* set MemDumpBytes 128
+```
+
+## Modifying memory
+
+To change the contents of memory, use the `memory set` command, or `ms` for
+short.
+
+```
+* ms 0x800 $5A $59 $58 $57
+* m 0x800 4
+0800- 5A 59 58 57               ZYXW    
+* 
+```
+
+A sequence of memory values must be separated by spaces and may include
+simple hexadecimal values like shown in the example above, or mathematical
+expressions like in the following:
+
+```
+* ms 0x800 12*2 'A' 1<<4 $0F^$05
+* m 0x800 4
+0800- 18 41 10 0A               .A..   
+*
+```
 
 _To be continued..._
