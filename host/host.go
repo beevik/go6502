@@ -886,19 +886,20 @@ func (h *Host) cmdRegister(c cmd.Selection) error {
 	key, value := strings.ToUpper(c.Args[0]), strings.Join(c.Args[1:], " ")
 
 	var flag *bool
+	var flagName string
 	switch {
 	case key == "C" || key == "CARRY":
-		flag = &h.cpu.Reg.Carry
+		flag, flagName = &h.cpu.Reg.Carry, "CARRY"
 	case key == "Z" || key == "ZERO":
-		flag = &h.cpu.Reg.Zero
+		flag, flagName = &h.cpu.Reg.Zero, "ZERO"
 	case key == "N" || key == "SIGN":
-		flag = &h.cpu.Reg.Sign
+		flag, flagName = &h.cpu.Reg.Sign, "SIGN"
 	case key == "V" || key == "OVERFLOW":
-		flag = &h.cpu.Reg.Overflow
+		flag, flagName = &h.cpu.Reg.Overflow, "OVERFLOW"
 	case key == "D" || key == "DECIMAL":
-		flag = &h.cpu.Reg.Decimal
-	case key == "I" || key == "INTERRUPTDISABLE":
-		flag = &h.cpu.Reg.InterruptDisable
+		flag, flagName = &h.cpu.Reg.Decimal, "DECIMAL"
+	case key == "I" || key == "INTERRUPT_DISABLE":
+		flag, flagName = &h.cpu.Reg.InterruptDisable, "INTERRUPT_DISABLE"
 	}
 
 	if flag != nil {
@@ -909,7 +910,7 @@ func (h *Host) cmdRegister(c cmd.Selection) error {
 		}
 
 		*flag = v
-		h.printf("Register %s set to %v.\n", key, v)
+		h.printf("Status flag %s set to %v.\n", flagName, v)
 	} else {
 		v, err := h.exprParser.Parse(value, h)
 		if err != nil {

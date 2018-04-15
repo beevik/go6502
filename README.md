@@ -370,6 +370,8 @@ Now whenever we disassemble code that includes the instruction at address
 *
 ```
 
+To remove an annotation, use the `annotate` command with an address but without a description.
+
 ## Dumping memory
 
 Another common task is dumping the contents of memory.  To do this, use the
