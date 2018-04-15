@@ -216,7 +216,7 @@ var data = []opcodeData{
 	{symSTA, IND, 0x92, 2, 5, 0, true},
 
 	{symSTX, ZPG, 0x86, 2, 3, 0, false},
-	{symSTX, ZPY, 0x97, 2, 4, 0, false},
+	{symSTX, ZPY, 0x96, 2, 4, 0, false},
 	{symSTX, ABS, 0x8e, 3, 4, 0, false},
 
 	{symSTY, ZPG, 0x84, 2, 3, 0, false},
@@ -431,6 +431,8 @@ var unusedData = []unused{
 	{0xf3, ACC, 1, 1},
 	{0x44, ZPG, 2, 3},
 	{0x54, ZPG, 2, 4},
+	{0xd4, ZPG, 2, 4},
+	{0xf4, ZPG, 2, 4},
 	{0x07, ACC, 1, 1},
 	{0x17, ACC, 1, 1},
 	{0x27, ACC, 1, 1},
@@ -530,19 +532,31 @@ func newInstructionSet(arch Architecture) *InstructionSet {
 	// variants matching that name.
 	set.variants = make(map[string][]*Instruction)
 
+	unusedName := "???"
+
 	// For each instruction, create a list of opcode variants valid for
 	// the architecture.
 	for _, d := range data {
+		inst := &set.instructions[d.opcode]
+
+		// If opcode has only a CMOS implementation and this is NMOS, create
+		// an unused instruction for it.
 		if d.cmos && arch != CMOS {
-			continue // ignore CMOS-only instructions on NMOS CPUs
+			inst.Name = unusedName
+			inst.Mode = d.mode
+			inst.Opcode = d.opcode
+			inst.Length = d.length
+			inst.Cycles = d.cycles
+			inst.BPCycles = 0
+			inst.fn = (*CPU).unusedn
+			continue
 		}
 
 		impl := symToImpl[d.sym]
 		if impl.fn[arch] == nil {
-			continue // some opcodes have no architeture implementation
+			continue // some opcodes have no architecture implementation
 		}
 
-		inst := &set.instructions[d.opcode]
 		inst.Name = impl.name
 		inst.Mode = d.mode
 		inst.Opcode = d.opcode
@@ -557,7 +571,6 @@ func newInstructionSet(arch Architecture) *InstructionSet {
 	// Add unused opcodes to the instruction set. This information is useful
 	// mostly for 65c02, where unused operations do something predicable
 	// (i.e., eat cycles and nothing else).
-	var unusedName = "???"
 	for _, u := range unusedData {
 		inst := &set.instructions[u.opcode]
 		inst.Name = unusedName
@@ -574,6 +587,11 @@ func newInstructionSet(arch Architecture) *InstructionSet {
 		}
 	}
 
+	for i := 0; i < 256; i++ {
+		if set.instructions[i].Name == "" {
+			panic("missing instruction")
+		}
+	}
 	return set
 }
 
