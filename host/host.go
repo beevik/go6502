@@ -871,9 +871,86 @@ func (h *Host) cmdQuit(c cmd.Selection) error {
 	return errors.New("Exiting program")
 }
 
-func (h *Host) cmdRegisters(c cmd.Selection) error {
-	d, _ := h.disassemble(h.cpu.Reg.PC, displayAll)
-	h.println(d)
+func (h *Host) cmdRegister(c cmd.Selection) error {
+	if len(c.Args) == 0 {
+		d, _ := h.disassemble(h.cpu.Reg.PC, displayAll)
+		h.println(d)
+		return nil
+	}
+
+	if len(c.Args) == 1 {
+		h.displayUsage(c.Command)
+		return nil
+	}
+
+	key, value := strings.ToUpper(c.Args[0]), strings.Join(c.Args[1:], " ")
+
+	var flag *bool
+	switch {
+	case key == "C" || key == "CARRY":
+		flag = &h.cpu.Reg.Carry
+	case key == "Z" || key == "ZERO":
+		flag = &h.cpu.Reg.Zero
+	case key == "N" || key == "SIGN":
+		flag = &h.cpu.Reg.Sign
+	case key == "V" || key == "OVERFLOW":
+		flag = &h.cpu.Reg.Overflow
+	case key == "D" || key == "DECIMAL":
+		flag = &h.cpu.Reg.Decimal
+	case key == "I" || key == "INTERRUPTDISABLE":
+		flag = &h.cpu.Reg.InterruptDisable
+	}
+
+	if flag != nil {
+		v, err := stringToBool(value)
+		if err != nil {
+			h.printf("%v\n", err)
+			return nil
+		}
+
+		*flag = v
+		h.printf("Register %s set to %v.\n", key, v)
+	} else {
+		v, err := h.exprParser.Parse(value, h)
+		if err != nil {
+			h.printf("%v\n", err)
+			return nil
+		}
+
+		var sz int
+		switch key {
+		case "A":
+			h.cpu.Reg.A, sz = byte(v), 1
+		case "X":
+			h.cpu.Reg.X, sz = byte(v), 1
+		case "Y":
+			h.cpu.Reg.Y, sz = byte(v), 1
+		case "SP":
+			v = 0x0100 | (v & 0xff)
+			h.cpu.Reg.SP, sz = byte(v), 2
+		case ".":
+			key = "pc"
+			fallthrough
+		case "PC":
+			h.cpu.Reg.PC, sz = uint16(v), 2
+		default:
+			h.printf("Unknown register '%s'.\n", key)
+			return nil
+		}
+
+		switch sz {
+		case 1:
+			h.printf("Register %s set to $%02X.\n", strings.ToUpper(key), byte(v))
+		case 2:
+			h.printf("Register %s set to $%04X.\n", strings.ToUpper(key), uint16(v))
+		}
+	}
+
+	if h.interactive {
+		d, _ := h.disassemble(h.cpu.Reg.PC, displayAll)
+		h.println(d)
+	}
+
 	return nil
 }
 
@@ -911,49 +988,6 @@ func (h *Host) cmdSet(c cmd.Selection) error {
 	default:
 		key, value := strings.ToLower(c.Args[0]), strings.Join(c.Args[1:], " ")
 		v, errV := h.exprParser.Parse(value, h)
-
-		// Setting a register?
-		if errV == nil {
-			sz := -1
-			switch key {
-			case "a":
-				h.cpu.Reg.A, sz = byte(v), 1
-			case "x":
-				h.cpu.Reg.X, sz = byte(v), 1
-			case "y":
-				h.cpu.Reg.Y, sz = byte(v), 1
-			case "sp":
-				v = 0x0100 | (v & 0xff)
-				h.cpu.Reg.SP, sz = byte(v), 2
-			case ".":
-				key = "pc"
-				fallthrough
-			case "pc":
-				h.cpu.Reg.PC, sz = uint16(v), 2
-			case "carry":
-				h.cpu.Reg.Carry, sz = intToBool(int(v)), 0
-			case "zero":
-				h.cpu.Reg.Zero, sz = intToBool(int(v)), 0
-			case "decimal":
-				h.cpu.Reg.Decimal, sz = intToBool(int(v)), 0
-			case "overflow":
-				h.cpu.Reg.Overflow, sz = intToBool(int(v)), 0
-			case "sign":
-				h.cpu.Reg.Sign, sz = intToBool(int(v)), 0
-			}
-
-			switch sz {
-			case 0:
-				h.printf("Register %s set to %v.\n", strings.ToUpper(key), intToBool(int(v)))
-				return nil
-			case 1:
-				h.printf("Register %s set to $%02X.\n", strings.ToUpper(key), byte(v))
-				return nil
-			case 2:
-				h.printf("Register %s set to $%04X.\n", strings.ToUpper(key), uint16(v))
-				return nil
-			}
-		}
 
 		// Setting a debugger setting?
 		var err error

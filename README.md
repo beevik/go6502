@@ -37,7 +37,7 @@ Let's start by considering the go6502 `sample.cmd` script:
 load monitor.bin $F800
 assemble file sample.asm
 load sample.bin
-set PC START
+reg PC START
 d .
 ```
 
@@ -49,13 +49,12 @@ for now know that they do the following things:
 3. Load the `sample.bin` binary file and its corresponding `sample.map` source
    map file. The binary data is loaded into memory at the origin address
    exported during assembly into the `sample.map` file.
-4. Set the program counter to the `START` address, which is an address
-   exported during assembly into the `sample.map` file.
+4. Set the program counter register to value of the `START` address, which
+   was exported during assembly into the `sample.map` file.
 5. Disassemble the first few lines of machine code starting from the program
    counter address.
 
-To run this script, build the go6502 application and type the following on the
-command line:
+To run this script, type the following on the command line:
 
 ```
 go6502 sample.cmd
@@ -64,21 +63,21 @@ go6502 sample.cmd
 You should then see:
 
 ```
-Loaded 'monitor.bin' to $F800..$FFFF
+Loaded 'monitor.bin' to $F800..$FFFF.
 Assembled 'sample.asm' to 'sample.bin'.
-Loaded 'sample.bin' to $1000..$10FF
-Loaded 'sample.map' source map
+Loaded source map from 'sample.bin'.
+Loaded 'sample.bin' to $1000..$10FF.
 Register PC set to $1000.
 1000-   A2 EE       LDX   #$EE
-1002-   48          PHA
-1003-   20 18 10    JSR   $1018
-1006-   20 1B 10    JSR   $101B
-1009-   20 35 10    JSR   $1035
-100C-   20 45 10    JSR   $1045
-100F-   F0 06       BEQ   $1017
-1011-   A0 3B       LDY   #$3B
-1013-   A9 10       LDA   #$10
-1015-   A2 55       LDX   #$55
+1002-   A9 05       LDA   #$05
+1004-   20 19 10    JSR   $1019
+1007-   20 1C 10    JSR   $101C
+100A-   20 36 10    JSR   $1036
+100D-   20 46 10    JSR   $1046
+1010-   F0 06       BEQ   $1018
+1012-   A0 3B       LDY   #$3B
+1014-   A9 10       LDA   #$10
+1016-   A2 56       LDX   #$56
 
 1000-   A2 EE       LDX   #$EE      A=00 X=00 Y=00 PS=[------] SP=FF PC=1000 C=0
 *
@@ -111,7 +110,7 @@ go6502 commands:
     load             Load a binary file
     memory           Memory commands
     quit             Quit the program
-    registers        Display register contents
+    register         View or change register values
     run              Run the CPU
     set              Set a configuration variable
     step             Step the debugger
@@ -297,9 +296,9 @@ command.
 
 ```
 * d . 3
-1010-   F0 06       BEQ   $1018    
-1012-   A0 3B       LDY   #$3B     
-1014-   A9 10       LDA   #$10     
+1010-   F0 06       BEQ   $1018
+1012-   A0 3B       LDY   #$3B
+1014-   A9 10       LDA   #$10
 *
 ```
 
@@ -308,8 +307,8 @@ continue disassembling code from where it left off.
 
 ```
 *
-1016-   A2 56       LDX   #$56     
-1018-   00          BRK            
+1016-   A2 56       LDX   #$56
+1018-   00          BRK
 1019-   A9 FF       LDA   #$FF
 *
 ```

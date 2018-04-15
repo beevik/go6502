@@ -225,12 +225,17 @@ func init() {
 		Data:        (*Host).cmdQuit,
 	})
 	root.AddCommand(cmd.Command{
-		Name:  "registers",
-		Brief: "Display register contents",
-		Description: "Display the current contents of all CPU registers, and" +
-			" disassemble the instruction at the current program counter address.",
-		Usage: "registers",
-		Data:  (*Host).cmdRegisters,
+		Name:  "register",
+		Brief: "View or change register values",
+		Description: "When used without arguments, this command displays the current" +
+			" contents of all CPU registers and disassembles the instruction at" +
+			" the current program counter address.  When used with arguments, this" +
+			" command changes the value of a register or one of the CPU's status" +
+			" flags. Allowed register names are A, X, Y, PC and SP. Allowed status" +
+			" flag names are N (Sign), Z (Zero), C (Carry), I (InterruptDisable)," +
+			" D (Decimal) and V (Overflow).",
+		Usage: "register [<name> <value>]",
+		Data:  (*Host).cmdRegister,
 	})
 	root.AddCommand(cmd.Command{
 		Name:  "run",
@@ -298,11 +303,11 @@ func init() {
 	root.AddShortcut("e", "evaluate")
 	root.AddShortcut("m", "memory dump")
 	root.AddShortcut("ms", "memory set")
-	root.AddShortcut("r", "registers")
+	root.AddShortcut("r", "register")
 	root.AddShortcut("s", "step over")
 	root.AddShortcut("si", "step in")
 	root.AddShortcut("?", "help")
-	root.AddShortcut(".", "registers")
+	root.AddShortcut(".", "register")
 
 	cmds = root
 }
