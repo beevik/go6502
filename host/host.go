@@ -1111,11 +1111,11 @@ func (h *Host) load(filename string, addr int) (origin uint16, err error) {
 		sourceMap = asm.NewSourceMap()
 		_, err = sourceMap.ReadFrom(file)
 		if err != nil {
-			h.printf("Failed to read source map '%s': %v\n", basefile, err)
+			h.printf("Failed to read source map '%s': %v\n", filepath.Base(filename), err)
 			sourceMap = nil
 		} else {
 			if crc32.ChecksumIEEE(a.Code) == sourceMap.CRC {
-				h.printf("Loaded source map from '%s'.\n", basefile)
+				h.printf("Loaded source map from '%s'.\n", filepath.Base(filename))
 				if len(h.sourceMap.Files) == 0 {
 					h.sourceMap = sourceMap
 				} else {

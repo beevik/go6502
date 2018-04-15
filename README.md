@@ -229,7 +229,7 @@ After stepping over the `JSR` call at address `1007`, all of the instructions
 inside the subroutine at `101C` have been executed, and control has returned
 at address `100A` after 52 CPU cycles have elapsed.
 
-## Another shortcut: hit Enter!
+## Another shortcut: Hit Enter!
 
 One shortcut you will probably use frequently is the blank-line short cut.
 Whenever you hit the Enter key instead of typing a command, the go6502
@@ -330,16 +330,16 @@ Let's consider again the code loaded by the sample script.
 
 ```
 * d $1000
-1000-   A2 EE       LDX   #$EE     
-1002-   A9 05       LDA   #$05     
-1004-   20 19 10    JSR   $1019    
+1000-   A2 EE       LDX   #$EE
+1002-   A9 05       LDA   #$05
+1004-   20 19 10    JSR   $1019
 1007-   20 1C 10    JSR   $101C
-100A-   20 36 10    JSR   $1036    
-100D-   20 46 10    JSR   $1046    
-1010-   F0 06       BEQ   $1018    
-1012-   A0 3B       LDY   #$3B     
-1014-   A9 10       LDA   #$10     
-1016-   A2 56       LDX   #$56     
+100A-   20 36 10    JSR   $1036
+100D-   20 46 10    JSR   $1046
+1010-   F0 06       BEQ   $1018
+1012-   A0 3B       LDY   #$3B
+1014-   A9 10       LDA   #$10
+1016-   A2 56       LDX   #$56
 *
 ```
 
@@ -357,16 +357,16 @@ Now whenever we disassemble code that includes the instruction at address
 
 ```
 * d $1000
-1000-   A2 EE       LDX   #$EE     
-1002-   A9 05       LDA   #$05     
-1004-   20 19 10    JSR   $1019    
+1000-   A2 EE       LDX   #$EE
+1002-   A9 05       LDA   #$05
+1004-   20 19 10    JSR   $1019
 1007-   20 1C 10    JSR   $101C     ; Use different forms of the LDA command
-100A-   20 36 10    JSR   $1036    
-100D-   20 46 10    JSR   $1046    
-1010-   F0 06       BEQ   $1018    
-1012-   A0 3B       LDY   #$3B     
-1014-   A9 10       LDA   #$10     
-1016-   A2 56       LDX   #$56     
+100A-   20 36 10    JSR   $1036
+100D-   20 46 10    JSR   $1046
+1010-   F0 06       BEQ   $1018
+1012-   A0 3B       LDY   #$3B
+1014-   A9 10       LDA   #$10
+1016-   A2 56       LDX   #$56
 *
 ```
 
@@ -379,13 +379,13 @@ Another common task is dumping the contents of memory.  To do this, use the
 
 ```
 * m $1000
-1000- A2 EE A9 05 20 19 10 20   "n). .. 
+1000- A2 EE A9 05 20 19 10 20   "n). ..
 1008- 1C 10 20 36 10 20 46 10   .. 6. F.
 1010- F0 06 A0 3B A9 10 A2 56   p. ;)."V
-1018- 00 A9 FF 60 A9 20 A5 20   .).`) % 
+1018- 00 A9 FF 60 A9 20 A5 20   .).`) %
 1020- B5 20 A1 20 B1 20 AD 00   5 ! 1 -.
 1028- 02 AD 20 00 BD 00 02 B9   .- .=..9
-1030- 00 02 8D 00 03 60 A2 20   .....`" 
+1030- 00 02 8D 00 03 60 A2 20   .....`"
 1038- A6 20 B6 20 AE 00 02 AE   & 6 ....
 *
 ```
@@ -397,7 +397,7 @@ dump with a second argument.
 
 ```
 * m $1000 16
-1000- A2 EE A9 05 20 19 10 20   "n). .. 
+1000- A2 EE A9 05 20 19 10 20   "n). ..
 1008- 1C 10 20 36 10 20 46 10   .. 6. F.
 *
 ```
@@ -406,10 +406,10 @@ As with the `disassemble` command, you can enter a blank line to continue
 dumping memory from where you left off:
 
 ```
-* 
+*
 1010- F0 06 A0 3B A9 10 A2 56   p. ;)."V
-1018- 00 A9 FF 60 A9 20 A5 20   .).`) % 
-* 
+1018- 00 A9 FF 60 A9 20 A5 20   .).`) %
+*
 1020- B5 20 A1 20 B1 20 AD 00   5 ! 1 -.
 1028- 02 AD 20 00 BD 00 02 B9   .- .=..9
 *
@@ -430,8 +430,8 @@ short.
 ```
 * ms 0x800 $5A $59 $58 $57
 * m 0x800 4
-0800- 5A 59 58 57               ZYXW    
-* 
+0800- 5A 59 58 57               ZYXW
+*
 ```
 
 A sequence of memory values must be separated by spaces and may include
@@ -441,8 +441,128 @@ expressions like in the following:
 ```
 * ms 0x800 12*2 'A' 1<<4 $0F^$05
 * m 0x800 4
-0800- 18 41 10 0A               .A..   
+0800- 18 41 10 0A               .A..
 *
 ```
+
+## Aside: Number formats
+
+go6502 accepts numbers in multiple formats. In most of the examples we've seen
+so far, addresses and byte values have been specified in base-16 hexadecimal
+format using the `$` prefix.
+
+The following table lists the number-formatting options understood by go6502:
+
+ Prefix   | Format      | Base | Example     | Comment
+----------|-------------|:----:|-------------|-------------------------
+ _(none)_ | Decimal     | 10   | -151        | See note about hex mode.
+ `$`      | Hexadecimal | 16   | `$FDED`     |
+ `0x`     | Hexadecimal | 16   | `0xfded`    |
+ `0b`     | Binary      | 2    | `0b01011010`|
+ `0d`     | Decimal     | 10   | `0d128`     | Useful in hex mode.
+
+If you prefer to work primarily with hexadecimal numbers, you can change the
+"hex mode" setting using the `set` command.
+
+```
+* set HexMode true
+```
+
+In hex mode, numeric values entered without a prefix are interpreted as
+hexadecimal values. However, because hexadecimal numbers include the letters
+`A` through `F`, the interpreter is unable to distinguish between a number and
+an identifier. So identifiers are not allowed in hex mode.
+
+
+## Inspecting and changing registers
+
+The 6502 registers can be inspected using the `register` command, or `r`
+for short.
+
+```
+* r
+1000-   A2 EE       LDX   #$EE      A=00 X=00 Y=00 PS=[------] SP=FF PC=1000 C=0
+*
+```
+
+If you wish to change a register value, simply add additional arguments.
+
+```
+* r A $80
+Register A set to $80.
+1000-   A2 EE       LDX   #$EE      A=80 X=00 Y=00 PS=[------] SP=FF PC=1000 C=0
+*
+```
+
+Registers you can change this way include `A`, `X`, `Y`, `PC` and `SP`.
+
+You can also change the CPU's status flags. Simply provide one of the flag
+names (`N`, `Z`, `C`, `I`, `D` or `V`) instead of a register name.
+
+```
+* r Z 1
+Status flag ZERO set to true.
+1000-   A2 EE       LDX   #$EE      A=80 X=00 Y=00 PS=[-Z----] SP=FF PC=1000 C=0
+* r Z 0
+Status flag ZERO set to false.
+1000-   A2 EE       LDX   #$EE      A=80 X=00 Y=00 PS=[------] SP=FF PC=1000 C=0
+*
+```
+
+Further info about the `register` command can be found by typing 
+`help register`.
+
+
+## Evaluating expressions
+
+Sometimes it's useful to have a calculator on hand to compute the result of a
+simple math expression. go6502 has a built-in expression evaluator in the form
+of the `evaluate` command, or `e` for short. The evaluator understands most C
+expression operators.
+
+```
+* e 1<<4
+$0010
+* e ($FF ^ $AA) | $0100
+$0155
+* e ('A' + 0x20) | 0x80
+$00E1
+* e 0b11100101
+$00E5
+* e -151
+$FF69
+```
+
+Because go6502 is written for an 8-bit CPU with a 16-bit address space, the
+results of all evaluations are displayed as 16-bit values.
+
+
+## Assembling source code
+
+go6502 has a built-in cross-assembler. To assemble a file on disk into a raw
+binary file containing 6502 machine code, use the `assemble file` command (or
+`a` for short).
+
+```
+* a sample.asm
+Assembled 'sample.asm' to 'sample.bin'.
+```
+
+The `assemble file` command loads the specified source file, assembles it, and
+if successful outputs a raw `.bin` file containing the machine code into the
+same directory.  It also produces a `.map` source map file, which is used to
+store (1) the "origin" memory address the machine code should be loaded at,
+(2) a list of exported address identifiers, and (3) a mapping between source
+code lines and memory addresses.
+
+Once assembled, the binary file and its associated source map can be loaded
+into memory using the `load` command.
+
+```
+* load sample.bin
+Loaded source map from 'sample.map'.
+Loaded 'sample.bin' to $1000..$10FF.
+```
+
 
 _To be continued..._
