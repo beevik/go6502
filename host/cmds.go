@@ -156,10 +156,10 @@ func init() {
 		Name:  "disassemble",
 		Brief: "Disassemble code",
 		Description: "Disassemble machine code starting at the requested" +
-			" address. The number of instructions to disassemble may be" +
+			" address. The number of instruction lines to disassemble may be" +
 			" specified as an option. If no address is specified, the" +
 			" disassembly continues from where the last disassembly left off.",
-		Usage: "disassemble [<address>] [<count>]",
+		Usage: "disassemble [<address>] [<lines>]",
 		Data:  (*Host).cmdDisassemble,
 	})
 	root.AddCommand(cmd.Command{
@@ -185,6 +185,15 @@ func init() {
 			" file's associated source map file.",
 		Usage: "exports",
 		Data:  (*Host).cmdExports,
+	})
+	root.AddCommand(cmd.Command{
+		Name:  "list",
+		Brief: "List source code lines",
+		Description: "List the source code corresponding to the machine code" +
+			" at the specified address. A source map containing the address must" +
+			" have been previously loaded.",
+		Usage: "list <address> [<lines>]",
+		Data:  (*Host).cmdList,
 	})
 	root.AddCommand(cmd.Command{
 		Name:  "load",

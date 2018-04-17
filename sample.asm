@@ -30,14 +30,14 @@ STORE		.EQ		$0200
 ; -------
 
 START:				; Labels may end in ':', which is ignored.
-		LDX		#$EE
-		LDA		#$05
+		LDX #$EE
+		LDA #$05
 		JSR JSR_TEST
 		JSR LDA_TEST
 		JSR LDX_TEST
 		JSR LDY_TEST
 		BEQ .1		; Branch to a local label ('.' prefix)
-		LDY #';'
+		LDY #';'	; Immediate character ASCII value
 		LDA /DATA	; Upper byte of DATA
 		LDX #DATA	; Lower byte of DATA
 .1		BRK		; .1 label is valid only within START scope.

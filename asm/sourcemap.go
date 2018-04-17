@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"sort"
 )
@@ -50,27 +51,15 @@ func NewSourceMap() *SourceMap {
 
 // Find searches the source map for a source code line corresponding to the
 // requested address.
-func (s *SourceMap) Find(addr int) (filename string, line int) {
+func (s *SourceMap) Find(addr int) (filename string, line int, err error) {
 	i := sort.Search(len(s.Lines), func(i int) bool {
 		return s.Lines[i].Address >= addr
 	})
 	if i < len(s.Lines) && s.Lines[i].Address == addr {
-		return s.Files[s.Lines[i].FileIndex], s.Lines[i].Line
+		return s.Files[s.Lines[i].FileIndex], s.Lines[i].Line, nil
 	}
-	return "", -1
+	return "", 0, fmt.Errorf("address $%04X not found in source file", addr)
 }
-
-type byEAddr []Export
-
-func (a byEAddr) Len() int           { return len(a) }
-func (a byEAddr) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a byEAddr) Less(i, j int) bool { return a[i].Addr < a[j].Addr }
-
-type byAddr []SourceLine
-
-func (a byAddr) Len() int           { return len(a) }
-func (a byAddr) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a byAddr) Less(i, j int) bool { return a[i].Address < a[j].Address }
 
 // ClearRange clears portions of the source map that reference the
 // address range between `origin` and `origin+size``.
@@ -81,7 +70,7 @@ func (s *SourceMap) ClearRange(origin, size int) {
 	// Filter out original exports covered by the new map's address range.
 	exports := make([]Export, 0, len(s.Exports))
 	for _, e := range s.Exports {
-		if e.Addr < min || e.Addr > max {
+		if e.Address < min || e.Address > max {
 			exports = append(exports, e)
 		}
 	}
@@ -116,6 +105,18 @@ func (s *SourceMap) ClearRange(origin, size int) {
 	s.Lines = lines
 	s.Exports = exports
 }
+
+type bySLAddr []SourceLine
+
+func (a bySLAddr) Len() int           { return len(a) }
+func (a bySLAddr) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a bySLAddr) Less(i, j int) bool { return a[i].Address < a[j].Address }
+
+type byEAddr []Export
+
+func (a byEAddr) Len() int           { return len(a) }
+func (a byEAddr) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a byEAddr) Less(i, j int) bool { return a[i].Address < a[j].Address }
 
 // Merge merges another source map (s2) into this source map.
 func (s *SourceMap) Merge(s2 *SourceMap) {
@@ -153,7 +154,7 @@ func (s *SourceMap) Merge(s2 *SourceMap) {
 	}
 
 	// Sort lines by address.
-	sort.Sort(byAddr(s.Lines))
+	sort.Sort(bySLAddr(s.Lines))
 
 	// Build the files array from the file map.
 	s.Files = make([]string, len(fileMap))
@@ -225,7 +226,7 @@ func (s *SourceMap) ReadFrom(r io.Reader) (n int64, err error) {
 		if err != nil {
 			return n, err
 		}
-		s.Exports[i].Addr = binary.LittleEndian.Uint16(b[0:2])
+		s.Exports[i].Address = binary.LittleEndian.Uint16(b[0:2])
 	}
 
 	return n, nil
@@ -294,7 +295,7 @@ func (s *SourceMap) WriteTo(w io.Writer) (n int64, err error) {
 		n++
 
 		var b [2]byte
-		binary.LittleEndian.PutUint16(b[:], e.Addr)
+		binary.LittleEndian.PutUint16(b[:], e.Address)
 		nn, err = ww.Write(b[:])
 		n += int64(nn)
 		if err != nil {

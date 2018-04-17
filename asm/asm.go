@@ -298,8 +298,8 @@ type assembler struct {
 
 // An Export describes an exported address.
 type Export struct {
-	Label string
-	Addr  uint16
+	Label   string
+	Address uint16
 }
 
 // Assembly contains the assembled machine code and other data associated with
@@ -624,8 +624,8 @@ func (a *assembler) generateCode() error {
 				a.addError(ss.expr.line, "export is not an address label")
 			}
 			export := Export{
-				Label: ss.expr.identifier.str,
-				Addr:  uint16(ss.expr.value),
+				Label:   ss.expr.identifier.str,
+				Address: uint16(ss.expr.value),
 			}
 			a.exports = append(a.exports, export)
 		}

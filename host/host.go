@@ -48,6 +48,7 @@ const (
 	stateProcessingCommands state = iota
 	stateMiniAssembler
 	stateRunning
+	stateInterrupted
 	stateBreakpoint
 	stateStepOverBreakpoint
 )
@@ -66,6 +67,7 @@ type Host struct {
 	miniAddr    uint16
 	assembly    []string
 	exprParser  *exprParser
+	sourceCode  map[string][]string
 	sourceMap   *asm.SourceMap
 	settings    *settings
 	annotations map[uint16]string
@@ -76,6 +78,7 @@ func New() *Host {
 	h := &Host{
 		state:       stateProcessingCommands,
 		exprParser:  newExprParser(),
+		sourceCode:  make(map[string][]string),
 		sourceMap:   asm.NewSourceMap(),
 		settings:    newSettings(),
 		annotations: make(map[uint16]string),
@@ -211,7 +214,7 @@ func (h *Host) assembleInline() error {
 		addr = int(next)
 	}
 
-	h.printf("Inline code successfully assembled at $%04X.\n", h.miniAddr)
+	h.printf("Code successfully assembled at $%04X.\n", h.miniAddr)
 	return nil
 }
 
@@ -221,7 +224,7 @@ func (h *Host) Break() {
 
 	switch h.state {
 	case stateRunning:
-		h.displayPC()
+		h.state = stateInterrupted
 
 	case stateProcessingCommands:
 		h.prompt()
@@ -229,11 +232,10 @@ func (h *Host) Break() {
 
 	case stateMiniAssembler:
 		h.println("Interactive assembly canceled.")
+		h.assembly = nil
 		h.state = stateProcessingCommands
 		h.prompt()
 	}
-
-	h.state = stateProcessingCommands
 }
 
 func (h *Host) write(p []byte) (n int, err error) {
@@ -394,14 +396,13 @@ func (h *Host) cmdAssembleInteractive(c cmd.Selection) error {
 		return nil
 	}
 
-	h.lastCmd = nil
-
 	h.state = stateMiniAssembler
 	h.miniAddr = addr
 	h.assembly = nil
+	h.lastCmd = nil
 
-	h.println("Begin entering assembly instructions.")
-	h.println("Type END to assemble. Type Ctrl-C to cancel.")
+	h.println("Enter assembly language instructions.")
+	h.println("Type END to assemble, Ctrl-C to cancel.")
 	return nil
 }
 
@@ -728,8 +729,10 @@ func (h *Host) cmdExports(c cmd.Selection) error {
 		h.println("No active exports.")
 		return nil
 	}
+
+	h.printf("Exported addresses:")
 	for _, e := range h.sourceMap.Exports {
-		h.printf("%-16s $%04X\n", e.Label, e.Addr)
+		h.printf("   %-16s $%04X\n", e.Label, e.Address)
 	}
 	return nil
 }
@@ -806,6 +809,105 @@ func (h *Host) cmdHelp(c cmd.Selection) error {
 			}
 		}
 	}
+	return nil
+}
+
+func (h *Host) cmdList(c cmd.Selection) error {
+	if len(c.Args) == 0 {
+		c.Args = []string{"$"}
+	}
+
+	// Parse the address.
+	addr, err := h.parseAddr(c.Args[0], h.settings.NextSourceAddr)
+	if err != nil {
+		h.printf("%v\n", err)
+		return nil
+	}
+
+	// Parse the number of lines to display.
+	nl := h.settings.SourceLines
+	if len(c.Args) > 1 {
+		v, err := h.parseExpr(strings.Join(c.Args[1:], " "))
+		if err != nil {
+			h.printf("%v\n", err)
+			return nil
+		}
+		nl = int(v)
+	}
+
+	// Keep track of the last displayed line number for each source file.
+	last := make(map[string]int)
+
+	b := make([]byte, 3)
+
+	// Search around the address for an address with source code, and attempt
+	// to display the first source code line.
+	for _, o := range []int{0, -1, -2, +1, +2, -3, +3, -4, +4, -5, +5} {
+		orig := uint16(int(addr) + o)
+
+		fn, li, err := h.sourceMap.Find(int(orig))
+		if err != nil {
+			continue
+		}
+
+		lines, err := h.getSourceLines(fn)
+		if err != nil {
+			continue
+		}
+
+		_, addr = disasm.Disassemble(h.cpu.Mem, orig)
+		cn := addr - orig
+		h.cpu.Mem.LoadBytes(orig, b[:cn])
+		cs := codeString(b[:cn])
+		h.printf("%04X- %-8s\t%s\n", orig, cs, lines[li-1])
+
+		last[fn] = li
+		break
+	}
+
+	if len(last) == 0 {
+		h.printf("No source code found for address $%04X.\n", addr)
+		return nil
+	}
+
+	// Display remaining source code lines.
+	for i := 0; i < nl; i++ {
+		orig := addr
+
+		fn, li, err := h.sourceMap.Find(int(orig))
+		if err != nil {
+			continue
+		}
+
+		lines, err := h.getSourceLines(fn)
+		if err != nil {
+			last[fn] = li
+			continue
+		}
+
+		_, addr = disasm.Disassemble(h.cpu.Mem, orig)
+		cn := addr - orig
+		h.cpu.Mem.LoadBytes(orig, b[:cn])
+		cs := codeString(b[:cn])
+
+		l, ok := last[fn]
+		if !ok {
+			l = li - 1
+		}
+
+		for i, j := l, min(li, len(lines)); i < j; i++ {
+			var c string
+			if i == j-1 {
+				c = cs
+			}
+			h.printf("%04X- %-8s\t%s\n", addr, c, lines[i])
+		}
+
+		last[fn] = li
+	}
+
+	h.settings.NextSourceAddr = addr
+	h.lastCmd.Args = []string{"$", fmt.Sprintf("%d", nl)}
 	return nil
 }
 
@@ -909,18 +1011,18 @@ func (h *Host) cmdRegister(c cmd.Selection) error {
 	var flag *bool
 	var flagName string
 	switch {
-	case key == "C" || key == "CARRY":
-		flag, flagName = &h.cpu.Reg.Carry, "CARRY"
-	case key == "Z" || key == "ZERO":
-		flag, flagName = &h.cpu.Reg.Zero, "ZERO"
 	case key == "N" || key == "SIGN":
 		flag, flagName = &h.cpu.Reg.Sign, "SIGN"
-	case key == "V" || key == "OVERFLOW":
-		flag, flagName = &h.cpu.Reg.Overflow, "OVERFLOW"
-	case key == "D" || key == "DECIMAL":
-		flag, flagName = &h.cpu.Reg.Decimal, "DECIMAL"
+	case key == "Z" || key == "ZERO":
+		flag, flagName = &h.cpu.Reg.Zero, "ZERO"
+	case key == "C" || key == "CARRY":
+		flag, flagName = &h.cpu.Reg.Carry, "CARRY"
 	case key == "I" || key == "INTERRUPT_DISABLE":
 		flag, flagName = &h.cpu.Reg.InterruptDisable, "INTERRUPT_DISABLE"
+	case key == "D" || key == "DECIMAL":
+		flag, flagName = &h.cpu.Reg.Decimal, "DECIMAL"
+	case key == "V" || key == "OVERFLOW":
+		flag, flagName = &h.cpu.Reg.Overflow, "OVERFLOW"
 	}
 
 	if flag != nil {
@@ -992,8 +1094,12 @@ func (h *Host) cmdRun(c cmd.Selection) error {
 	for h.state == stateRunning {
 		h.step()
 	}
-	h.state = stateProcessingCommands
 
+	if h.state == stateInterrupted {
+		h.displayPC()
+	}
+
+	h.state = stateProcessingCommands
 	h.settings.NextDisasmAddr = h.cpu.Reg.PC
 	return nil
 }
@@ -1058,14 +1164,14 @@ func (h *Host) cmdStepIn(c cmd.Selection) error {
 	for i := count - 1; i >= 0 && h.state == stateRunning; i-- {
 		h.step()
 		switch {
-		case i == h.settings.StepLinesToDisplay:
+		case i == h.settings.MaxStepLines:
 			h.println("...")
-		case i < h.settings.StepLinesToDisplay:
+		case i < h.settings.MaxStepLines:
 			h.displayPC()
 		}
 	}
-	h.state = stateProcessingCommands
 
+	h.state = stateProcessingCommands
 	h.settings.NextDisasmAddr = h.cpu.Reg.PC
 	return nil
 }
@@ -1085,14 +1191,14 @@ func (h *Host) cmdStepOver(c cmd.Selection) error {
 	for i := count - 1; i >= 0 && h.state == stateRunning; i-- {
 		h.stepOver()
 		switch {
-		case i == h.settings.StepLinesToDisplay:
+		case i == h.settings.MaxStepLines:
 			h.println("...")
-		case i < h.settings.StepLinesToDisplay:
+		case i < h.settings.MaxStepLines:
 			h.displayPC()
 		}
 	}
-	h.state = stateProcessingCommands
 
+	h.state = stateProcessingCommands
 	h.settings.NextDisasmAddr = h.cpu.Reg.PC
 	return nil
 }
@@ -1357,6 +1463,31 @@ func (h *Host) displayCommands(commands *cmd.Tree, c *cmd.Command) {
 	}
 }
 
+func (h *Host) getSourceLines(filename string) (lines []string, err error) {
+	var ok bool
+	if lines, ok = h.sourceCode[filename]; ok {
+		return lines, nil
+	}
+
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+
+	if lines == nil {
+		return lines, nil
+	}
+
+	h.sourceCode[filename] = lines
+	return lines, nil
+}
+
 func (h *Host) resolveIdentifier(s string) (int64, error) {
 	s = strings.ToLower(s)
 
@@ -1377,7 +1508,7 @@ func (h *Host) resolveIdentifier(s string) (int64, error) {
 
 	for _, e := range h.sourceMap.Exports {
 		if strings.ToLower(e.Label) == s {
-			return int64(e.Addr), nil
+			return int64(e.Address), nil
 		}
 	}
 
