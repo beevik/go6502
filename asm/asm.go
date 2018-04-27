@@ -1288,9 +1288,9 @@ func (l fstring) consumeIndirect() (mode cpu.Mode, expr fstring, remain fstring,
 	expr, remain = l.consumeUntil(func(c byte) bool { return c == ',' || c == ')' })
 
 	switch {
-	case remain.startsWithString(",X)"):
+	case remain.startsWithString(",X)") || remain.startsWithString(",x)"):
 		mode, remain = cpu.IDX, remain.consume(3)
-	case remain.startsWithString("),Y"):
+	case remain.startsWithString("),Y") || remain.startsWithString("),y"):
 		mode, remain = cpu.IDY, remain.consume(3)
 	case remain.startsWithChar(')'):
 		mode, remain = cpu.IND, remain.consume(1)
@@ -1313,9 +1313,9 @@ func (l fstring) consumeAbsolute() (mode cpu.Mode, expr fstring, remain fstring,
 	expr, remain = l.consumeUntilChar(',')
 
 	switch {
-	case remain.startsWithString(",X"):
+	case remain.startsWithString(",X") || remain.startsWithString(",x"):
 		mode, remain = cpu.ABX, remain.consume(2)
-	case remain.startsWithString(",Y"):
+	case remain.startsWithString(",Y") || remain.startsWithString(",y"):
 		mode, remain = cpu.ABY, remain.consume(2)
 	default:
 		mode = cpu.ABS

@@ -173,7 +173,7 @@ func binarynum(c byte) bool {
 }
 
 func opcodeChar(c byte) bool {
-	return c >= 'A' && c <= 'Z'
+	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
 }
 
 func labelStartChar(c byte) bool {

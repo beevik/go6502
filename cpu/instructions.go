@@ -4,6 +4,8 @@
 
 package cpu
 
+import "strings"
+
 // An opsym is an internal symbol used to associate an opcode's data
 // with its instructions.
 type opsym byte
@@ -515,7 +517,7 @@ func (s *InstructionSet) Lookup(opcode byte) *Instruction {
 // GetInstructions returns all CPU instructions whose name matches the
 // provided string.
 func (s *InstructionSet) GetInstructions(name string) []*Instruction {
-	return s.variants[name]
+	return s.variants[strings.ToUpper(name)]
 }
 
 // Create an instruction set for a CPU architecture.

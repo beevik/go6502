@@ -730,7 +730,7 @@ func (h *Host) cmdExports(c cmd.Selection) error {
 		return nil
 	}
 
-	h.printf("Exported addresses:")
+	h.println("Exported addresses:")
 	for _, e := range h.sourceMap.Exports {
 		h.printf("   %-16s $%04X\n", e.Label, e.Address)
 	}
