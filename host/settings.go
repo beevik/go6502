@@ -15,22 +15,24 @@ import (
 )
 
 type settings struct {
-	HexMode         bool
-	DisasmLines     int
-	SourceLines     int
-	MaxStepLines    int
-	MemDumpBytes    int
-	NextDisasmAddr  uint16
-	NextSourceAddr  uint16
-	NextMemDumpAddr uint16
+	HexMode         bool   `doc:"hexadecimal input mode"`
+	CompactMode     bool   `doc:"compact disassembly output"`
+	MemDumpBytes    int    `doc:"default number of memory bytes to dump"`
+	DisasmLines     int    `doc:"default number of lines to disassemble"`
+	SourceLines     int    `doc:"default number of source lines to display"`
+	MaxStepLines    int    `doc:"max lines to disassemble when stepping"`
+	NextDisasmAddr  uint16 `doc:"address of next disassembly"`
+	NextSourceAddr  uint16 `doc:"address of next source line display"`
+	NextMemDumpAddr uint16 `doc:"address of next memory dump"`
 }
 
 func newSettings() *settings {
 	return &settings{
 		HexMode:         false,
+		CompactMode:     false,
+		MemDumpBytes:    64,
 		DisasmLines:     10,
 		SourceLines:     10,
-		MemDumpBytes:    64,
 		MaxStepLines:    20,
 		NextDisasmAddr:  0,
 		NextMemDumpAddr: 0,
@@ -42,6 +44,7 @@ type settingsField struct {
 	index int
 	kind  reflect.Kind
 	typ   reflect.Type
+	doc   string
 }
 
 var (
@@ -54,11 +57,13 @@ func init() {
 	settingsFields = make([]settingsField, settingsType.NumField())
 	for i := 0; i < len(settingsFields); i++ {
 		f := settingsType.Field(i)
+		doc, _ := f.Tag.Lookup("doc")
 		settingsFields[i] = settingsField{
 			name:  f.Name,
 			index: i,
 			kind:  f.Type.Kind(),
 			typ:   f.Type,
+			doc:   doc,
 		}
 		settingsTree.Add(strings.ToLower(f.Name), &settingsFields[i])
 	}
@@ -68,16 +73,18 @@ func (s *settings) Display(w io.Writer) {
 	value := reflect.ValueOf(s).Elem()
 	for i, f := range settingsFields {
 		v := value.Field(i)
+		var s string
 		switch f.kind {
 		case reflect.String:
-			fmt.Fprintf(w, "    %-20s \"%s\"\n", f.name, v.String())
+			s = fmt.Sprintf("    %-16s \"%s\"", f.name, v.String())
 		case reflect.Uint8:
-			fmt.Fprintf(w, "    %-20s $%02X\n", f.name, uint8(v.Uint()))
+			s = fmt.Sprintf("    %-16s $%02X", f.name, uint8(v.Uint()))
 		case reflect.Uint16:
-			fmt.Fprintf(w, "    %-20s $%04X\n", f.name, uint16(v.Uint()))
+			s = fmt.Sprintf("    %-16s $%04X", f.name, uint16(v.Uint()))
 		default:
-			fmt.Fprintf(w, "    %-20s %v\n", f.name, v)
+			s = fmt.Sprintf("    %-16s %v", f.name, v)
 		}
+		fmt.Fprintf(w, "%-28s (%s)\n", s, f.doc)
 	}
 }
 

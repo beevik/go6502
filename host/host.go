@@ -35,7 +35,8 @@ import (
 type displayFlags uint8
 
 const (
-	displayRegisters displayFlags = 1 << iota
+	displayVerbose displayFlags = 1 << iota
+	displayRegisters
 	displayCycles
 	displayAnnotations
 
@@ -996,8 +997,7 @@ func (h *Host) cmdQuit(c cmd.Selection) error {
 
 func (h *Host) cmdRegister(c cmd.Selection) error {
 	if len(c.Args) == 0 {
-		d, _ := h.disassemble(h.cpu.Reg.PC, displayAll)
-		h.println(d)
+		h.printf("%s C=%d\n", disasm.GetRegisterString(&h.cpu.Reg), h.cpu.Cycles)
 		return nil
 	}
 
@@ -1370,14 +1370,20 @@ func (h *Host) disassemble(addr uint16, flags displayFlags) (str string, next ui
 	b := make([]byte, l)
 	cpu.Mem.LoadBytes(addr, b)
 
-	str = fmt.Sprintf("%04X-   %-8s    %-15s", addr, codeString(b[:l]), line)
+	if h.settings.CompactMode && (flags&displayVerbose) == 0 {
+		str = fmt.Sprintf("%04X- %-8s  %-15s", addr, codeString(b[:l]), line)
+		if (flags & displayRegisters) != 0 {
+			str = disasm.GetCompactRegisterString(&h.cpu.Reg) + "  " + str
+		}
+	} else {
+		str = fmt.Sprintf("%04X-   %-8s    %-15s", addr, codeString(b[:l]), line)
 
-	if (flags & displayRegisters) != 0 {
-		str += " " + disasm.GetRegisterString(&h.cpu.Reg)
-	}
-
-	if (flags & displayCycles) != 0 {
-		str += fmt.Sprintf(" C=%-12d", h.cpu.Cycles)
+		if (flags & displayRegisters) != 0 {
+			str += " " + disasm.GetRegisterString(&h.cpu.Reg)
+		}
+		if (flags & displayCycles) != 0 {
+			str += fmt.Sprintf(" C=%-12d", h.cpu.Cycles)
+		}
 	}
 
 	if (flags & displayAnnotations) != 0 {

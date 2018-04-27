@@ -70,8 +70,19 @@ func Disassemble(m cpu.Memory, addr uint16) (line string, next uint16) {
 }
 
 // GetRegisterString returns a string describing the contents of the 6502
-// register.
+// registers.
 func GetRegisterString(r *cpu.Registers) string {
+	return fmt.Sprintf("A=%02X X=%02X Y=%02X PS=[%s] SP=%02X PC=%04X",
+		r.A, r.X, r.Y, getStatusBits(r), r.SP, r.PC)
+}
+
+// GetCompactRegisterString returns a compact string describing the contents
+// of the 6502 registers. It excludes the program counter and stack pointer.
+func GetCompactRegisterString(r *cpu.Registers) string {
+	return fmt.Sprintf("A=%02X X=%02X Y=%02X PS=[%s]", r.A, r.X, r.Y, getStatusBits(r))
+}
+
+func getStatusBits(r *cpu.Registers) string {
 	v := func(bit bool, ch byte) byte {
 		if bit {
 			return ch
@@ -86,9 +97,7 @@ func GetRegisterString(r *cpu.Registers) string {
 		v(r.Decimal, 'D'),
 		v(r.Overflow, 'V'),
 	}
-
-	return fmt.Sprintf("A=%02X X=%02X Y=%02X PS=[%s] SP=%02X PC=%04X",
-		r.A, r.X, r.Y, string(b), r.SP, r.PC)
+	return string(b)
 }
 
 func byteToInt(b byte) int {
