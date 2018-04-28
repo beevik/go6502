@@ -233,6 +233,15 @@ func init() {
 		Usage: "memory set <address> <byte> [<byte> ...]",
 		Data:  (*Host).cmdMemorySet,
 	})
+	mem.AddCommand(cmd.Command{
+		Name:  "copy",
+		Brief: "Copy memory",
+		Description: "Copy memory from one range of addresses to another. You" +
+			" must specify the destination address, the first byte of the source" +
+			" address, and the last byte of the source address.",
+		Usage: "memory copy <dst addr> <src addr begin> <src addr end>",
+		Data:  (*Host).cmdMemoryCopy,
+	})
 
 	root.AddCommand(cmd.Command{
 		Name:        "quit",
@@ -319,6 +328,7 @@ func init() {
 	root.AddShortcut("dbd", "databreakpoint disable")
 	root.AddShortcut("e", "evaluate")
 	root.AddShortcut("m", "memory dump")
+	root.AddShortcut("mc", "memory copy")
 	root.AddShortcut("ms", "memory set")
 	root.AddShortcut("r", "register")
 	root.AddShortcut("s", "step over")

@@ -991,6 +991,42 @@ func (h *Host) cmdMemorySet(c cmd.Selection) error {
 	return nil
 }
 
+func (h *Host) cmdMemoryCopy(c cmd.Selection) error {
+	if len(c.Args) < 3 {
+		h.displayUsage(c.Command)
+		return nil
+	}
+
+	dst, err := h.parseAddr(c.Args[0], 0)
+	if err != nil {
+		h.printf("%v\n", err)
+		return nil
+	}
+
+	src0, err := h.parseAddr(c.Args[1], 0)
+	if err != nil {
+		h.printf("%v\n", err)
+		return nil
+	}
+
+	src1, err := h.parseAddr(c.Args[2], 0)
+	if err != nil {
+		h.printf("%v\n", err)
+		return nil
+	}
+
+	if src1 < src0 {
+		h.println("Source-end address must be greater than source-begin address.")
+		return nil
+	}
+
+	b := make([]byte, src1-src0+1)
+	h.cpu.Mem.LoadBytes(src0, b)
+	h.cpu.Mem.StoreBytes(dst, b)
+	h.printf("%d bytes copied from $%04X to $%04X.\n", len(b), src0, dst)
+	return nil
+}
+
 func (h *Host) cmdQuit(c cmd.Selection) error {
 	return errors.New("Exiting program")
 }
@@ -1159,15 +1195,18 @@ func (h *Host) cmdStepIn(c cmd.Selection) error {
 		}
 	}
 
-	// Step the CPU count times.
-	h.state = stateRunning
-	for i := count - 1; i >= 0 && h.state == stateRunning; i-- {
-		h.step()
-		switch {
-		case i == h.settings.MaxStepLines:
-			h.println("...")
-		case i < h.settings.MaxStepLines:
-			h.displayPC()
+	if count == 0 {
+		h.displayPC()
+	} else {
+		h.state = stateRunning
+		for i := count - 1; i >= 0 && h.state == stateRunning; i-- {
+			h.step()
+			switch {
+			case i == h.settings.MaxStepLines:
+				h.println("...")
+			case i < h.settings.MaxStepLines:
+				h.displayPC()
+			}
 		}
 	}
 
@@ -1186,15 +1225,18 @@ func (h *Host) cmdStepOver(c cmd.Selection) error {
 		}
 	}
 
-	// Step over the next instruction count times.
-	h.state = stateRunning
-	for i := count - 1; i >= 0 && h.state == stateRunning; i-- {
-		h.stepOver()
-		switch {
-		case i == h.settings.MaxStepLines:
-			h.println("...")
-		case i < h.settings.MaxStepLines:
-			h.displayPC()
+	if count == 0 {
+		h.displayPC()
+	} else {
+		h.state = stateRunning
+		for i := count - 1; i >= 0 && h.state == stateRunning; i-- {
+			h.stepOver()
+			switch {
+			case i == h.settings.MaxStepLines:
+				h.println("...")
+			case i < h.settings.MaxStepLines:
+				h.displayPC()
+			}
 		}
 	}
 
