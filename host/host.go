@@ -228,6 +228,7 @@ func (h *Host) Break() {
 		h.state = stateInterrupted
 
 	case stateProcessingCommands:
+		h.println("Type 'quit' to exit the application.")
 		h.prompt()
 		return
 
