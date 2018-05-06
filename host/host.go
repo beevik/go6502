@@ -901,7 +901,7 @@ func (h *Host) cmdList(c cmd.Selection) error {
 			if i == j-1 {
 				c = cs
 			}
-			h.printf("%04X- %-8s\t%s\n", addr, c, lines[i])
+			h.printf("%04X- %-8s\t%s\n", orig, c, lines[i])
 		}
 
 		last[fn] = li
