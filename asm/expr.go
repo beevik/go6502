@@ -184,9 +184,10 @@ func (e *expr) eval(addr int, macros map[string]*expr, labels map[string]int) bo
 
 		case e.op == opIdentifier:
 			var ident string
-			if e.identifier.startsWithChar('.') {
+			switch {
+			case e.identifier.startsWithChar('.'):
 				ident = "~" + e.scopeLabel.str + e.identifier.str
-			} else {
+			default:
 				ident = e.identifier.str
 			}
 			if m, ok := macros[ident]; ok {

@@ -326,9 +326,17 @@ func (a *Assembly) WriteTo(w io.Writer) (n int64, err error) {
 	return int64(nn), err
 }
 
+// Option type used by the Assembly function.
+type Option uint
+
+// Options for the Assemble function.
+const (
+	Verbose Option = 1 << iota // verbose output during assembly
+)
+
 // Assemble reads data from the provided stream and attempts to assemble it
 // into 6502 byte code.
-func Assemble(r io.Reader, filename string, verbose bool) (*Assembly, *SourceMap, error) {
+func Assemble(r io.Reader, filename string, options Option) (*Assembly, *SourceMap, error) {
 	a := &assembler{
 		arch:     cpu.NMOS,
 		instSet:  cpu.GetInstructionSet(cpu.NMOS),
@@ -340,7 +348,7 @@ func Assemble(r io.Reader, filename string, verbose bool) (*Assembly, *SourceMap
 		files:    []string{filename},
 		exports:  make([]Export, 0),
 		segments: make([]segment, 0, 32),
-		verbose:  verbose,
+		verbose:  (options & Verbose) != 0,
 	}
 
 	// Assembly consists of the following steps

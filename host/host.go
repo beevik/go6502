@@ -196,7 +196,7 @@ func (h *Host) assembleInline() error {
 
 	h.println("Assembling inline code...")
 	s := strings.Join(h.assembly, "\n")
-	a, _, err := asm.Assemble(strings.NewReader(s), "inline", false)
+	a, _, err := asm.Assemble(strings.NewReader(s), "inline", 0)
 
 	if err != nil {
 		for _, e := range a.Errors {
@@ -339,7 +339,7 @@ func (h *Host) cmdAssembleFile(c cmd.Selection) error {
 	}
 	defer file.Close()
 
-	assembly, sourceMap, err := asm.Assemble(file, filename, false)
+	assembly, sourceMap, err := asm.Assemble(file, filename, 0)
 	if err != nil {
 		h.printf("Failed to assemble: %s\n", filepath.Base(filename))
 		for _, e := range assembly.Errors {
