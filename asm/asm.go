@@ -697,10 +697,6 @@ func (a *assembler) storeLabel(label fstring) error {
 	// If the label starts with '.', it is a local label. So append
 	// it to the active scope label.
 	if label.startsWithChar('.') {
-		if a.scopeLabel.isEmpty() {
-			a.addError(label, "no global label '%s' previously defined", label.str)
-			return errParse
-		}
 		label.str = "~" + a.scopeLabel.str + label.str
 	} else {
 		a.scopeLabel = label
