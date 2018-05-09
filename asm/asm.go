@@ -291,6 +291,7 @@ type assembler struct {
 	files       []string            // processed files
 	segments    []segment           // segment of machine code
 	unevaluated []uneval            // expressions requiring evaluation
+	out         io.Writer           // output used for verbose output
 	verbose     bool                // verbose output
 	exprParser  exprParser          // used to parse math expressions
 	errors      []asmerror          // errors encountered during assembly
@@ -336,7 +337,11 @@ const (
 
 // Assemble reads data from the provided stream and attempts to assemble it
 // into 6502 byte code.
-func Assemble(r io.Reader, filename string, options Option) (*Assembly, *SourceMap, error) {
+func Assemble(r io.Reader, filename string, out io.Writer, options Option) (*Assembly, *SourceMap, error) {
+	if out == nil {
+		out = os.Stdout
+	}
+
 	a := &assembler{
 		arch:     cpu.NMOS,
 		instSet:  cpu.GetInstructionSet(cpu.NMOS),
@@ -348,6 +353,7 @@ func Assemble(r io.Reader, filename string, options Option) (*Assembly, *SourceM
 		files:    []string{filename},
 		exports:  make([]Export, 0),
 		segments: make([]segment, 0, 32),
+		out:      out,
 		verbose:  (options & Verbose) != 0,
 	}
 
@@ -1169,12 +1175,12 @@ func (a *assembler) addError(l fstring, format string, args ...interface{}) {
 	a.errors = append(a.errors, asmerror{l, msg})
 	if a.verbose {
 		filename := a.files[l.fileIndex]
-		fmt.Printf("Syntax error in '%s' line %d, col %d: %s\n", filename, l.row, l.column+1, msg)
-		fmt.Println(l.full)
+		fmt.Fprintf(a.out, "Syntax error in '%s' line %d, col %d: %s\n", filename, l.row, l.column+1, msg)
+		fmt.Fprintln(a.out, l.full)
 		for i := 0; i < l.column; i++ {
-			fmt.Printf("-")
+			fmt.Fprintf(a.out, "-")
 		}
-		fmt.Println("^")
+		fmt.Fprintln(a.out, "^")
 	}
 }
 
@@ -1189,8 +1195,8 @@ func (a *assembler) addExprErrors() {
 // In verbose mode, log a string to standard output.
 func (a *assembler) log(format string, args ...interface{}) {
 	if a.verbose {
-		fmt.Printf(format, args...)
-		fmt.Printf("\n")
+		fmt.Fprintf(a.out, format, args...)
+		fmt.Fprintf(a.out, "\n")
 	}
 }
 
@@ -1199,7 +1205,7 @@ func (a *assembler) log(format string, args ...interface{}) {
 func (a *assembler) logLine(line fstring, format string, args ...interface{}) {
 	if a.verbose {
 		detail := fmt.Sprintf(format, args...)
-		fmt.Printf("%-3d %-3d | %-20s | %s\n", line.row, line.column+1, detail, line.str)
+		fmt.Fprintf(a.out, "%-3d %-3d | %-20s | %s\n", line.row, line.column+1, detail, line.str)
 	}
 }
 
@@ -1219,9 +1225,9 @@ func (a *assembler) logBytes(addr int, b []byte) {
 // In verbose mode, log a section header to the standard output.
 func (a *assembler) logSection(name string) {
 	if a.verbose {
-		fmt.Println(strings.Repeat("-", len(name)+6))
-		fmt.Printf("-- %s --\n", name)
-		fmt.Println(strings.Repeat("-", len(name)+6))
+		fmt.Fprintln(a.out, strings.Repeat("-", len(name)+6))
+		fmt.Fprintf(a.out, "-- %s --\n", name)
+		fmt.Fprintln(a.out, strings.Repeat("-", len(name)+6))
 	}
 }
 

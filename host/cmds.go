@@ -33,8 +33,9 @@ func init() {
 		Name:  "file",
 		Brief: "Assemble a file from disk and save the binary to disk",
 		Description: "Run the cross-assembler on the specified file," +
-			" producing a binary file and source map file if successful.",
-		Usage: "assemble file <filename>",
+			" producing a binary file and source map file if successful." +
+			" If you want verbose output, specify true as a second parameter.",
+		Usage: "assemble file <filename> [<verbose>]",
 		Data:  (*Host).cmdAssembleFile,
 	})
 	ass.AddCommand(cmd.Command{
