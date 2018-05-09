@@ -1217,7 +1217,7 @@ func (a *assembler) logBytes(addr int, b []byte) {
 			if j > n {
 				j = n
 			}
-			a.log("%04X-*%s", addr+i, byteString(b[i:j]))
+			a.log("%04X-*  %s", addr+i, byteString(b[i:j]))
 		}
 	}
 }
