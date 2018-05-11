@@ -48,16 +48,18 @@ func NewFlatMemory() *FlatMemory {
 
 // LoadByte loads a single byte from the address and returns it.
 func (m *FlatMemory) LoadByte(addr uint16) byte {
-	if int(addr) < len(m.b) {
-		return m.b[addr]
-	}
-	return 0
+	return m.b[addr]
 }
 
 // LoadBytes loads multiple bytes from the address and returns them.
 func (m *FlatMemory) LoadBytes(addr uint16, b []byte) {
 	if int(addr)+len(b) <= len(m.b) {
 		copy(b, m.b[addr:])
+	} else {
+		r0 := len(m.b) - int(addr)
+		r1 := len(b) - r0
+		copy(b, m.b[addr:])
+		copy(b[r0:], make([]byte, r1))
 	}
 }
 
@@ -69,10 +71,6 @@ func (m *FlatMemory) LoadBytes(addr uint16, b []byte) {
 // LoadAddress on $12FF reads the low byte from $12FF and the high byte from
 // $1200. This mimics the behavior of the NMOS 6502.
 func (m *FlatMemory) LoadAddress(addr uint16) uint16 {
-	if int(addr)+2 > len(m.b) {
-		return 0
-	}
-
 	if (addr & 0xff) == 0xff {
 		return uint16(m.b[addr]) | uint16(m.b[addr-0xff])<<8
 	}
@@ -81,22 +79,20 @@ func (m *FlatMemory) LoadAddress(addr uint16) uint16 {
 
 // StoreByte stores a byte at the requested address.
 func (m *FlatMemory) StoreByte(addr uint16, v byte) {
-	if int(addr) < len(m.b) {
-		m.b[addr] = v
-	}
+	m.b[addr] = v
 }
 
 // StoreBytes stores multiple bytes to the requested address.
 func (m *FlatMemory) StoreBytes(addr uint16, b []byte) {
-	if int(addr)+len(b) <= len(m.b) {
-		copy(m.b[int(addr):], b)
-	}
+	copy(m.b[addr:], b)
 }
 
 // StoreAddress stores a 16-bit address value to the requested address.
 func (m *FlatMemory) StoreAddress(addr uint16, v uint16) {
-	if int(addr)+2 <= len(m.b) {
-		m.b[addr] = byte(v & 0xff)
+	m.b[addr] = byte(v & 0xff)
+	if (addr & 0xff) == 0xff {
+		m.b[addr-0xff] = byte(v >> 8)
+	} else {
 		m.b[addr+1] = byte(v >> 8)
 	}
 }

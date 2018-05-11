@@ -206,12 +206,20 @@ func (h *Host) assembleInline() error {
 		return nil
 	}
 
+	if int(h.miniAddr)+len(a.Code) > 64*1024 {
+		h.println("Assembly failed. Code goes beyond 64K.")
+		return nil
+	}
+
 	h.mem.StoreBytes(h.miniAddr, a.Code)
 	h.sourceMap.ClearRange(int(h.miniAddr), len(a.Code))
 
 	for addr, end := int(h.miniAddr), int(h.miniAddr)+len(a.Code); addr < end; {
 		d, next := h.disassemble(uint16(addr), 0)
 		h.println(d)
+		if next < uint16(addr) {
+			break
+		}
 		addr = int(next)
 	}
 
@@ -1120,8 +1128,7 @@ func (h *Host) cmdRegister(c cmd.Selection) error {
 	}
 
 	if h.interactive {
-		d, _ := h.disassemble(h.cpu.Reg.PC, displayAll)
-		h.println(d)
+		h.printf("%s C=%d\n", disasm.GetRegisterString(&h.cpu.Reg), h.cpu.Cycles)
 	}
 
 	return nil
@@ -1465,8 +1472,8 @@ func (h *Host) dumpMemory(addr0, bytes uint16) {
 	// Don't align display for short dumps.
 	if addr1-addr0 < 8 {
 		addrToBuf(addr0, buf[0:4])
-		for a, c1, c2 := addr0, 6, 32; a <= addr1; a, c1, c2 = a+1, c1+3, c2+1 {
-			m := h.cpu.Mem.LoadByte(a)
+		for a, c1, c2 := uint32(addr0), 6, 32; a <= uint32(addr1); a, c1, c2 = a+1, c1+3, c2+1 {
+			m := h.cpu.Mem.LoadByte(uint16(a))
 			byteToBuf(m, buf[c1:c1+2])
 			buf[c2] = toPrintableChar(m)
 		}

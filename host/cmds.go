@@ -255,11 +255,10 @@ func init() {
 		Name:  "register",
 		Brief: "View or change register values",
 		Description: "When used without arguments, this command displays the current" +
-			" contents of all CPU registers and disassembles the instruction at" +
-			" the current program counter address.  When used with arguments, this" +
+			" contents of the CPU registers.  When used with arguments, this" +
 			" command changes the value of a register or one of the CPU's status" +
-			" flags. Allowed register names are A, X, Y, PC and SP. Allowed status" +
-			" flag names are N (Sign), Z (Zero), C (Carry), I (InterruptDisable)," +
+			" flags. Allowed register names include A, X, Y, PC and SP. Allowed status" +
+			" flag names include N (Sign), Z (Zero), C (Carry), I (InterruptDisable)," +
 			" D (Decimal) and V (Overflow).",
 		Usage: "register [<name> <value>]",
 		Data:  (*Host).cmdRegister,
