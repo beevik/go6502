@@ -47,7 +47,6 @@ JSR_TEST	LDA #$FF
 
 LDA_TEST	LDA #$20	; Immediate
 		LDA $20		; Zero page
-
 		LDA $20,X	; Zero page + X
 		LDA ($20,X)	; Indirect + X
 		LDA ($20),Y	; Indirect + Y
