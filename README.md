@@ -28,7 +28,6 @@ Then build go6502.
 go build
 ```
 
-
 # Tutorial
 
 Let's start by considering the go6502 `sample.cmd` script:

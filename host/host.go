@@ -1444,7 +1444,7 @@ func (h *Host) disassemble(addr uint16, flags displayFlags) (str string, next ui
 			str += " " + disasm.GetRegisterString(&h.cpu.Reg)
 		}
 		if (flags & displayCycles) != 0 {
-			str += fmt.Sprintf(" C=%-12d", h.cpu.Cycles)
+			str += fmt.Sprintf(" C=%d", h.cpu.Cycles)
 		}
 	}
 

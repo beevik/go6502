@@ -9,14 +9,14 @@ import (
 	"strings"
 )
 
-func codeString(bc []byte) string {
-	switch len(bc) {
+func codeString(b []byte) string {
+	switch len(b) {
 	case 1:
-		return fmt.Sprintf("%02X", bc[0])
+		return fmt.Sprintf("%02X", b[0])
 	case 2:
-		return fmt.Sprintf("%02X %02X", bc[0], bc[1])
+		return fmt.Sprintf("%02X %02X", b[0], b[1])
 	case 3:
-		return fmt.Sprintf("%02X %02X %02X", bc[0], bc[1], bc[2])
+		return fmt.Sprintf("%02X %02X %02X", b[0], b[1], b[2])
 	default:
 		return ""
 	}
@@ -38,15 +38,11 @@ func endsWith(s, m string) bool {
 
 func stringToBool(s string) (bool, error) {
 	s = strings.ToLower(s)
-	switch {
-	case s == "0":
+	switch s {
+	case "0", "false":
 		return false, nil
-	case s == "1":
+	case "1", "true":
 		return true, nil
-	case s == "true":
-		return true, nil
-	case s == "false":
-		return false, nil
 	default:
 		return false, fmt.Errorf("invalid bool value '%s'", s)
 	}
