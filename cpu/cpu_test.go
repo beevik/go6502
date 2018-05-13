@@ -9,7 +9,7 @@ import (
 	"github.com/beevik/go6502/cpu"
 )
 
-func runCPU(t *testing.T, asmString string, steps int) *cpu.CPU {
+func loadCPU(t *testing.T, asmString string) *cpu.CPU {
 	b := strings.NewReader(asmString)
 	r, sm, err := asm.Assemble(b, "test.asm", os.Stdout, 0)
 	if err != nil {
@@ -21,11 +21,20 @@ func runCPU(t *testing.T, asmString string, steps int) *cpu.CPU {
 	cpu := cpu.NewCPU(cpu.NMOS, mem)
 	mem.StoreBytes(sm.Origin, r.Code)
 	cpu.SetPC(sm.Origin)
+	return cpu
+}
 
+func stepCPU(cpu *cpu.CPU, steps int) {
 	for i := 0; i < steps; i++ {
 		cpu.Step()
 	}
+}
 
+func runCPU(t *testing.T, asmString string, steps int) *cpu.CPU {
+	cpu := loadCPU(t, asmString)
+	if cpu != nil {
+		stepCPU(cpu, steps)
+	}
 	return cpu
 }
 
@@ -47,6 +56,12 @@ func expectACC(t *testing.T, cpu *cpu.CPU, acc byte) {
 	}
 }
 
+func expectSP(t *testing.T, cpu *cpu.CPU, sp byte) {
+	if cpu.Reg.SP != sp {
+		t.Errorf("Stack pointer incorrect. exp: %02X, got $%02X", sp, cpu.Reg.SP)
+	}
+}
+
 func expectMem(t *testing.T, cpu *cpu.CPU, addr uint16, v byte) {
 	got := cpu.Mem.LoadByte(addr)
 	if got != v {
@@ -57,7 +72,7 @@ func expectMem(t *testing.T, cpu *cpu.CPU, addr uint16, v byte) {
 func TestAccumulator(t *testing.T) {
 	asm := `
 	.ORG $1000
-	LDA #$5e
+	LDA #$5E
 	STA $15
 	STA $1500`
 
@@ -71,6 +86,40 @@ func TestAccumulator(t *testing.T) {
 	expectACC(t, cpu, 0x5e)
 	expectMem(t, cpu, 0x15, 0x5e)
 	expectMem(t, cpu, 0x1500, 0x5e)
+}
+
+func TestStack(t *testing.T) {
+	asm := `
+	.ORG $1000
+	LDA #$11
+	PHA
+	LDA #$12
+	PHA
+	LDA #$13
+	PHA
+	
+	PLA
+	STA $2000
+	PLA
+	STA $2001
+	PLA
+	STA $2002`
+
+	cpu := loadCPU(t, asm)
+	stepCPU(cpu, 6)
+
+	expectSP(t, cpu, 0xfc)
+	expectACC(t, cpu, 0x13)
+	expectMem(t, cpu, 0x1ff, 0x11)
+	expectMem(t, cpu, 0x1fe, 0x12)
+	expectMem(t, cpu, 0x1fd, 0x13)
+
+	stepCPU(cpu, 6)
+	expectACC(t, cpu, 0x11)
+	expectSP(t, cpu, 0xff)
+	expectMem(t, cpu, 0x2000, 0x13)
+	expectMem(t, cpu, 0x2001, 0x12)
+	expectMem(t, cpu, 0x2002, 0x11)
 }
 
 func TestPageCross(t *testing.T) {
