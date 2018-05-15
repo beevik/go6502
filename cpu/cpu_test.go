@@ -122,6 +122,33 @@ func TestStack(t *testing.T) {
 	expectMem(t, cpu, 0x2002, 0x11)
 }
 
+func TestIndirect(t *testing.T) {
+	asm := `
+	.ORG $1000
+	LDX #$80
+	LDY #$40
+	LDA #$EE
+	STA $2000,X
+	STA $2000,Y
+
+	LDA #$11
+	STA $06
+	LDA #$05
+	STA $07
+	LDX #$01
+	LDY #$01
+	LDA #$BB
+	STA ($05,X)
+	STA ($06),Y
+	`
+
+	cpu := runCPU(t, asm, 14)
+	expectMem(t, cpu, 0x2080, 0xee)
+	expectMem(t, cpu, 0x2040, 0xee)
+	expectMem(t, cpu, 0x0511, 0xbb)
+	expectMem(t, cpu, 0x0512, 0xbb)
+}
+
 func TestPageCross(t *testing.T) {
 	asm := `
 	.ORG $1000
