@@ -5,6 +5,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -12,11 +13,34 @@ import (
 	"github.com/beevik/go6502/host"
 )
 
+var (
+	assemble string
+)
+
+func init() {
+	flag.StringVar(&assemble, "a", "", "assemble file")
+	flag.CommandLine.Usage = func() {
+		fmt.Println("Usage: go6502 [script] ..\nOptions:")
+		flag.PrintDefaults()
+	}
+}
+
 func main() {
+	flag.Parse()
+
 	h := host.New()
 
+	// Do command-line assemble if requested.
+	if assemble != "" {
+		err := h.AssembleFile(assemble)
+		if err != nil {
+			fmt.Printf("Failed to assemble file '%s'.\n", assemble)
+		}
+		os.Exit(0)
+	}
+
 	// Run commands contained in command-line files.
-	args := os.Args[1:]
+	args := flag.Args()
 	if len(args) > 0 {
 		for _, filename := range args {
 			file, err := os.Open(filename)

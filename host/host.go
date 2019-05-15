@@ -96,6 +96,20 @@ func New() *Host {
 	return h
 }
 
+// AssembleFile assembles a file on disk and stores the result in a compiled
+// 'bin' file. A source map file is also produced.
+func (h *Host) AssembleFile(filename string) error {
+	s := cmd.Selection{
+		Command: &cmd.Command{},
+		Args:    []string{filename},
+	}
+
+	h.output = bufio.NewWriter(os.Stdout)
+	h.interactive = true
+
+	return h.cmdAssembleFile(s)
+}
+
 // RunCommands accepts host commands from a reader and outputs the results
 // to a writer. If the commands are interactive, a prompt is displayed while
 // the host waits for the the next command to be entered.
