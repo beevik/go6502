@@ -907,7 +907,7 @@ func (h *Host) cmdList(c cmd.Selection) error {
 	}
 
 	// Display remaining source code lines.
-	for i := 0; i < nl; i++ {
+	for i := 0; i < nl-1; i++ {
 		orig := addr
 
 		fn, li, err := h.sourceMap.Find(int(orig))

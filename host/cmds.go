@@ -327,6 +327,7 @@ func init() {
 	root.AddShortcut("dbe", "databreakpoint enable")
 	root.AddShortcut("dbd", "databreakpoint disable")
 	root.AddShortcut("e", "evaluate")
+	root.AddShortcut("l", "list")
 	root.AddShortcut("m", "memory dump")
 	root.AddShortcut("mc", "memory copy")
 	root.AddShortcut("ms", "memory set")
