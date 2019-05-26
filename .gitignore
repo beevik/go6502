@@ -2,3 +2,5 @@ debug
 debug.test
 go6502
 todo.txt
+sample.bin
+sample.map

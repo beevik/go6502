@@ -38,8 +38,9 @@ START:				; Labels may end in ':', which is ignored.
 		JSR LDY_TEST
 		BEQ .1		; Branch to a local label ('.' prefix)
 		LDY #';'	; Immediate character ASCII value
-		LDA /DATA	; Upper byte of DATA
-		LDX #DATA	; Lower byte of DATA
+		LDA #>DATA	; Upper byte of DATA
+		LDX #<DATA	; Lower byte of DATA
+		LDX #DATA	; Also: lower byte of DATA
 .1		BRK		; .1 label is valid only within START scope.
 
 JSR_TEST	LDA #$FF
@@ -159,7 +160,7 @@ DATA:
 		.DS		"AAA"			; 41 41 C1
 		.DS		"A", 0			; C1 00
 		.DB		$ - .TSTRINGS		; 05
-		
+
 		.ALIGN		4
 
 		; Pad the file to a length of 256 bytes. Use FF for padding.

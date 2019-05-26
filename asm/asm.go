@@ -155,11 +155,10 @@ func (i *instruction) operandString() string {
 
 // An operand represents the parameter(s) of an assembly instruction.
 type operand struct {
-	modeGuess     cpu.Mode // addressing mode guesed based on operand string
-	expr          *expr    // expression tree, used to resolve value
-	forceAbsolute bool     // operand must use 2-byte absolute address
-	forceLSB      bool     // operand must use least significant byte
-	forceMSB      bool     // operand must use most significant byte
+	modeGuess      cpu.Mode // addressing mode guesed based on operand string
+	expr           *expr    // expression tree, used to resolve value
+	forceImmediate bool     // operand forces an immediate addressing mode
+	forceAbsolute  bool     // operand must use 2-byte absolute address
 }
 
 func (o *operand) getValue() int {
@@ -169,10 +168,8 @@ func (o *operand) getValue() int {
 	}
 
 	switch {
-	case o.forceLSB:
+	case o.forceImmediate:
 		return v & 0xff
-	case o.forceMSB:
-		return (v >> 8) & 0xff
 	default:
 		return v
 	}
@@ -183,7 +180,7 @@ func (o *operand) size() int {
 	switch {
 	case o.modeGuess == cpu.IMP:
 		return 0
-	case o.forceLSB || o.forceMSB:
+	case o.forceImmediate:
 		return 1
 	case o.expr.address || o.forceAbsolute || o.expr.value > 0xff || o.expr.value < -128:
 		return 2
@@ -1110,16 +1107,7 @@ func (a *assembler) parseOperand(line fstring) (o operand, remain fstring, err e
 
 	case line.startsWithChar('#'):
 		o.modeGuess = cpu.IMM
-		o.forceLSB = true
-		o.expr, remain, err = a.exprParser.parse(line.consume(1), a.scopeLabel, allowParentheses)
-		if err != nil {
-			a.addExprErrors()
-			return
-		}
-
-	case line.startsWithChar('/'):
-		o.modeGuess = cpu.IMM
-		o.forceMSB = true
+		o.forceImmediate = true
 		o.expr, remain, err = a.exprParser.parse(line.consume(1), a.scopeLabel, allowParentheses)
 		if err != nil {
 			a.addExprErrors()

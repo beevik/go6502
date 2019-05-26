@@ -21,6 +21,8 @@ const (
 	// unary operations
 	opUnaryMinus exprOp = iota
 	opUnaryPlus
+	opUnaryLessThan
+	opUnaryGreaterThan
 	opBitwiseNEG
 
 	// binary operations
@@ -64,9 +66,11 @@ func (o *opdata) isUnary() bool {
 
 var ops = []opdata{
 	// unary operations
-	{7, 1, false, "-", func(a, b int) int { return -a }},             // uminus
-	{7, 1, false, "+", func(a, b int) int { return a }},              // uplus
-	{7, 1, false, "~", func(a, b int) int { return 0xffffffff ^ a }}, // bitneg
+	{7, 1, false, "-", func(a, b int) int { return -a }},              // uminus
+	{7, 1, false, "+", func(a, b int) int { return a }},               // uplus
+	{7, 1, false, "<", func(a, b int) int { return a & 0xff }},        // ulessthan
+	{7, 1, false, ">", func(a, b int) int { return (a >> 8) & 0xff }}, // ugreaterthan
+	{7, 1, false, "~", func(a, b int) int { return 0xffffffff ^ a }},  // bitneg
 
 	// binary operations
 	{6, 2, true, "*", func(a, b int) int { return a * b }},           // multiply
