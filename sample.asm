@@ -18,10 +18,11 @@
 ; ---------
 ; Constants
 ; ---------
-		; .EQ defines a macro. A macro may be a literal (numeric or
-		; character). Or it may be an expression including literals,
-		; address labels, and other macros. Such macros may appear in
-		; expressions anywhere else in the source code.
+		; .EQ defines a constant. A constant may be a literal (numeric
+		; or character). Or it may be an expression including
+		; literals, address labels, and other constants. Such
+		; constants may appear in expressions anywhere else in the
+		; source code.
 
 STORE		.EQ		$0200
 
@@ -36,12 +37,12 @@ START:				; Labels may end in ':', which is ignored.
 		JSR LDA_TEST
 		JSR LDX_TEST
 		JSR LDY_TEST
-		BEQ .1		; Branch to a local label ('.' prefix)
+		BEQ @1		; Branch to a local label ('@' or '.' prefix)
 		LDY #';'	; Immediate character ASCII value
+		LDX #DATA	; Lower byte of DATA
+		LDX #<DATA	; Also: Lower byte of DATA
 		LDA #>DATA	; Upper byte of DATA
-		LDX #<DATA	; Lower byte of DATA
-		LDX #DATA	; Also: lower byte of DATA
-.1		BRK		; .1 label is valid only within START scope.
+@1		BRK		; @1 label is valid only within START scope.
 
 JSR_TEST	LDA #$FF
 		RTS
@@ -88,7 +89,7 @@ DATA:
 
 		.DB		"AB", $00		; 41 42 00
 		.DB		'F', 'F'		; 46 46
-		.DB		$01			; 01
+		.DB		1			; 01
 		.DB		$ABCD			; CD
 		.DB		$ABCD >> 8		; AB
 		.DB		$0102			; 02
@@ -108,7 +109,7 @@ DATA:
 
 		.DW		"AB", $00		; 41 42 00 00
 		.DW		'F', 'F'		; 46 00 46 00
-		.DW		$01			; 01 00
+		.DW		1			; 01 00
 		.DW		$ABCD			; CD AB
 		.DW		$ABCD >> 8		; AB 00
 		.DW		$0102			; 02 01
@@ -128,7 +129,7 @@ DATA:
 
 		.DD		"AB", $00		; 41 42 00 00 00 00
 		.DD		'F', 'F'		; 46 00 00 00 46 00 00 00
-		.DD		$01			; 01 00 00 00
+		.DD		1			; 01 00 00 00
 		.DD		$ABCD			; CD AB 00 00
 		.DD		$ABCD >> 8		; AB 00 00 00
 		.DD		$0102			; 02 01 00 00

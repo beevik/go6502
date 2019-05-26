@@ -705,9 +705,9 @@ func (a *assembler) parseLabeledLine(line fstring) error {
 
 // Store a label into the assembler's label list.
 func (a *assembler) storeLabel(label fstring) error {
-	// If the label starts with '.', it is a local label. So append
-	// it to the active scope label.
-	if label.startsWithChar('.') {
+	// If the label starts with '.' or '@', it is a local label. So append it
+	// to the active scope label.
+	if label.startsWithChar('.') || label.startsWithChar('@') {
 		label.str = "~" + a.scopeLabel.str + label.str
 	} else {
 		a.scopeLabel = label

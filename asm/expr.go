@@ -161,7 +161,7 @@ func (e *expr) String() string {
 	case e.op == opString:
 		return e.stringLiteral.str
 	case e.op == opIdentifier:
-		if e.address && e.identifier.startsWithChar('.') {
+		if e.address && (e.identifier.startsWithChar('.') || e.identifier.startsWithChar('@')) {
 			return "~" + e.scopeLabel.str + e.identifier.str
 		}
 		return e.identifier.str
@@ -189,7 +189,7 @@ func (e *expr) eval(addr int, macros map[string]*expr, labels map[string]int) bo
 		case e.op == opIdentifier:
 			var ident string
 			switch {
-			case e.identifier.startsWithChar('.'):
+			case e.identifier.startsWithChar('.') || e.identifier.startsWithChar('@'):
 				ident = "~" + e.scopeLabel.str + e.identifier.str
 			default:
 				ident = e.identifier.str

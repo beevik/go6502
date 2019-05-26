@@ -177,19 +177,19 @@ func opcodeChar(c byte) bool {
 }
 
 func labelStartChar(c byte) bool {
-	return alpha(c) || c == '_' || c == '.'
+	return alpha(c) || c == '_' || c == '.' || c == '@'
 }
 
 func labelChar(c byte) bool {
-	return alpha(c) || decimal(c) || c == '_' || c == '.'
+	return alpha(c) || decimal(c) || c == '_' || c == '.' || c == '@'
 }
 
 func identifierStartChar(c byte) bool {
-	return alpha(c) || c == '_' || c == '.'
+	return alpha(c) || c == '_' || c == '.' || c == '@'
 }
 
 func identifierChar(c byte) bool {
-	return alpha(c) || decimal(c) || c == '_' || c == '.' || c == ':'
+	return alpha(c) || decimal(c) || c == '_' || c == '.' || c == '@' || c == ':'
 }
 
 func stringQuote(c byte) bool {
