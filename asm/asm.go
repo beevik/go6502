@@ -647,7 +647,7 @@ func (a *assembler) generateCode() error {
 // Parse a single line of assembly code.
 func (a *assembler) parseLine(line fstring) error {
 	// Skip empty (or comment-only) lines
-	if line.isEmpty() {
+	if line.isEmpty() || line.startsWithChar('*') {
 		return nil
 	}
 
