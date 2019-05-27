@@ -44,6 +44,7 @@ const (
 	opBitwiseNot
 	opUnaryMinus
 	opUnaryPlus
+	opUnaryBinary
 )
 
 type associativity byte
@@ -67,7 +68,7 @@ var ops = []op{
 	{"", opNil, 0, right, 2, opNil, nil},
 	{"*", opMultiply, 6, right, 2, opNil, func(a, b int64) int64 { return a * b }},
 	{"/", opDivide, 6, right, 2, opNil, func(a, b int64) int64 { return a / b }},
-	{"%", opModulo, 6, right, 2, opNil, func(a, b int64) int64 { return a % b }},
+	{"%", opModulo, 6, right, 2, opUnaryBinary, func(a, b int64) int64 { return a % b }},
 	{"+", opAdd, 5, right, 2, opUnaryPlus, func(a, b int64) int64 { return a + b }},
 	{"-", opSubtract, 5, right, 2, opUnaryMinus, func(a, b int64) int64 { return a - b }},
 	{"<<", opShiftLeft, 4, right, 2, opNil, func(a, b int64) int64 { return a << uint32(b) }},
@@ -78,6 +79,7 @@ var ops = []op{
 	{"~", opBitwiseNot, 7, left, 1, opNil, func(a, b int64) int64 { return ^a }},
 	{"-", opUnaryMinus, 7, left, 1, opNil, func(a, b int64) int64 { return -a }},
 	{"+", opUnaryPlus, 7, left, 1, opNil, func(a, b int64) int64 { return a }},
+	{"%", opUnaryBinary, 7, left, 1, opNil, func(a, b int64) int64 { return fromBinary(a) }},
 }
 
 // lexeme identifiers
@@ -287,12 +289,6 @@ func (p *exprParser) parseNumber(t tstring) (tok token, remain tstring, err erro
 		}
 		base, fn, num = 16, hexadecimal, num.consume(1)
 
-	case '%':
-		if len(num) < 2 {
-			return token{}, t, errExprParse
-		}
-		base, fn, num = 2, binary, num.consume(2)
-
 	case '0':
 		if len(num) > 1 && (num[1] == 'x' || num[1] == 'b' || num[1] == 'd') {
 			if len(num) < 3 {
@@ -465,6 +461,18 @@ func (s *tokenStack) pop() token {
 	t := s.stack[top]
 	s.stack = s.stack[:top]
 	return t
+}
+
+//
+// helpers
+//
+
+func fromBinary(a int64) int64 {
+	v, err := strconv.ParseInt(strconv.FormatInt(a, 10), 2, 64)
+	if err != nil {
+		return 0
+	}
+	return v
 }
 
 //
