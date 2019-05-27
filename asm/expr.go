@@ -410,7 +410,7 @@ func (p *exprParser) parseToken(line fstring) (t token, remain fstring, err erro
 		t.typ = tokenHere
 		t.bytes = 2
 
-	case line.startsWith(decimal) || line.startsWithChar('$'):
+	case line.startsWith(decimal) || line.startsWithChar('$') || line.startsWithChar('%'):
 		t.value, t.bytes, remain, err = p.parseNumber(line)
 		t.typ = tokenNumber
 		if p.prevTokenType.isValue() || p.prevTokenType == tokenRightParen {
@@ -509,6 +509,9 @@ func (p *exprParser) parseNumber(line fstring) (value, bytes int, remain fstring
 	case line.startsWithString("0x"):
 		line = line.consume(2)
 		base, fn, bitsPerChar = 16, hexadecimal, 4
+	case line.startsWithChar('%'):
+		line = line.consume(1)
+		base, fn, bitsPerChar = 2, binarynum, 1
 	case line.startsWithString("0b"):
 		line = line.consume(2)
 		base, fn, bitsPerChar = 2, binarynum, 1

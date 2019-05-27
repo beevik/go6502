@@ -287,6 +287,12 @@ func (p *exprParser) parseNumber(t tstring) (tok token, remain tstring, err erro
 		}
 		base, fn, num = 16, hexadecimal, num.consume(1)
 
+	case '%':
+		if len(num) < 2 {
+			return token{}, t, errExprParse
+		}
+		base, fn, num = 2, binary, num.consume(2)
+
 	case '0':
 		if len(num) > 1 && (num[1] == 'x' || num[1] == 'b' || num[1] == 'd') {
 			if len(num) < 3 {

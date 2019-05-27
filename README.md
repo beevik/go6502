@@ -114,7 +114,7 @@ go6502 commands:
     set              Set a configuration variable
     step             Step the debugger
 
-* 
+*
 ```
 
 To get more information about a command, type `help` followed by the command
@@ -457,6 +457,7 @@ The following table lists the number-formatting options understood by go6502:
  _(none)_ | Decimal     | 10   | -151        | See note about hex mode.
  `$`      | Hexadecimal | 16   | `$FDED`     |
  `0x`     | Hexadecimal | 16   | `0xfded`    |
+ `%`      | Binary      | 2    | `%01011010` |
  `0b`     | Binary      | 2    | `0b01011010`|
  `0d`     | Decimal     | 10   | `0d128`     | Useful in hex mode.
 
@@ -508,7 +509,7 @@ Status flag ZERO set to false.
 *
 ```
 
-Further info about the `register` command can be found by typing 
+Further info about the `register` command can be found by typing
 `help register`.
 
 
