@@ -72,11 +72,14 @@ const hiBitTerm = 1 << 16
 var pseudoOps = map[string]pseudoOpData{
 	".ar":      {fn: (*assembler).parseArch},
 	".arch":    {fn: (*assembler).parseArch},
-	".eq":      {fn: (*assembler).parseMacro},
-	".equ":     {fn: (*assembler).parseMacro},
-	"=":        {fn: (*assembler).parseMacro},
+	"arch":     {fn: (*assembler).parseArch},
+	".eq":      {fn: (*assembler).parseEquate},
+	".equ":     {fn: (*assembler).parseEquate},
+	"equ":      {fn: (*assembler).parseEquate},
+	"=":        {fn: (*assembler).parseEquate},
 	".or":      {fn: (*assembler).parseOrigin},
 	".org":     {fn: (*assembler).parseOrigin},
+	"org":      {fn: (*assembler).parseOrigin},
 	".db":      {fn: (*assembler).parseData, param: 1},
 	".byte":    {fn: (*assembler).parseData, param: 1},
 	".dw":      {fn: (*assembler).parseData, param: 2},
@@ -85,6 +88,7 @@ var pseudoOps = map[string]pseudoOpData{
 	".dword":   {fn: (*assembler).parseData, param: 4},
 	".dh":      {fn: (*assembler).parseHexString},
 	".hex":     {fn: (*assembler).parseHexString},
+	"hex":      {fn: (*assembler).parseHexString},
 	".ds":      {fn: (*assembler).parseData, param: 1 | hiBitTerm},
 	".tstring": {fn: (*assembler).parseData, param: 1 | hiBitTerm},
 	".al":      {fn: (*assembler).parseAlign},
@@ -92,6 +96,7 @@ var pseudoOps = map[string]pseudoOpData{
 	".pad":     {fn: (*assembler).parsePadding},
 	".ex":      {fn: (*assembler).parseExport},
 	".export":  {fn: (*assembler).parseExport},
+	"exp":      {fn: (*assembler).parseExport},
 }
 
 func init() {
@@ -99,6 +104,7 @@ func init() {
 	// aggressive initialization loop detection.
 	pseudoOps[".in"] = pseudoOpData{fn: (*assembler).parseInclude}
 	pseudoOps[".include"] = pseudoOpData{fn: (*assembler).parseInclude}
+	pseudoOps["include"] = pseudoOpData{fn: (*assembler).parseInclude}
 }
 
 // A segment is a small chunk of machine code that may represent a single
@@ -281,7 +287,7 @@ type assembler struct {
 	code        []byte              // generated machine code
 	r           io.Reader           // the reader passed to Assemble
 	scopeLabel  fstring             // label currently in scope
-	macros      map[string]*expr    // macro -> expression
+	constants   map[string]*expr    // constant -> expression
 	labels      map[string]int      // label -> segment index
 	exports     []Export            // exported addresses
 	sourceLines []SourceLine        // source code line mappings
@@ -340,24 +346,24 @@ func Assemble(r io.Reader, filename string, out io.Writer, options Option) (*Ass
 	}
 
 	a := &assembler{
-		arch:     cpu.NMOS,
-		instSet:  cpu.GetInstructionSet(cpu.NMOS),
-		origin:   0x1000,
-		pc:       -1,
-		r:        r,
-		macros:   make(map[string]*expr),
-		labels:   make(map[string]int),
-		files:    []string{filename},
-		exports:  make([]Export, 0),
-		segments: make([]segment, 0, 32),
-		out:      out,
-		verbose:  (options & Verbose) != 0,
+		arch:      cpu.NMOS,
+		instSet:   cpu.GetInstructionSet(cpu.NMOS),
+		origin:    0x1000,
+		pc:        -1,
+		r:         r,
+		constants: make(map[string]*expr),
+		labels:    make(map[string]int),
+		files:     []string{filename},
+		exports:   make([]Export, 0),
+		segments:  make([]segment, 0, 32),
+		out:       out,
+		verbose:   (options & Verbose) != 0,
 	}
 
 	// Assembly consists of the following steps
 	steps := []func(a *assembler) error{
 		(*assembler).parse,                        // Parse the assembly code
-		(*assembler).evaluateExpressions,          // Evaluate operand & macro expressions
+		(*assembler).evaluateExpressions,          // Evaluate operand & constant expressions
 		(*assembler).assignAddresses,              // Assign addresses to instructions
 		(*assembler).resolveLabels,                // Resolve labels to addresses
 		(*assembler).evaluateExpressions,          // Do another evaluation pass with resolved labels
@@ -404,7 +410,7 @@ func Assemble(r io.Reader, filename string, out io.Writer, options Option) (*Ass
 }
 
 // Read the assembly code and perform the initial parsing. Build up
-// machine code segments, the macro table, the label table, and a
+// machine code segments, the constants table, the label table, and a
 // list of unevaluated expression trees.
 func (a *assembler) parse() error {
 	a.logSection("Parsing assembly code")
@@ -453,13 +459,13 @@ func (a *assembler) segaddr(segno int) int {
 	return -1
 }
 
-// Evaluate all unevaluated expression trees using macros and labels.
+// Evaluate all unevaluated expression trees using constants and labels.
 func (a *assembler) evaluateExpressions() error {
 	a.logSection("Evaluating expressions")
 	for {
 		var unevaluated []uneval
 		for _, u := range a.unevaluated {
-			if u.expr.eval(a.segaddr(u.segno), a.macros, a.labels) {
+			if u.expr.eval(a.segaddr(u.segno), a.constants, a.labels) {
 				a.log("%-25s Val:$%X", u.expr.String(), u.expr.value)
 			} else {
 				a.log("%-25s Val:??? isaddr:%v", u.expr.String(), u.expr.address)
@@ -547,13 +553,13 @@ func (a *assembler) assignAddresses() error {
 func (a *assembler) resolveLabels() error {
 	a.logSection("Resolving labels")
 	for label, segno := range a.labels {
-		if _, ok := a.macros[label]; ok {
+		if _, ok := a.constants[label]; ok {
 			continue
 		}
 		addr := a.segaddr(segno)
 		if addr != -1 {
 			a.log("%-15s Seg:%-3d Addr:$%04X", label, segno, addr)
-			a.macros[label] = &expr{op: opNumber, value: addr, evaluated: true}
+			a.constants[label] = &expr{op: opNumber, value: addr, evaluated: true}
 		}
 	}
 	return nil
@@ -664,13 +670,12 @@ func (a *assembler) parseUnlabeledLine(line fstring) error {
 	a.logLine(line, "unlabeled_line")
 
 	// Is the next word a pseudo-op, rather than an opcode?
-	if line.startsWith(pseudoOpStartChar) {
-		var pseudoOp fstring
-		pseudoOp, line = line.consumeWhile(wordChar)
-		return a.parsePseudoOp(line.consumeWhitespace(), fstring{}, pseudoOp)
+	word, line := line.consumeWhile(wordChar)
+	if op, ok := pseudoOps[strings.ToLower(word.str)]; ok {
+		return op.fn(a, line.consumeWhitespace(), fstring{}, op.param)
 	}
 
-	return a.parseInstruction(line)
+	return a.parseInstruction(word, line)
 }
 
 // Parse a line of assembly code that starts with a label.
@@ -684,10 +689,9 @@ func (a *assembler) parseLabeledLine(line fstring) error {
 	}
 
 	// Is the next word a pseudo-op, rather than an opcode?
-	if line.startsWith(pseudoOpStartChar) {
-		var pseudoOp fstring
-		pseudoOp, line = line.consumeWhile(wordChar)
-		return a.parsePseudoOp(line.consumeWhitespace(), label, pseudoOp)
+	word, line := line.consumeWhile(wordChar)
+	if op, ok := pseudoOps[strings.ToLower(word.str)]; ok {
+		return op.fn(a, line.consumeWhitespace(), label, op.param)
 	}
 
 	// Store the label.
@@ -698,7 +702,7 @@ func (a *assembler) parseLabeledLine(line fstring) error {
 
 	// Parse any instruction following the label
 	if !line.isEmpty() {
-		return a.parseInstruction(line)
+		return a.parseInstruction(word, line)
 	}
 	return nil
 }
@@ -751,16 +755,6 @@ func (a *assembler) parseLabel(line fstring) (label fstring, remain fstring, err
 	return label, remain, nil
 }
 
-// Parse a pseudo-op beginning with "." (such as ".EQ").
-func (a *assembler) parsePseudoOp(line, label, pseudoOp fstring) error {
-	op, ok := pseudoOps[strings.ToLower(pseudoOp.str)]
-	if !ok {
-		a.addError(pseudoOp, "invalid directive '%s'", pseudoOp.str)
-		return errParse
-	}
-	return op.fn(a, line, label, op.param)
-}
-
 // Parse an architecture pseudo-op.
 func (a *assembler) parseArch(line, label fstring, param interface{}) error {
 	archl, _ := line.consumeWhile(labelChar)
@@ -780,25 +774,25 @@ func (a *assembler) parseArch(line, label fstring, param interface{}) error {
 	return nil
 }
 
-// Parse an ".EQ" macro definition.
-func (a *assembler) parseMacro(line, label fstring, param interface{}) error {
+// Parse an ".EQU" constant definition.
+func (a *assembler) parseEquate(line, label fstring, param interface{}) error {
 	if label.str == "" {
-		a.addError(line, "macro must begin with a label")
+		a.addError(line, "equate declaration must begin with a label")
 		return errParse
 	}
 
-	a.logLine(line, "macro=%s", label.str)
+	a.logLine(line, "equate=%s", label.str)
 
-	// Parse the macro expression.
+	// Parse the constant expression.
 	e, _, err := a.exprParser.parse(line, a.scopeLabel, allowParentheses)
 	if err != nil {
 		a.addExprErrors()
 		return err
 	}
 
-	// Attempt to evaluate the macro expression immediately. If not possible,
-	// add it to a list of unevaluated expressions.
-	if !e.eval(-1, a.macros, a.labels) {
+	// Attempt to evaluate the expression immediately. If not possible, add it
+	// to a list of unevaluated expressions.
+	if !e.eval(-1, a.constants, a.labels) {
 		a.pushUnevaluated(e)
 	}
 
@@ -810,8 +804,8 @@ func (a *assembler) parseMacro(line, label fstring, param interface{}) error {
 		a.logLine(line, "val=(uneval)")
 	}
 
-	// Track the macro for later substitution.
-	a.macros[label.str] = e
+	// Track the constants for later substitution.
+	a.constants[label.str] = e
 	return nil
 }
 
@@ -830,7 +824,7 @@ func (a *assembler) parseOrigin(line, label fstring, param interface{}) error {
 		return errParse
 	}
 
-	if !e.eval(-1, a.macros, a.labels) {
+	if !e.eval(-1, a.constants, a.labels) {
 		a.addError(e.identifier, "unable to evaluate expression")
 		return errParse
 	}
@@ -867,7 +861,7 @@ func (a *assembler) parseData(line, label fstring, param interface{}) error {
 			return err
 		}
 
-		if !e.eval(-1, a.macros, a.labels) {
+		if !e.eval(-1, a.constants, a.labels) {
 			a.pushUnevaluated(e)
 		}
 
@@ -957,7 +951,7 @@ func (a *assembler) parsePadding(line, label fstring, param interface{}) error {
 	}
 
 	// Attempt to evaluate the pad value expression immediately.
-	if !valExpr.eval(-1, a.macros, a.labels) {
+	if !valExpr.eval(-1, a.constants, a.labels) {
 		a.pushUnevaluated(valExpr)
 	}
 
@@ -977,7 +971,7 @@ func (a *assembler) parsePadding(line, label fstring, param interface{}) error {
 	}
 
 	// Attempt to evaluate the length expression immediately.
-	if !lenExpr.eval(-1, a.macros, a.labels) {
+	if !lenExpr.eval(-1, a.constants, a.labels) {
 		a.pushUnevaluated(lenExpr)
 	}
 
@@ -1006,7 +1000,7 @@ func (a *assembler) parseExport(line, label fstring, param interface{}) error {
 	}
 
 	// Attempt to evaluate the expression immediately.
-	if !e.eval(-1, a.macros, a.labels) {
+	if !e.eval(-1, a.constants, a.labels) {
 		a.pushUnevaluated(e)
 	}
 
@@ -1047,10 +1041,7 @@ func (a *assembler) parseInclude(line, label fstring, param interface{}) error {
 }
 
 // Parse a 6502 assembly opcode + operand.
-func (a *assembler) parseInstruction(line fstring) error {
-	// Parse the opcode.
-	opcode, remain := line.consumeWhile(opcodeChar)
-
+func (a *assembler) parseInstruction(opcode, remain fstring) error {
 	// No opcode characters? Or opcode has invalid suffix?
 	if opcode.isEmpty() || (!remain.isEmpty() && !remain.startsWith(whitespace)) {
 		a.addError(remain, "invalid opcode '%s'", remain.str)
@@ -1076,8 +1067,8 @@ func (a *assembler) parseInstruction(line fstring) error {
 	// Create a code segment for the instruction
 	seg := &instruction{
 		addr:      -1,
-		fileIndex: line.fileIndex,
-		line:      line.row,
+		fileIndex: remain.fileIndex,
+		line:      remain.row,
 		opcode:    opcode,
 		operand:   operand,
 	}
@@ -1134,7 +1125,7 @@ func (a *assembler) parseOperand(line fstring) (o operand, remain fstring, err e
 		}
 	}
 
-	if !o.expr.eval(-1, a.macros, a.labels) {
+	if !o.expr.eval(-1, a.constants, a.labels) {
 		a.pushUnevaluated(o.expr)
 	}
 

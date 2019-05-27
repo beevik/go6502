@@ -18,21 +18,25 @@
 ; ---------
 ; Constants
 ; ---------
-		; .EQ defines a constant. A constant may be a literal (numeric
-		; or character). Or it may be an expression including
-		; literals, address labels, and other constants. Such
-		; constants may appear in expressions anywhere else in the
-		; source code.
+		; A constant may be a literal (numeric or character). Or
+		; it may be an expression including literals, address labels,
+		; and other constants. Such constants may appear in
+		; expressions anywhere in the source code.
 
-STORE		.EQ		$0200
+STORE		.EQ		$0200	; Constant defined with .EQ
+X		EQU		$EE	; Alternative: defined with EQU
+Y		=		$FE	; Alternative: defined with =
+
 
 ; -------
 ; Program
 ; -------
 
 START:				; Labels may end in ':', which is ignored.
-		LDX #$EE
-		LDA #$05
+		LDA #X
+		LDA #Y
+		LDA #128
+		LDA #$7F
 		LDA #%01011010
 		JSR JSR_TEST
 		JSR LDA_TEST
@@ -85,8 +89,9 @@ DATA:
 		.ALIGN 		16	; align next addr on 16-byte boundary
 
 .BYTES		; .DB data can include literals (string, character and
-		; numeric) and math expressions using labels and macros. For
-		; numeric values, only the least significant byte is stored.
+		; numeric) and math expressions using labels and constants.
+		; For numeric values, only the least significant byte is
+		; stored.
 
 		.DB		"AB", $00		; 41 42 00
 		.DB		'F', 'F'		; 46 46

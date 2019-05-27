@@ -179,7 +179,7 @@ func (e *expr) String() string {
 }
 
 // Evaluate the expression tree.
-func (e *expr) eval(addr int, macros map[string]*expr, labels map[string]int) bool {
+func (e *expr) eval(addr int, constants map[string]*expr, labels map[string]int) bool {
 	if !e.evaluated {
 		switch {
 		case e.op == opNumber:
@@ -196,7 +196,7 @@ func (e *expr) eval(addr int, macros map[string]*expr, labels map[string]int) bo
 			default:
 				ident = e.identifier.str
 			}
-			if m, ok := macros[ident]; ok {
+			if m, ok := constants[ident]; ok {
 				e.bytes = maxInt(e.bytes, m.bytes)
 				if m.address {
 					e.address = true
@@ -215,8 +215,8 @@ func (e *expr) eval(addr int, macros map[string]*expr, labels map[string]int) bo
 			}
 
 		case e.op.isBinary():
-			e.child0.eval(addr, macros, labels)
-			e.child1.eval(addr, macros, labels)
+			e.child0.eval(addr, constants, labels)
+			e.child1.eval(addr, constants, labels)
 			if e.child0.evaluated && e.child1.evaluated {
 				e.value = e.op.eval(e.child0.value, e.child1.value)
 				e.bytes = maxInt(e.child0.bytes, e.child1.bytes)
@@ -227,7 +227,7 @@ func (e *expr) eval(addr int, macros map[string]*expr, labels map[string]int) bo
 			}
 
 		default:
-			e.child0.eval(addr, macros, labels)
+			e.child0.eval(addr, constants, labels)
 			if e.child0.evaluated {
 				e.value = e.op.eval(e.child0.value, 0)
 				e.bytes = e.child0.bytes
