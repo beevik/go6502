@@ -100,7 +100,7 @@ DATA:
 		.DB		-1, -129		; FF 7F
 		.DB		$12345678		; 78
 		.DB		0b01010101		; 55
-		.DB 		$ - .BYTES		; 12
+		.DB 		* - .BYTES		; 12
 
 		.ALIGN		2
 
@@ -120,7 +120,7 @@ DATA:
 		.DW		-1, -129		; FF FF 7F FF
 		.DW		$12345678		; 78 56
 		.DW		0b11110101		; F5 00
-		.DW		$ - .WORDS		; 20 00
+		.DW		* - .WORDS		; 20 00
 
 		.ALIGN		4
 
@@ -140,7 +140,7 @@ DATA:
 		.DD		-1, -129		; FF FF FF FF 7F FF FF FF
 		.DD		$12345678		; 78 56 34 12
 		.DD		0b11110101		; F5 00 00 00
-		.DD		$ - .DWORDS		; 3E 00 00 00
+		.DD		* - .DWORDS		; 3E 00 00 00
 
 		.ALIGN		4
 
@@ -152,7 +152,7 @@ DATA:
 		.DH		01			; 01
 		.DH		12345678		; 12 34 56 78
 		.DH		0123456789abcdef	; 01 23 45 67 89 AB CD EF
-		.DB		$ - .HEXSTRINGS		; 12
+		.DB		* - .HEXSTRINGS		; 12
 
 		.ALIGN		4
 
@@ -161,11 +161,11 @@ DATA:
 
 		.DS		"AAA"			; 41 41 C1
 		.DS		"A", 0			; C1 00
-		.DB		$ - .TSTRINGS		; 05
+		.DB		* - .TSTRINGS		; 05
 
 		.ALIGN		4
 
 		; Pad the file to a length of 256 bytes. Use FF for padding.
-.PADDING	.PAD		$FF, 256-($-START)
+.PADDING	.PAD		$FF, 256-(*-START)
 
 END

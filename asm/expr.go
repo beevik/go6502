@@ -23,6 +23,7 @@ const (
 	opUnaryPlus
 	opUnaryLessThan
 	opUnaryGreaterThan
+	opUnarySlash
 	opBitwiseNEG
 
 	// binary operations
@@ -70,6 +71,7 @@ var ops = []opdata{
 	{7, 1, false, "+", func(a, b int) int { return a }},               // uplus
 	{7, 1, false, "<", func(a, b int) int { return a & 0xff }},        // ulessthan
 	{7, 1, false, ">", func(a, b int) int { return (a >> 8) & 0xff }}, // ugreaterthan
+	{7, 1, false, "/", func(a, b int) int { return (a >> 8) & 0xff }}, // uslash
 	{7, 1, false, "~", func(a, b int) int { return 0xffffffff ^ a }},  // bitneg
 
 	// binary operations
@@ -406,6 +408,11 @@ func (p *exprParser) parseToken(line fstring) (t token, remain fstring, err erro
 
 	switch {
 	case line.startsWithChar('$') && (len(line.str) == 1 || !hexadecimal(line.str[1])):
+		remain = line.consume(1)
+		t.typ = tokenHere
+		t.bytes = 2
+
+	case line.startsWithChar('*'):
 		remain = line.consume(1)
 		t.typ = tokenHere
 		t.bytes = 2
