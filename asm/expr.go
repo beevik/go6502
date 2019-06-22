@@ -412,11 +412,6 @@ func (p *exprParser) parseToken(line fstring) (t token, remain fstring, err erro
 		t.typ = tokenHere
 		t.bytes = 2
 
-	case line.startsWithChar('*'):
-		remain = line.consume(1)
-		t.typ = tokenHere
-		t.bytes = 2
-
 	case line.startsWith(decimal) || line.startsWithChar('$') || line.startsWithChar('%'):
 		t.value, t.bytes, remain, err = p.parseNumber(line)
 		t.typ = tokenNumber
