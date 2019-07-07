@@ -701,7 +701,7 @@ func (a *assembler) parseLabeledLine(line fstring) error {
 	}
 
 	// Parse any instruction following the label
-	if !line.isEmpty() {
+	if !word.isEmpty() {
 		return a.parseInstruction(word, line)
 	}
 	return nil
