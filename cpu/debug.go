@@ -26,7 +26,6 @@ type DebuggerHandler interface {
 type Breakpoint struct {
 	Address  uint16 // address of execution breakpoint
 	Disabled bool   // this breakpoint is currently disabled
-	StepOver bool   // this is a temporary step-over breakpoint
 }
 
 // A DataBreakpoint represents an address that will cause the debugger to

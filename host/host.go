@@ -51,7 +51,6 @@ const (
 	stateRunning
 	stateInterrupted
 	stateBreakpoint
-	stateStepOverBreakpoint
 )
 
 // A Host represents a fully emulated 6502 system, 64K of memory, a built-in
@@ -1367,40 +1366,28 @@ func (h *Host) step() {
 func (h *Host) stepOver() {
 	cpu := h.cpu
 
-	// JSR instructions need to be handled specially.
 	inst := cpu.GetInstruction(cpu.Reg.PC)
-	if inst.Name != "JSR" {
-		h.cpu.Step()
-		return
-	}
+	nextaddr := cpu.Reg.PC + uint16(inst.Length)
+	cpu.Step()
 
-	// Place a step-over breakpoint on the instruction following the JSR.
-	// Either modify an already existing breakpoint on that instrution, or
-	// create a temporary one.
-	next := h.cpu.Reg.PC + uint16(inst.Length)
-	tmpBreakpointCreated := false
-	b := h.debugger.GetBreakpoint(next)
-	if b == nil {
-		b = h.debugger.AddBreakpoint(next)
-		tmpBreakpointCreated = true
-	}
-	b.StepOver = true
-
-	// Run until interrupted.
-	for h.state == stateRunning {
-		h.step()
-	}
-	b.StepOver = false
-
-	// If we were interrupted by the temporary step-over breakpoint,
-	// then continue as normal.
-	if h.state == stateStepOverBreakpoint {
-		h.state = stateRunning
-	}
-
-	// Remove the temporarily created breakpoint.
-	if tmpBreakpointCreated {
-		h.debugger.RemoveBreakpoint(next)
+	// If a JSR was just stepped, keep stepping until the return address
+	// is hit or a corresponding RTS is stepped.
+	if inst.Name == "JSR" {
+		count := 1
+	loop:
+		for h.state == stateRunning && cpu.Reg.PC != nextaddr {
+			inst := cpu.GetInstruction(cpu.Reg.PC)
+			cpu.Step()
+			switch inst.Name {
+			case "JSR":
+				count++
+			case "RTS":
+				count--
+				if count == 0 {
+					break loop
+				}
+			}
+		}
 	}
 }
 
@@ -1598,13 +1585,9 @@ func (h *Host) resolveIdentifier(s string) (int64, error) {
 }
 
 func (h *Host) onBreakpoint(cpu *cpu.CPU, b *cpu.Breakpoint) {
-	if b.StepOver {
-		h.state = stateStepOverBreakpoint
-	} else {
-		h.state = stateBreakpoint
-		h.printf("Breakpoint hit at $%04X.\n", b.Address)
-		h.displayPC()
-	}
+	h.state = stateBreakpoint
+	h.printf("Breakpoint hit at $%04X.\n", b.Address)
+	h.displayPC()
 }
 
 func (h *Host) onDataBreakpoint(cpu *cpu.CPU, b *cpu.DataBreakpoint) {
