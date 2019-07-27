@@ -73,6 +73,8 @@ var pseudoOps = map[string]pseudoOpData{
 	".ar":      {fn: (*assembler).parseArch},
 	".arch":    {fn: (*assembler).parseArch},
 	"arch":     {fn: (*assembler).parseArch},
+	".bin":     {fn: (*assembler).parseBinaryInclude},
+	".binary":  {fn: (*assembler).parseBinaryInclude},
 	".eq":      {fn: (*assembler).parseEquate},
 	".equ":     {fn: (*assembler).parseEquate},
 	"equ":      {fn: (*assembler).parseEquate},
@@ -514,7 +516,7 @@ func (a *assembler) assignAddresses() error {
 
 		case *bytedata:
 			ss.addr = a.pc
-			a.log("%04X  .HS Len:%d", ss.addr, len(ss.b))
+			a.log("%04X  .BIN Len:%d", ss.addr, len(ss.b))
 			a.pc += len(ss.b)
 
 		case *alignment:
@@ -1038,6 +1040,44 @@ func (a *assembler) parseInclude(line, label fstring, param interface{}) error {
 	a.files = append(a.files, filename.str)
 
 	return a.parseFile(bufio.NewScanner(file), fileIndex)
+}
+
+// Parse a binary include pseudo-op
+func (a *assembler) parseBinaryInclude(line, label fstring, param interface{}) error {
+	a.logLine(line, "binary_include")
+
+	filename, _ := line.consumeUntil(whitespace)
+	if filename.isEmpty() {
+		a.addError(filename, "invalid filename")
+		return errParse
+	}
+
+	file, err := os.Open(filename.str)
+	if err != nil {
+		a.addError(filename, "unable to open '%s'", filename.str)
+		return err
+	}
+	defer file.Close()
+
+	seg := &bytedata{addr: -1}
+
+	data, err := ioutil.ReadAll(file)
+	if err != nil {
+		a.addError(filename, "unable to read '%s'", filename.str)
+		return err
+	}
+
+	seg.b = data
+
+	if !label.isEmpty() {
+		err := a.storeLabel(label)
+		if err != nil {
+			return err
+		}
+	}
+
+	a.segments = append(a.segments, seg)
+	return nil
 }
 
 // Parse a 6502 assembly opcode + operand.
