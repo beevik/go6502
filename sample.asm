@@ -93,8 +93,8 @@ DATA:
 		; For numeric values, only the least significant byte is
 		; stored.
 
-		.DB		"AB", $00		; 41 42 00
-		.DB		'F', 'F'		; 46 46
+		.DB		"AB,", $00		; 41 42 2C 00
+		.DB		'F', ','		; 46 2C
 		.DB		1			; 01
 		.DB		$ABCD			; CD
 		.DB		$ABCD >> 8		; AB

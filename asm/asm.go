@@ -851,7 +851,7 @@ func (a *assembler) parseData(line, label fstring, param interface{}) error {
 	remain := line
 	for !remain.isEmpty() {
 		var expr fstring
-		expr, remain = remain.consumeUntilChar(',')
+		expr, remain = remain.consumeUntilUnquotedChar(',')
 
 		if !remain.isEmpty() {
 			remain = remain.consume(1).consumeWhitespace()

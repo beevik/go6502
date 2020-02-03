@@ -113,6 +113,27 @@ func (l *fstring) consumeUntilChar(c byte) (consumed, remain fstring) {
 	return
 }
 
+func (l *fstring) consumeUntilUnquotedChar(c byte) (consumed, remain fstring) {
+	var quote byte
+	i := 0
+	for ; i < len(l.str); i++ {
+		if quote == 0 {
+			if l.str[i] == c {
+				break
+			}
+			if l.str[i] == '\'' || l.str[i] == '"' {
+				quote = l.str[i]
+			}
+		} else {
+			if l.str[i] == quote {
+				quote = 0
+			}
+		}
+	}
+	consumed, remain = l.trunc(i), l.consume(i)
+	return
+}
+
 func (l fstring) peekNextWord() fstring {
 	return l.trunc(l.scanWhile(wordChar))
 }
