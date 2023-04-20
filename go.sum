@@ -1,0 +1,4 @@
+github.com/beevik/cmd v0.0.0-20181029050535-009fab4e5f2a h1:Lbe7XidKxk8YODbKB64eP6ynmAjINWOfatwhPNmmzt4=
+github.com/beevik/cmd v0.0.0-20181029050535-009fab4e5f2a/go.mod h1:8n0HqXssbdhcK0pxJhwKdKyxCtJ43Eq0VA4zmX8LIOM=
+github.com/beevik/prefixtree v0.0.0-20190221160703-0e2fef796dd6 h1:QPnONUruVXOnB5o3ktzpLJf1qBGf4vXbzlty1rQQmaY=
+github.com/beevik/prefixtree v0.0.0-20190221160703-0e2fef796dd6/go.mod h1:PxfjLBcuK500+WkUqGM9KN5gYsAmW0jpxfBpfqMVd8U=
