@@ -261,20 +261,12 @@ func (h *Host) Break() {
 	}
 }
 
-func (h *Host) write(p []byte) (n int, err error) {
-	return h.output.Write(p)
-}
-
-func (h *Host) print(args ...interface{}) {
-	fmt.Fprint(h.output, args...)
-}
-
-func (h *Host) printf(format string, args ...interface{}) {
+func (h *Host) printf(format string, args ...any) {
 	fmt.Fprintf(h.output, format, args...)
 	h.flush()
 }
 
-func (h *Host) println(args ...interface{}) {
+func (h *Host) println(args ...any) {
 	fmt.Fprintln(h.output, args...)
 	h.flush()
 }
@@ -1062,7 +1054,7 @@ func (h *Host) cmdMemoryCopy(c cmd.Selection) error {
 }
 
 func (h *Host) cmdQuit(c cmd.Selection) error {
-	return errors.New("Exiting program")
+	return errors.New("exiting program")
 }
 
 func (h *Host) cmdRegister(c cmd.Selection) error {
@@ -1190,7 +1182,7 @@ func (h *Host) cmdSet(c cmd.Selection) error {
 		var err error
 		switch h.settings.Kind(key) {
 		case reflect.Invalid:
-			err = fmt.Errorf("Setting '%s' not found", key)
+			err = fmt.Errorf("setting '%s' not found", key)
 		case reflect.String:
 			err = h.settings.Set(key, value)
 		case reflect.Bool:
@@ -1459,10 +1451,6 @@ func (h *Host) disassemble(addr uint16, flags displayFlags) (str string, next ui
 }
 
 func (h *Host) dumpMemory(addr0, bytes uint16) {
-	if bytes < 0 {
-		return
-	}
-
 	addr1 := addr0 + bytes - 1
 	if addr1 < addr0 {
 		addr1 = 0xffff

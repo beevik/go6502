@@ -96,7 +96,7 @@ func (s *settings) Kind(key string) reflect.Kind {
 	return f.(*settingsField).kind
 }
 
-func (s *settings) Set(key string, value interface{}) error {
+func (s *settings) Set(key string, value any) error {
 	ff, err := settingsTree.Find(strings.ToLower(key))
 	if err != nil {
 		return err

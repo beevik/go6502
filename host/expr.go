@@ -24,7 +24,7 @@ const (
 
 type token struct {
 	Type  tokenType
-	Value interface{} // nil, string, int64 or *op (depends on Type)
+	Value any // nil, string, int64 or *op (depends on Type)
 }
 
 type opType byte

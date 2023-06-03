@@ -22,20 +22,6 @@ func codeString(b []byte) string {
 	}
 }
 
-func startsWith(s, m string) bool {
-	if len(s) < len(m) {
-		return false
-	}
-	return s[:len(m)] == m
-}
-
-func endsWith(s, m string) bool {
-	if len(s) < len(m) {
-		return false
-	}
-	return s[len(s)-len(m):] == m
-}
-
 func stringToBool(s string) (bool, error) {
 	s = strings.ToLower(s)
 	switch s {
@@ -46,10 +32,6 @@ func stringToBool(s string) (bool, error) {
 	default:
 		return false, fmt.Errorf("invalid bool value '%s'", s)
 	}
-}
-
-func intToBool(v int) bool {
-	return v != 0
 }
 
 func indentWrap(indent int, s string) string {

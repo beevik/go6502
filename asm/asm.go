@@ -63,8 +63,8 @@ var modeFormat = []string{
 }
 
 type pseudoOpData struct {
-	fn    func(a *assembler, line, label fstring, param interface{}) error
-	param interface{}
+	fn    func(a *assembler, line, label fstring, param any) error
+	param any
 }
 
 const hiBitTerm = 1 << 16
@@ -758,7 +758,7 @@ func (a *assembler) parseLabel(line fstring) (label fstring, remain fstring, err
 }
 
 // Parse an architecture pseudo-op.
-func (a *assembler) parseArch(line, label fstring, param interface{}) error {
+func (a *assembler) parseArch(line, label fstring, param any) error {
 	archl, _ := line.consumeWhile(labelChar)
 	arch := strings.ToLower(archl.str)
 
@@ -777,7 +777,7 @@ func (a *assembler) parseArch(line, label fstring, param interface{}) error {
 }
 
 // Parse an ".EQU" constant definition.
-func (a *assembler) parseEquate(line, label fstring, param interface{}) error {
+func (a *assembler) parseEquate(line, label fstring, param any) error {
 	if label.str == "" {
 		a.addError(line, "equate declaration must begin with a label")
 		return errParse
@@ -812,7 +812,7 @@ func (a *assembler) parseEquate(line, label fstring, param interface{}) error {
 }
 
 // Parse an ".ORG" origin definition
-func (a *assembler) parseOrigin(line, label fstring, param interface{}) error {
+func (a *assembler) parseOrigin(line, label fstring, param any) error {
 	if len(a.segments) > 0 {
 		a.addError(line, "origin directive must appear before first instruction")
 		return errParse
@@ -839,7 +839,7 @@ func (a *assembler) parseOrigin(line, label fstring, param interface{}) error {
 }
 
 // Parse a data pseudo-op.
-func (a *assembler) parseData(line, label fstring, param interface{}) error {
+func (a *assembler) parseData(line, label fstring, param any) error {
 	a.logLine(line, "bytes=")
 
 	seg := &data{
@@ -882,7 +882,7 @@ func (a *assembler) parseData(line, label fstring, param interface{}) error {
 }
 
 // Parse a hex-string pseudo-op.
-func (a *assembler) parseHexString(line, label fstring, param interface{}) error {
+func (a *assembler) parseHexString(line, label fstring, param any) error {
 	a.logLine(line, "hexstring=")
 
 	s, remain := line.consumeWhile(hexadecimal)
@@ -915,7 +915,7 @@ func (a *assembler) parseHexString(line, label fstring, param interface{}) error
 }
 
 // Parse an align pseudo-op
-func (a *assembler) parseAlign(line, label fstring, param interface{}) error {
+func (a *assembler) parseAlign(line, label fstring, param any) error {
 	a.logLine(line, "align=")
 
 	s, remain := line.consumeWhile(decimal)
@@ -937,7 +937,7 @@ func (a *assembler) parseAlign(line, label fstring, param interface{}) error {
 }
 
 // Parse a padding pseudo-op
-func (a *assembler) parsePadding(line, label fstring, param interface{}) error {
+func (a *assembler) parsePadding(line, label fstring, param any) error {
 	a.logLine(line, "pad=")
 
 	s, remain := line.consumeUntilChar(',')
@@ -991,7 +991,7 @@ func (a *assembler) parsePadding(line, label fstring, param interface{}) error {
 }
 
 // Parse an export pseudo-op
-func (a *assembler) parseExport(line, label fstring, param interface{}) error {
+func (a *assembler) parseExport(line, label fstring, param any) error {
 	a.logLine(line, "export=")
 
 	// Parse the export expression.
@@ -1020,7 +1020,7 @@ func (a *assembler) parseExport(line, label fstring, param interface{}) error {
 }
 
 // Parse an include pseudo-op
-func (a *assembler) parseInclude(line, label fstring, param interface{}) error {
+func (a *assembler) parseInclude(line, label fstring, param any) error {
 	a.logLine(line, "include")
 
 	filename, _ := line.consumeUntil(whitespace)
@@ -1043,7 +1043,7 @@ func (a *assembler) parseInclude(line, label fstring, param interface{}) error {
 }
 
 // Parse a binary include pseudo-op
-func (a *assembler) parseBinaryInclude(line, label fstring, param interface{}) error {
+func (a *assembler) parseBinaryInclude(line, label fstring, param any) error {
 	a.logLine(line, "binary_include")
 
 	filename, _ := line.consumeUntil(whitespace)
@@ -1189,7 +1189,7 @@ func (a *assembler) parseOperand(line fstring) (o operand, remain fstring, err e
 }
 
 // Append an error message to the assembler's error state.
-func (a *assembler) addError(l fstring, format string, args ...interface{}) {
+func (a *assembler) addError(l fstring, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	a.errors = append(a.errors, asmerror{l, msg})
 	if a.verbose {
@@ -1212,7 +1212,7 @@ func (a *assembler) addExprErrors() {
 }
 
 // In verbose mode, log a string to standard output.
-func (a *assembler) log(format string, args ...interface{}) {
+func (a *assembler) log(format string, args ...any) {
 	if a.verbose {
 		fmt.Fprintf(a.out, format, args...)
 		fmt.Fprintf(a.out, "\n")
@@ -1221,7 +1221,7 @@ func (a *assembler) log(format string, args ...interface{}) {
 
 // In verbose mode, log a string and its associated line
 // of assembly code.
-func (a *assembler) logLine(line fstring, format string, args ...interface{}) {
+func (a *assembler) logLine(line fstring, format string, args ...any) {
 	if a.verbose {
 		detail := fmt.Sprintf(format, args...)
 		fmt.Fprintf(a.out, "%-3d %-3d | %-20s | %s\n", line.row, line.column+1, detail, line.str)
