@@ -18,33 +18,33 @@ type exprOp byte
 const (
 	// operators in descending order of precedence
 
-	// unary operations
-	opUnaryMinus exprOp = iota
-	opUnaryPlus
-	opUnaryLessThan
-	opUnaryGreaterThan
-	opUnarySlash
-	opBitwiseNEG
+	// unary operations (0..5)
+	// opUnaryMinus
+	// opUnaryPlus
+	// opUnaryLessThan
+	// opUnaryGreaterThan
+	// opUnarySlash
+	// opBitwiseNEG
 
-	// binary operations
-	opMultiply
-	opDivide
-	opModulo
-	opAdd
-	opSubstract
-	opShiftLeft
-	opShiftRight
-	opBitwiseAND
-	opBitwiseXOR
-	opBitwiseOR
+	// binary operations (6..15)
+	// opMultiply
+	// opDivide
+	// opModulo
+	// opAdd
+	// opSubstract
+	// opShiftLeft
+	// opShiftRight
+	// opBitwiseAND
+	// opBitwiseXOR
+	// opBitwiseOR
 
-	// value "operations"
-	opNumber
+	// value "operations" (16..19)
+	opNumber exprOp = iota + 16
 	opString
 	opIdentifier
 	opHere
 
-	// pseudo-operations (used only during parsing but not stored in expr's)
+	// pseudo-ops (20..21) (used only during parsing but not stored in expr's)
 	opLeftParen
 	opRightParen
 )
@@ -65,6 +65,7 @@ func (o *opdata) isUnary() bool {
 	return o.children == 1
 }
 
+// One entry per exprOp value (order must match)
 var ops = []opdata{
 	// unary operations
 	{7, 1, false, "-", func(a, b int) int { return -a }},              // uminus
@@ -276,8 +277,8 @@ type token struct {
 //
 
 type exprParser struct {
-	operandStack  exprStack
-	operatorStack opStack
+	operandStack  stack[*expr]
+	operatorStack stack[exprOp]
 	parenCounter  int
 	flags         parseFlags
 	prevTokenType tokentype
@@ -347,7 +348,7 @@ func (p *exprParser) parse(line, scopeLabel fstring, flags parseFlags) (e *expr,
 
 		case tokenOp:
 			for err == nil && !p.operatorStack.empty() && token.op.collapses(p.operatorStack.peek()) {
-				err = p.operandStack.collapse(p.operatorStack.pop())
+				err = collapse(&p.operandStack, p.operatorStack.pop())
 				if err != nil {
 					p.addError(line, "invalid expression")
 				}
@@ -368,7 +369,7 @@ func (p *exprParser) parse(line, scopeLabel fstring, flags parseFlags) (e *expr,
 				if op == opLeftParen {
 					break
 				}
-				err = p.operandStack.collapse(op)
+				err = collapse(&p.operandStack, op)
 				if err != nil {
 					p.addError(line, "invalid expression")
 				}
@@ -380,7 +381,7 @@ func (p *exprParser) parse(line, scopeLabel fstring, flags parseFlags) (e *expr,
 
 	// Collapse any operators (and operands) remaining on the stack
 	for err == nil && !p.operatorStack.empty() {
-		err = p.operandStack.collapse(p.operatorStack.pop())
+		err = collapse(&p.operandStack, p.operatorStack.pop())
 		if err != nil {
 			p.addError(line, "invalid expression")
 			err = errParse
@@ -394,6 +395,39 @@ func (p *exprParser) parse(line, scopeLabel fstring, flags parseFlags) (e *expr,
 
 	p.reset()
 	return e, remain, err
+}
+
+// Collapse one or more expression nodes on the top of the
+// stack into a combined expression node, and push the combined
+// node back onto the stack.
+func collapse(s *stack[*expr], op exprOp) error {
+	switch {
+	case !op.isCollapsible():
+		return errParse
+
+	case op.isBinary():
+		if len(s.data) < 2 {
+			return errParse
+		}
+		e := &expr{
+			op:     op,
+			child1: s.pop(),
+			child0: s.pop(),
+		}
+		s.push(e)
+		return nil
+
+	default:
+		if s.empty() {
+			return errParse
+		}
+		e := &expr{
+			op:     op,
+			child0: s.pop(),
+		}
+		s.push(e)
+		return nil
+	}
 }
 
 // Attempt to parse the next token from the line.
@@ -596,90 +630,28 @@ func (p *exprParser) reset() {
 }
 
 //
-// exprStack
+// stack
 //
 
-type exprStack struct {
-	data []*expr
+type stack[T any] struct {
+	data []T
 }
 
-func (s *exprStack) empty() bool {
+func (s *stack[T]) push(value T) {
+	s.data = append(s.data, value)
+}
+
+func (s *stack[T]) pop() T {
+	i := len(s.data) - 1
+	value := s.data[i]
+	s.data = s.data[:i]
+	return value
+}
+
+func (s *stack[T]) empty() bool {
 	return len(s.data) == 0
 }
 
-func (s *exprStack) push(e *expr) {
-	s.data = append(s.data, e)
-}
-
-func (s *exprStack) pop() *expr {
-	l := len(s.data)
-	e := s.data[l-1]
-	s.data = s.data[:l-1]
-	return e
-}
-
-func (s *exprStack) peek() *expr {
-	if len(s.data) == 0 {
-		return nil
-	}
-	return s.data[len(s.data)-1]
-}
-
-// Collapse one or more expression nodes on the top of the
-// stack into a combined expression node, and push the combined
-// node back onto the stack.
-func (s *exprStack) collapse(op exprOp) error {
-	switch {
-	case !op.isCollapsible():
-		return errParse
-
-	case op.isBinary():
-		if len(s.data) < 2 {
-			return errParse
-		}
-		e := &expr{
-			op:     op,
-			child1: s.pop(),
-			child0: s.pop(),
-		}
-		s.push(e)
-		return nil
-
-	default:
-		if s.empty() {
-			return errParse
-		}
-		e := &expr{
-			op:     op,
-			child0: s.pop(),
-		}
-		s.push(e)
-		return nil
-	}
-}
-
-//
-// opStack
-//
-
-type opStack struct {
-	data []exprOp
-}
-
-func (s *opStack) push(op exprOp) {
-	s.data = append(s.data, op)
-}
-
-func (s *opStack) pop() exprOp {
-	op := s.data[len(s.data)-1]
-	s.data = s.data[0 : len(s.data)-1]
-	return op
-}
-
-func (s *opStack) empty() bool {
-	return len(s.data) == 0
-}
-
-func (s *opStack) peek() exprOp {
+func (s *stack[T]) peek() T {
 	return s.data[len(s.data)-1]
 }
