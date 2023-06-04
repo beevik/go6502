@@ -1,10 +1,7 @@
-[![Build Status](https://travis-ci.org/beevik/go6502.svg?branch=master)](https://travis-ci.org/beevik/go6502)
 [![GoDoc](https://godoc.org/github.com/beevik/go6502?status.svg)](https://godoc.org/github.com/beevik/go6502)
 
 go6502
 ======
-
-_This project is currently under construction and is changing frequently._
 
 go6502 is a collection of go packages that emulate a 6502 or 65C02 CPU. It
 includes a CPU emulator, a cross-assembler, a disassembler, a debugger, and a
@@ -16,27 +13,19 @@ access to all of these features.
 
 # Building the application
 
-Make sure you have all the application's dependencies.
+Install go 1.18 or later, and then run `go build` to build the application.
 
-```
-go get -u github.com/beevik/go6502
-```
-
-Then build go6502.
-
-```
-go build
-```
 
 # Tutorial
 
-Let's start by considering the go6502 `sample.cmd` script:
+Start by considering the go6502 `sample.cmd` script:
 
 ```
 load monitor.bin $F800
 assemble file sample.asm
 load sample.bin
 reg PC START
+breakpoint add $1020
 d .
 ```
 
@@ -50,7 +39,8 @@ for now know that they do the following things:
    exported during assembly into the `sample.map` file.
 4. Set the program counter register to value of the `START` address, which
    was exported during assembly into the `sample.map` file.
-5. Disassemble the first few lines of machine code starting from the program
+5. Set a debugging breakpoint at hexadecimal memory address `1020`.
+6. Disassemble the first few lines of machine code starting from the program
    counter address.
 
 To run this script, type the following on the command line:
@@ -67,6 +57,7 @@ Assembled 'sample.asm' to 'sample.bin'.
 Loaded source map from 'sample.bin'.
 Loaded 'sample.bin' to $1000..$10FF.
 Register PC set to $1000.
+Breakpoint added at $1020.
 1000-   A2 EE       LDX   #$EE
 1002-   A9 05       LDA   #$05
 1004-   20 19 10    JSR   $1019
@@ -226,7 +217,7 @@ Since the CPU is about to execute another `JSR` instruction, let's try the
 
 After stepping over the `JSR` call at address `1007`, all of the instructions
 inside the subroutine at `101C` have been executed, and control has returned
-at address `100A` after 52 CPU cycles have elapsed.
+at address `100A` after 52 additional CPU cycles have elapsed.
 
 ## Another shortcut: Hit Enter!
 
@@ -369,7 +360,8 @@ Now whenever we disassemble code that includes the instruction at address
 *
 ```
 
-To remove an annotation, use the `annotate` command with an address but without a description.
+To remove an annotation, use the `annotate` command with an address but
+without a description.
 
 ## Dumping memory
 
@@ -471,7 +463,8 @@ If you prefer to work primarily with hexadecimal numbers, you can change the
 In hex mode, numeric values entered without a prefix are interpreted as
 hexadecimal values. However, because hexadecimal numbers include the letters
 `A` through `F`, the interpreter is unable to distinguish between a number and
-an identifier. So identifiers are not allowed in hex mode.
+an identifier. So identifiers are not allowed when interpreting expressions in
+hex mode.
 
 
 ## Inspecting and changing registers
