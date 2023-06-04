@@ -62,7 +62,7 @@ func (s *SourceMap) Find(addr int) (filename string, line int, err error) {
 }
 
 // ClearRange clears portions of the source map that reference the
-// address range between `origin` and `origin+size``.
+// address range between `origin` and `origin+size`.
 func (s *SourceMap) ClearRange(origin, size int) {
 	min := uint16(origin)
 	max := uint16(origin + size)
@@ -125,9 +125,7 @@ func (s *SourceMap) Merge(s2 *SourceMap) {
 	s.ClearRange(int(s2.Origin), int(s2.Size))
 
 	// Add exports from the new map.
-	for _, e := range s2.Exports {
-		s.Exports = append(s.Exports, e)
-	}
+	s.Exports = append(s.Exports, s2.Exports...)
 
 	// Sort exports by address.
 	sort.Sort(byEAddr(s.Exports))
@@ -174,7 +172,7 @@ func (s *SourceMap) ReadFrom(r io.Reader) (n int64, err error) {
 		return n, err
 	}
 
-	if len(b) < 16 || bytes.Compare(b[0:4], []byte(sourceMapSignature)) != 0 {
+	if len(b) < 16 || !bytes.Equal(b[0:4], []byte(sourceMapSignature)) {
 		return n, errors.New("invalid source map format")
 	}
 	if b[4] != versionMajor || b[5] != versionMinor {

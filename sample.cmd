@@ -3,4 +3,5 @@ assemble file sample.asm
 load sample.bin
 set compact true
 reg PC START
+ba $1020
 d .

@@ -4,8 +4,6 @@
 
 package asm
 
-import "strings"
-
 // An fstring is a string that keeps track of its position within the
 // file from which it was read.
 type fstring struct {
@@ -45,11 +43,6 @@ func (l fstring) trunc(n int) fstring {
 	return fstring{l.fileIndex, l.row, l.column, l.str[:n], l.full}
 }
 
-func (l fstring) substr(start, stop int) fstring {
-	col := l.advanceColumn(start)
-	return fstring{l.fileIndex, l.row, col, l.str[start:stop], l.full}
-}
-
 func (l *fstring) isEmpty() bool {
 	return len(l.str) == 0
 }
@@ -64,10 +57,6 @@ func (l *fstring) startsWithChar(c byte) bool {
 
 func (l *fstring) startsWithString(s string) bool {
 	return len(l.str) >= len(s) && l.str[:len(s)] == s
-}
-
-func (l *fstring) startsWithStringI(lower string) bool {
-	return len(l.str) >= len(lower) && strings.ToLower(l.str[:len(lower)]) == lower
 }
 
 func (l fstring) consumeWhitespace() fstring {
@@ -134,10 +123,6 @@ func (l *fstring) consumeUntilUnquotedChar(c byte) (consumed, remain fstring) {
 	return
 }
 
-func (l fstring) peekNextWord() fstring {
-	return l.trunc(l.scanWhile(wordChar))
-}
-
 func (l fstring) stripTrailingComment() fstring {
 	lastNonWS := 0
 	for i := 0; i < len(l.str); i++ {
@@ -193,10 +178,6 @@ func binarynum(c byte) bool {
 	return c == '0' || c == '1'
 }
 
-func opcodeChar(c byte) bool {
-	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
-}
-
 func labelStartChar(c byte) bool {
 	return alpha(c) || c == '_' || c == '.' || c == '@'
 }
@@ -215,8 +196,4 @@ func identifierChar(c byte) bool {
 
 func stringQuote(c byte) bool {
 	return c == '"' || c == '\''
-}
-
-func pseudoOpStartChar(c byte) bool {
-	return c == '.' || c == '='
 }

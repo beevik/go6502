@@ -58,7 +58,7 @@ func expectACC(t *testing.T, cpu *cpu.CPU, acc byte) {
 
 func expectSP(t *testing.T, cpu *cpu.CPU, sp byte) {
 	if cpu.Reg.SP != sp {
-		t.Errorf("Stack pointer incorrect. exp: %02X, got $%02X", sp, cpu.Reg.SP)
+		t.Errorf("stack pointer incorrect. exp: %02X, got $%02X", sp, cpu.Reg.SP)
 	}
 }
 
@@ -97,7 +97,7 @@ func TestStack(t *testing.T) {
 	PHA
 	LDA #$13
 	PHA
-	
+
 	PLA
 	STA $2000
 	PLA

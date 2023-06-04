@@ -101,10 +101,6 @@ func (op exprOp) isBinary() bool {
 	return ops[op].isBinary()
 }
 
-func (op exprOp) isUnary() bool {
-	return ops[op].isUnary()
-}
-
 func (op exprOp) eval(a, b int) int {
 	return ops[op].eval(a, b)
 }
@@ -478,10 +474,11 @@ func (p *exprParser) parseToken(line fstring) (t token, remain fstring, err erro
 }
 
 // Parse a number from the line. The following numeric formats are allowed:
-//   [0-9]+           Decimal number
-//   $[0-9a-fA-F]+    Hexadecimal number
-//   0x[0-9a-fA-F]+   Hexadecimal number
-//   0b[01]+          Binary number
+//
+//	[0-9]+           Decimal number
+//	$[0-9a-fA-F]+    Hexadecimal number
+//	0x[0-9a-fA-F]+   Hexadecimal number
+//	0b[01]+          Binary number
 //
 // The function returns the parsed value, the number of bytes used to
 // hold the value, the remainder of the line, and any parsing error

@@ -902,7 +902,7 @@ func (cpu *CPU) tsb(inst *Instruction, operand []byte) {
 	cpu.store(inst.Mode, operand, nv)
 }
 
-// Transfer Stack pointer to X register
+// Transfer stack pointer to X register
 func (cpu *CPU) tsx(inst *Instruction, operand []byte) {
 	cpu.Reg.X = cpu.Reg.SP
 	cpu.updateNZ(cpu.Reg.X)
@@ -914,7 +914,7 @@ func (cpu *CPU) txa(inst *Instruction, operand []byte) {
 	cpu.updateNZ(cpu.Reg.A)
 }
 
-// Transfer X register to the Stack pointer
+// Transfer X register to the stack pointer
 func (cpu *CPU) txs(inst *Instruction, operand []byte) {
 	cpu.Reg.SP = cpu.Reg.X
 }

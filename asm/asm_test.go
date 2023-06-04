@@ -20,19 +20,6 @@ func assemble(t *testing.T, code string) ([]byte, error) {
 	return assembly.Code, nil
 }
 
-func fromHex(c byte) byte {
-	switch {
-	case c >= '0' && c <= '9':
-		return c - '0'
-	case c >= 'A' && c <= 'F':
-		return c - 'A' + 10
-	case c >= 'a' && c <= 'f':
-		return c - 'a' + 10
-	default:
-		return 0
-	}
-}
-
 func checkASM(t *testing.T, asm string, expected string) {
 	code, err := assemble(t, asm)
 	if err != nil {
