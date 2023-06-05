@@ -17,6 +17,12 @@ const (
 	CMOS
 )
 
+// BrkHandler is an interface implemented by types that wish to be notified
+// when a BRK instruction is about to be executed.
+type BrkHandler interface {
+	OnBrk(cpu *CPU)
+}
+
 // CPU represents a single 6502 CPU. It contains a pointer to the
 // memory associated with the CPU.
 type CPU struct {
@@ -29,6 +35,7 @@ type CPU struct {
 	pageCrossed bool
 	deltaCycles int8
 	debugger    *Debugger
+	brkHandler  BrkHandler
 	storeByte   func(cpu *CPU, addr uint16, v byte)
 }
 
@@ -78,6 +85,13 @@ func (cpu *CPU) Step() {
 		return
 	}
 
+	// If a BRK instruction is about to be executed and a BRK handler has been
+	// installed, call the BRK handler instead of executing the instruction.
+	if inst.Opcode == 0x00 && cpu.brkHandler != nil {
+		cpu.brkHandler.OnBrk(cpu)
+		return
+	}
+
 	// Fetch the operand (if any) and advance the PC
 	var buf [2]byte
 	operand := buf[:inst.Length-1]
@@ -101,6 +115,12 @@ func (cpu *CPU) Step() {
 	if cpu.debugger != nil {
 		cpu.debugger.onUpdatePC(cpu, cpu.Reg.PC)
 	}
+}
+
+// AttachBrkHandler attaches a handler that is called whenever the BRK
+// instruction is executed.
+func (cpu *CPU) AttachBrkHandler(handler BrkHandler) {
+	cpu.brkHandler = handler
 }
 
 // AttachDebugger attaches a debugger to the CPU. The debugger receives
@@ -276,9 +296,8 @@ func (cpu *CPU) updateNZ(v byte) {
 	cpu.Reg.Sign = ((v & 0x80) != 0)
 }
 
-// Handle an handleInterrupt by storing the program counter and status
-// flags on the stack. Then switch the program counter to the requested
-// address.
+// Handle a handleInterrupt by storing the program counter and status flags on
+// the stack. Then switch the program counter to the requested address.
 func (cpu *CPU) handleInterrupt(brk bool, addr uint16) {
 	cpu.pushAddress(cpu.Reg.PC)
 	cpu.push(cpu.Reg.SavePS(brk))

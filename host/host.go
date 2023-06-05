@@ -89,8 +89,11 @@ func New() *Host {
 	h.cpu = cpu.NewCPU(cpu.CMOS, h.mem)
 
 	// Create a CPU debugger and attach it to the CPU.
-	h.debugger = cpu.NewDebugger(newDebugHandler(h))
+	h.debugger = cpu.NewDebugger(h)
 	h.cpu.AttachDebugger(h.debugger)
+
+	// Attach this host as a CPU BRK handler.
+	h.cpu.AttachBrkHandler(h)
 
 	return h
 }
@@ -1572,13 +1575,21 @@ func (h *Host) resolveIdentifier(s string) (int64, error) {
 	return 0, fmt.Errorf("identifier '%s' not found", s)
 }
 
-func (h *Host) onBreakpoint(cpu *cpu.CPU, b *cpu.Breakpoint) {
+// OnBrk is called when the CPU is about to execute a BRK instruction.
+func (h *Host) OnBrk(cpu *cpu.CPU) {
+	h.state = stateInterrupted
+	h.printf("BRK encountered at $%04X.\n", cpu.Reg.PC)
+}
+
+// OnBreakpoint is called when the debugger encounters a code breakpoint.
+func (h *Host) OnBreakpoint(cpu *cpu.CPU, b *cpu.Breakpoint) {
 	h.state = stateBreakpoint
 	h.printf("Breakpoint hit at $%04X.\n", b.Address)
 	h.displayPC()
 }
 
-func (h *Host) onDataBreakpoint(cpu *cpu.CPU, b *cpu.DataBreakpoint) {
+// OnDataBreakpoint is called when the debugger encounters a data breakpoint.
+func (h *Host) OnDataBreakpoint(cpu *cpu.CPU, b *cpu.DataBreakpoint) {
 	h.printf("Data breakpoint hit on address $%04X.\n", b.Address)
 
 	h.state = stateBreakpoint

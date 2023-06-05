@@ -25,7 +25,6 @@ load monitor.bin $F800
 assemble file sample.asm
 load sample.bin
 reg PC START
-breakpoint add $1020
 d .
 ```
 
@@ -39,8 +38,7 @@ for now know that they do the following things:
    exported during assembly into the `sample.map` file.
 4. Set the program counter register to value of the `START` address, which
    was exported during assembly into the `sample.map` file.
-5. Set a debugging breakpoint at hexadecimal memory address `1020`.
-6. Disassemble the first few lines of machine code starting from the program
+5. Disassemble the first few lines of machine code starting from the program
    counter address.
 
 To run this script, type the following on the command line:

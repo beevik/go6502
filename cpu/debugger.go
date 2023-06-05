@@ -9,14 +9,14 @@ import "sort"
 // The Debugger interface may be implemented to intercept instructions before
 // and after they are executed on the emulated CPU.
 type Debugger struct {
-	Handler         DebuggerHandler
-	breakpoints     map[uint16]*Breakpoint
-	dataBreakpoints map[uint16]*DataBreakpoint
+	breakpointHandler BreakpointHandler
+	breakpoints       map[uint16]*Breakpoint
+	dataBreakpoints   map[uint16]*DataBreakpoint
 }
 
-// The DebuggerHandler interface should be implemented by any object that
-// wishes to receive debugger notifications.
-type DebuggerHandler interface {
+// The BreakpointHandler interface should be implemented by any object that
+// wishes to receive debugger breakpoint notifications.
+type BreakpointHandler interface {
 	OnBreakpoint(cpu *CPU, b *Breakpoint)
 	OnDataBreakpoint(cpu *CPU, b *DataBreakpoint)
 }
@@ -38,11 +38,11 @@ type DataBreakpoint struct {
 }
 
 // NewDebugger creates a new CPU debugger.
-func NewDebugger(handler DebuggerHandler) *Debugger {
+func NewDebugger(breakpointHandler BreakpointHandler) *Debugger {
 	return &Debugger{
-		Handler:         handler,
-		breakpoints:     make(map[uint16]*Breakpoint),
-		dataBreakpoints: make(map[uint16]*DataBreakpoint),
+		breakpointHandler: breakpointHandler,
+		breakpoints:       make(map[uint16]*Breakpoint),
+		dataBreakpoints:   make(map[uint16]*DataBreakpoint),
 	}
 }
 
@@ -81,9 +81,7 @@ func (d *Debugger) AddBreakpoint(addr uint16) *Breakpoint {
 
 // RemoveBreakpoint removes a breakpoint from the debugger.
 func (d *Debugger) RemoveBreakpoint(addr uint16) {
-	if _, ok := d.breakpoints[addr]; ok {
-		delete(d.breakpoints, addr)
-	}
+	delete(d.breakpoints, addr)
 }
 
 type byDBPAddr []*DataBreakpoint
@@ -133,24 +131,22 @@ func (d *Debugger) AddConditionalDataBreakpoint(addr uint16, value byte) {
 // RemoveDataBreakpoint removes a (conditional or unconditional) data
 // breakpoint at the requested address.
 func (d *Debugger) RemoveDataBreakpoint(addr uint16) {
-	if _, ok := d.dataBreakpoints[addr]; ok {
-		delete(d.dataBreakpoints, addr)
-	}
+	delete(d.dataBreakpoints, addr)
 }
 
 func (d *Debugger) onUpdatePC(cpu *CPU, addr uint16) {
-	if d.Handler != nil {
+	if d.breakpointHandler != nil {
 		if b, ok := d.breakpoints[addr]; ok && !b.Disabled {
-			d.Handler.OnBreakpoint(cpu, b)
+			d.breakpointHandler.OnBreakpoint(cpu, b)
 		}
 	}
 }
 
 func (d *Debugger) onDataStore(cpu *CPU, addr uint16, v byte) {
-	if d.Handler != nil {
+	if d.breakpointHandler != nil {
 		if b, ok := d.dataBreakpoints[addr]; ok && !b.Disabled {
 			if !b.Conditional || b.Value == v {
-				d.Handler.OnDataBreakpoint(cpu, b)
+				d.breakpointHandler.OnDataBreakpoint(cpu, b)
 			}
 		}
 	}
