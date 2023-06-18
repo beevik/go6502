@@ -1273,6 +1273,25 @@ func (h *Host) cmdStepOver(c cmd.Selection) error {
 	return nil
 }
 
+func (h *Host) cmdStepOut(c cmd.Selection) error {
+	count := 1
+
+	h.state = stateRunning
+	for i := count - 1; i >= 0 && h.state == stateRunning; i-- {
+		h.stepOut()
+		switch {
+		case i == h.settings.MaxStepLines:
+			h.println("...")
+		case i < h.settings.MaxStepLines:
+			h.displayPC()
+		}
+	}
+
+	h.state = stateProcessingCommands
+	h.settings.NextDisasmAddr = h.cpu.Reg.PC
+	return nil
+}
+
 func (h *Host) load(filename string, addr int) (origin uint16, err error) {
 	filename, err = filepath.Abs(filename)
 	basefile := filepath.Base(filename)
@@ -1382,6 +1401,18 @@ func (h *Host) stepOver() {
 					break loop
 				}
 			}
+		}
+	}
+}
+
+func (h *Host) stepOut() {
+	cpu := h.cpu
+
+	for h.state == stateRunning {
+		inst := cpu.GetInstruction(cpu.Reg.PC)
+		cpu.Step()
+		if inst.Name == "RTS" || inst.Name == "RTI" {
+			break
 		}
 	}
 }

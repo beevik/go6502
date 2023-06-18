@@ -306,6 +306,15 @@ func init() {
 		Usage: "step over [<count>]",
 		Data:  (*Host).cmdStepOver,
 	})
+	step.AddCommand(cmd.Command{
+		Name:  "out",
+		Brief: "Step out of the current subroutine",
+		Description: "Step the CPU until it executes an RTS or RTI" +
+			" instruction. This has the effect of stepping until the " +
+			" currently running subroutine has returned.",
+		Usage: "step out",
+		Data:  (*Host).cmdStepOut,
+	})
 
 	// Add command shortcuts.
 	root.AddShortcut("a", "assemble file")
@@ -334,6 +343,7 @@ func init() {
 	root.AddShortcut("r", "register")
 	root.AddShortcut("s", "step over")
 	root.AddShortcut("si", "step in")
+	root.AddShortcut("so", "step out")
 	root.AddShortcut("?", "help")
 	root.AddShortcut(".", "register")
 
