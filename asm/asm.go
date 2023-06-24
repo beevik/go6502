@@ -13,6 +13,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -339,6 +340,56 @@ type Option uint
 const (
 	Verbose Option = 1 << iota // verbose output during assembly
 )
+
+// AssembleFile reads a file containing 6502 assembly code, assembles it,
+// and produces a binary output file and a source map file.
+func AssembleFile(path string, options Option, out io.Writer) error {
+	inFile, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer inFile.Close()
+
+	assembly, sourceMap, err := Assemble(inFile, path, out, options)
+	if err != nil {
+		for _, e := range assembly.Errors {
+			fmt.Fprintln(out, e)
+		}
+		return err
+	}
+
+	ext := filepath.Ext(path)
+	prefix := path[:len(path)-len(ext)]
+	binPath := prefix + ".bin"
+	binFile, err := os.OpenFile(binPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	defer binFile.Close()
+
+	_, err = assembly.WriteTo(binFile)
+	if err != nil {
+		return err
+	}
+
+	mapPath := prefix + ".map"
+	mapFile, err := os.OpenFile(mapPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	defer mapFile.Close()
+
+	_, err = sourceMap.WriteTo(mapFile)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(out, "Assembled '%s' to produce '%s' and '%s'.\n",
+		filepath.Base(path),
+		filepath.Base(binPath),
+		filepath.Base(mapPath))
+	return nil
+}
 
 // Assemble reads data from the provided stream and attempts to assemble it
 // into 6502 byte code.

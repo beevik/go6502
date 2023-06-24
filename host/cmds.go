@@ -5,14 +5,14 @@ import "github.com/beevik/cmd"
 var cmds *cmd.Tree
 
 func init() {
-	root := cmd.NewTree("go6502")
-	root.AddCommand(cmd.Command{
+	root := cmd.NewTree(cmd.TreeDescriptor{Name: "go6502"})
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:        "help",
 		Description: "Display help for a command.",
 		Usage:       "help [<command>]",
 		Data:        (*Host).cmdHelp,
 	})
-	root.AddCommand(cmd.Command{
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:  "annotate",
 		Brief: "Annotate an address",
 		Description: "Provide a code annotation at a memory address." +
@@ -23,13 +23,8 @@ func init() {
 	})
 
 	// Assemble commands
-	ass := cmd.NewTree("Assemble")
-	root.AddCommand(cmd.Command{
-		Name:    "assemble",
-		Brief:   "Assemble commands",
-		Subtree: ass,
-	})
-	ass.AddCommand(cmd.Command{
+	as := root.AddSubtree(cmd.TreeDescriptor{Name: "assemble", Brief: "Assemble commands"})
+	as.AddCommand(cmd.CommandDescriptor{
 		Name:  "file",
 		Brief: "Assemble a file from disk and save the binary to disk",
 		Description: "Run the cross-assembler on the specified file," +
@@ -38,7 +33,7 @@ func init() {
 		Usage: "assemble file <filename> [<verbose>]",
 		Data:  (*Host).cmdAssembleFile,
 	})
-	ass.AddCommand(cmd.Command{
+	as.AddCommand(cmd.CommandDescriptor{
 		Name:  "interactive",
 		Brief: "Start interactive assembly mode",
 		Description: "Start interactive assembler mode. A new prompt will" +
@@ -48,7 +43,7 @@ func init() {
 		Usage: "assemble interactive <address>",
 		Data:  (*Host).cmdAssembleInteractive,
 	})
-	ass.AddCommand(cmd.Command{
+	as.AddCommand(cmd.CommandDescriptor{
 		Name:  "map",
 		Brief: "Create a source map file",
 		Description: "Create an empty source map file for an existing binary" +
@@ -59,20 +54,15 @@ func init() {
 	})
 
 	// Breakpoint commands
-	bp := cmd.NewTree("Breakpoint")
-	root.AddCommand(cmd.Command{
-		Name:    "breakpoint",
-		Brief:   "Breakpoint commands",
-		Subtree: bp,
-	})
-	bp.AddCommand(cmd.Command{
+	bp := root.AddSubtree(cmd.TreeDescriptor{Name: "breakpoint", Brief: "Breakpoint commands"})
+	bp.AddCommand(cmd.CommandDescriptor{
 		Name:        "list",
 		Brief:       "List breakpoints",
 		Description: "List all current breakpoints.",
 		Usage:       "breakpoint list",
 		Data:        (*Host).cmdBreakpointList,
 	})
-	bp.AddCommand(cmd.Command{
+	bp.AddCommand(cmd.CommandDescriptor{
 		Name:  "add",
 		Brief: "Add a breakpoint",
 		Description: "Add a breakpoint at the specified address." +
@@ -80,21 +70,21 @@ func init() {
 		Usage: "breakpoint add <address>",
 		Data:  (*Host).cmdBreakpointAdd,
 	})
-	bp.AddCommand(cmd.Command{
+	bp.AddCommand(cmd.CommandDescriptor{
 		Name:        "remove",
 		Brief:       "Remove a breakpoint",
 		Description: "Remove a breakpoint at the specified address.",
 		Usage:       "breakpoint remove <address>",
 		Data:        (*Host).cmdBreakpointRemove,
 	})
-	bp.AddCommand(cmd.Command{
+	bp.AddCommand(cmd.CommandDescriptor{
 		Name:        "enable",
 		Brief:       "Enable a breakpoint",
 		Description: "Enable a previously added breakpoint.",
 		Usage:       "breakpoint enable <address>",
 		Data:        (*Host).cmdBreakpointEnable,
 	})
-	bp.AddCommand(cmd.Command{
+	bp.AddCommand(cmd.CommandDescriptor{
 		Name:  "disable",
 		Brief: "Disable a breakpoint",
 		Description: "Disable a previously added breakpoint. This" +
@@ -105,20 +95,15 @@ func init() {
 	})
 
 	// Data breakpoint commands
-	dbp := cmd.NewTree("Data breakpoint")
-	root.AddCommand(cmd.Command{
-		Name:    "databreakpoint",
-		Brief:   "Data breakpoint commands",
-		Subtree: dbp,
-	})
-	dbp.AddCommand(cmd.Command{
+	db := root.AddSubtree(cmd.TreeDescriptor{Name: "databreakpoint", Brief: "Data Breakpoint commands"})
+	db.AddCommand(cmd.CommandDescriptor{
 		Name:        "list",
 		Brief:       "List data breakpoints",
 		Description: "List all current data breakpoints.",
 		Usage:       "databreakpoint list",
 		Data:        (*Host).cmdDataBreakpointList,
 	})
-	dbp.AddCommand(cmd.Command{
+	db.AddCommand(cmd.CommandDescriptor{
 		Name:  "add",
 		Brief: "Add a data breakpoint",
 		Description: "Add a new data breakpoint at the specified" +
@@ -130,7 +115,7 @@ func init() {
 		Usage: "databreakpoint add <address> [<value>]",
 		Data:  (*Host).cmdDataBreakpointAdd,
 	})
-	dbp.AddCommand(cmd.Command{
+	db.AddCommand(cmd.CommandDescriptor{
 		Name:  "remove",
 		Brief: "Remove a data breakpoint",
 		Description: "Remove a previously added data breakpoint at" +
@@ -138,14 +123,14 @@ func init() {
 		Usage: "databreakpoint remove <address>",
 		Data:  (*Host).cmdDataBreakpointRemove,
 	})
-	dbp.AddCommand(cmd.Command{
+	db.AddCommand(cmd.CommandDescriptor{
 		Name:        "enable",
 		Brief:       "Enable a data breakpoint",
 		Description: "Enable a previously added breakpoint.",
 		Usage:       "databreakpoint enable <address>",
 		Data:        (*Host).cmdDataBreakpointEnable,
 	})
-	dbp.AddCommand(cmd.Command{
+	db.AddCommand(cmd.CommandDescriptor{
 		Name:        "disable",
 		Brief:       "Disable a data breakpoint",
 		Description: "Disable a previously added breakpoint.",
@@ -153,7 +138,7 @@ func init() {
 		Data:        (*Host).cmdDataBreakpointDisable,
 	})
 
-	root.AddCommand(cmd.Command{
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:  "disassemble",
 		Brief: "Disassemble code",
 		Description: "Disassemble machine code starting at the requested" +
@@ -163,14 +148,14 @@ func init() {
 		Usage: "disassemble [<address>] [<lines>]",
 		Data:  (*Host).cmdDisassemble,
 	})
-	root.AddCommand(cmd.Command{
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:        "evaluate",
 		Brief:       "Evaluate an expression",
 		Description: "Evaluate a mathemetical expression.",
 		Usage:       "evaluate <expression>",
 		Data:        (*Host).cmdEvaluate,
 	})
-	root.AddCommand(cmd.Command{
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:  "execute",
 		Brief: "Execute a go6502 script file",
 		Description: "Load a go6502 script file from disk and execute the" +
@@ -178,7 +163,7 @@ func init() {
 		Usage: "execute <filename>",
 		Data:  (*Host).cmdExecute,
 	})
-	root.AddCommand(cmd.Command{
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:  "exports",
 		Brief: "List exported addresses",
 		Description: "Display a list of all memory addresses exported by" +
@@ -187,7 +172,7 @@ func init() {
 		Usage: "exports",
 		Data:  (*Host).cmdExports,
 	})
-	root.AddCommand(cmd.Command{
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:  "list",
 		Brief: "List source code lines",
 		Description: "List the source code corresponding to the machine code" +
@@ -196,7 +181,7 @@ func init() {
 		Usage: "list <address> [<lines>]",
 		Data:  (*Host).cmdList,
 	})
-	root.AddCommand(cmd.Command{
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:  "load",
 		Brief: "Load a binary file",
 		Description: "Load the contents of a binary file into the emulated" +
@@ -208,13 +193,8 @@ func init() {
 	})
 
 	// Memory commands
-	mem := cmd.NewTree("Memory")
-	root.AddCommand(cmd.Command{
-		Name:    "memory",
-		Brief:   "Memory commands",
-		Subtree: mem,
-	})
-	mem.AddCommand(cmd.Command{
+	me := root.AddSubtree(cmd.TreeDescriptor{Name: "memory", Brief: "Memory commands"})
+	me.AddCommand(cmd.CommandDescriptor{
 		Name:  "dump",
 		Brief: "Dump memory at address",
 		Description: "Dump the contents of memory starting from the" +
@@ -224,7 +204,7 @@ func init() {
 		Usage: "memory dump [<address>] [<bytes>]",
 		Data:  (*Host).cmdMemoryDump,
 	})
-	mem.AddCommand(cmd.Command{
+	me.AddCommand(cmd.CommandDescriptor{
 		Name:  "set",
 		Brief: "Set memory at address",
 		Description: "Set the contents of memory starting from the specified" +
@@ -234,7 +214,7 @@ func init() {
 		Usage: "memory set <address> <byte> [<byte> ...]",
 		Data:  (*Host).cmdMemorySet,
 	})
-	mem.AddCommand(cmd.Command{
+	me.AddCommand(cmd.CommandDescriptor{
 		Name:  "copy",
 		Brief: "Copy memory",
 		Description: "Copy memory from one range of addresses to another. You" +
@@ -244,14 +224,14 @@ func init() {
 		Data:  (*Host).cmdMemoryCopy,
 	})
 
-	root.AddCommand(cmd.Command{
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:        "quit",
 		Brief:       "Quit the program",
 		Description: "Quit the program.",
 		Usage:       "quit",
 		Data:        (*Host).cmdQuit,
 	})
-	root.AddCommand(cmd.Command{
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:  "register",
 		Brief: "View or change register values",
 		Description: "When used without arguments, this command displays the current" +
@@ -263,7 +243,7 @@ func init() {
 		Usage: "register [<name> <value>]",
 		Data:  (*Host).cmdRegister,
 	})
-	root.AddCommand(cmd.Command{
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:  "run",
 		Brief: "Run the CPU",
 		Description: "Run the CPU until a breakpoint is hit or until the" +
@@ -271,7 +251,7 @@ func init() {
 		Usage: "run",
 		Data:  (*Host).cmdRun,
 	})
-	root.AddCommand(cmd.Command{
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:  "set",
 		Brief: "Set a configuration variable",
 		Description: "Set the value of a configuration variable. To see the" +
@@ -282,13 +262,8 @@ func init() {
 	})
 
 	// Step commands
-	step := cmd.NewTree("Step")
-	root.AddCommand(cmd.Command{
-		Name:    "step",
-		Brief:   "Step the debugger",
-		Subtree: step,
-	})
-	step.AddCommand(cmd.Command{
+	st := root.AddSubtree(cmd.TreeDescriptor{Name: "step", Brief: "Step the debugger"})
+	st.AddCommand(cmd.CommandDescriptor{
 		Name:  "in",
 		Brief: "Step into next instruction",
 		Description: "Step the CPU by a single instruction. If the" +
@@ -297,7 +272,7 @@ func init() {
 		Usage: "step in [<count>]",
 		Data:  (*Host).cmdStepIn,
 	})
-	step.AddCommand(cmd.Command{
+	st.AddCommand(cmd.CommandDescriptor{
 		Name:  "over",
 		Brief: "Step over next instruction",
 		Description: "Step the CPU by a single instruction. If the" +
@@ -306,7 +281,7 @@ func init() {
 		Usage: "step over [<count>]",
 		Data:  (*Host).cmdStepOver,
 	})
-	step.AddCommand(cmd.Command{
+	st.AddCommand(cmd.CommandDescriptor{
 		Name:  "out",
 		Brief: "Step out of the current subroutine",
 		Description: "Step the CPU until it executes an RTS or RTI" +

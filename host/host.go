@@ -24,12 +24,14 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/beevik/cmd"
 	"github.com/beevik/go6502/asm"
 	"github.com/beevik/go6502/cpu"
 	"github.com/beevik/go6502/disasm"
+	"github.com/beevik/go6502/term"
 )
 
 type displayFlags uint8
@@ -56,33 +58,63 @@ const (
 // A Host represents a fully emulated 6502 system, 64K of memory, a built-in
 // assembler, a built-in debugger, and other useful tools.
 type Host struct {
-	input       *bufio.Scanner
-	output      *bufio.Writer
-	interactive bool
-	mem         *cpu.FlatMemory
-	cpu         *cpu.CPU
-	debugger    *cpu.Debugger
-	lastCmd     *cmd.Selection
-	state       state
-	miniAddr    uint16
-	assembly    []string
-	exprParser  *exprParser
-	sourceCode  map[string][]string
-	sourceMap   *asm.SourceMap
-	settings    *settings
-	annotations map[uint16]string
+	input          *bufio.Scanner
+	output         *bufio.Writer
+	rawMode        bool
+	rawTerminal    *term.Terminal
+	rawInputState  *term.State
+	rawOutputState *term.State
+	prompt         string
+	mem            *cpu.FlatMemory
+	cpu            *cpu.CPU
+	debugger       *cpu.Debugger
+	lastCmd        *cmd.Command
+	lastArgs       []string
+	lastLine       string
+	state          state
+	miniAddr       uint16
+	assembly       []string
+	exprParser     *exprParser
+	sourceCode     map[string][]string
+	sourceMap      *asm.SourceMap
+	settings       *settings
+	annotations    map[uint16]string
+}
+
+// IoState represents the state of the host's I/O subsystem. It is returned
+// by calls to EnableRawMode and EnableProcessedMode.
+type IoState struct {
+	input   *bufio.Scanner
+	output  *bufio.Writer
+	rawMode bool
 }
 
 // New creates a new 6502 host environment.
 func New() *Host {
+	console := struct {
+		io.Reader
+		io.Writer
+	}{
+		os.Stdin,
+		os.Stdout,
+	}
+
 	h := &Host{
-		state:       stateProcessingCommands,
+		rawMode:     false,
+		rawTerminal: term.NewTerminal(console, ""),
 		exprParser:  newExprParser(),
 		sourceCode:  make(map[string][]string),
 		sourceMap:   asm.NewSourceMap(),
 		settings:    newSettings(),
 		annotations: make(map[uint16]string),
 	}
+
+	// Set up raw terminal callbacks.
+	h.rawTerminal.AutoCompleteCallback = h.autocomplete
+	h.rawTerminal.HistoryTestCallback = h.historyTest
+
+	// Initialize host state.
+	h.setState(stateProcessingCommands)
 
 	// Create the emulated CPU and memory.
 	h.mem = cpu.NewFlatMemory()
@@ -98,38 +130,140 @@ func New() *Host {
 	return h
 }
 
+// Cleanup cleans up all resources initialized by the call to New().
+func (h *Host) Cleanup() {
+	h.disableRawMode()
+}
+
+func (h *Host) enableRawMode() {
+	if !h.rawMode {
+		var err error
+		h.rawInputState, err = term.MakeRaw(int(os.Stdin.Fd()))
+		if err != nil {
+			panic(err)
+		}
+
+		h.rawOutputState, err = term.MakeRaw(int(os.Stdout.Fd()))
+		if err != nil {
+			term.Restore(int(os.Stdin.Fd()), h.rawInputState)
+			panic(err)
+		}
+		h.rawMode = true
+	}
+}
+
+func (h *Host) disableRawMode() {
+	if h.rawMode {
+		if h.rawOutputState != nil {
+			term.Restore(int(os.Stdout.Fd()), h.rawOutputState)
+			h.rawOutputState = nil
+		}
+		if h.rawInputState != nil {
+			term.Restore(int(os.Stdin.Fd()), h.rawInputState)
+			h.rawInputState = nil
+		}
+		h.rawMode = false
+	}
+}
+
+func (h *Host) autocomplete(line string, pos int, key rune) (newLine string, newPos int, ok bool) {
+	if key == '\t' {
+		matches := cmds.Autocomplete(line)
+		if len(matches) == 1 {
+			match := matches[0] + " "
+			return match, len(match), true
+		}
+		if len(matches) > 1 {
+			for i, m := range matches {
+				index := strings.LastIndex(m, " ")
+				if index != -1 {
+					matches[i] = matches[i][index+1:]
+				}
+				matches[i] = matches[i] + " "
+			}
+			fmt.Fprintln(h, strings.Join(matches, "  "))
+			return "", 0, false
+		}
+	}
+	return "", 0, false
+}
+
+func (h *Host) historyTest(line string) bool {
+	if h.state == stateMiniAssembler {
+		return false
+	}
+	return line != "" && line != h.lastLine
+}
+
+// Write writes the contents of p into the output device currently assigned
+// to the host. It returns the number of bytes written.
+func (h *Host) Write(p []byte) (n int, err error) {
+	if h.rawMode {
+		return h.rawTerminal.Write(p)
+	}
+	if h.output == nil {
+		return len(p), nil
+	}
+	n, err = h.output.Write(p)
+	h.output.Flush()
+	return n, err
+}
+
 // AssembleFile assembles a file on disk and stores the result in a compiled
 // 'bin' file. A source map file is also produced.
 func (h *Host) AssembleFile(filename string) error {
-	s := cmd.Selection{
-		Command: &cmd.Command{},
-		Args:    []string{filename},
+	return h.cmdAssembleFile(new(cmd.Command), []string{filename})
+}
+
+// EnableRawMode enables the raw interactive console mode. The original I/O
+// state is returned so that it may be restored afterwards.
+func (h *Host) EnableRawMode() *IoState {
+	ioState := &IoState{h.input, h.output, h.rawMode}
+	if !h.rawMode {
+		h.enableRawMode()
+		h.rawMode = true
 	}
+	return ioState
+}
 
-	h.output = bufio.NewWriter(os.Stdout)
-	h.interactive = true
+// EnableProcessedMode disables raw mode and enters the processed I/O mode,
+// where input is read from the reader r and output is written to the writer
+// w. The original I/O state is returned so that it may be restored
+// afterwards.
+func (h *Host) EnableProcessedMode(r io.Reader, w io.Writer) *IoState {
+	ioState := &IoState{h.input, h.output, h.rawMode}
+	h.disableRawMode()
+	h.input = bufio.NewScanner(r)
+	if w == nil {
+		h.output = nil
+	} else {
+		h.output = bufio.NewWriter(w)
+	}
+	return ioState
+}
 
-	return h.cmdAssembleFile(s)
+// RestoreIoState restores a previously saved I/O state.
+func (h *Host) RestoreIoState(state *IoState) {
+	h.input = state.input
+	h.output = state.output
+	if state.rawMode {
+		h.enableRawMode()
+	} else {
+		h.disableRawMode()
+	}
 }
 
 // RunCommands accepts host commands from a reader and outputs the results
 // to a writer. If the commands are interactive, a prompt is displayed while
 // the host waits for the the next command to be entered.
-func (h *Host) RunCommands(r io.Reader, w io.Writer, interactive bool) {
-	h.input = bufio.NewScanner(r)
-	h.output = bufio.NewWriter(w)
-	h.interactive = interactive
-
-	if interactive {
-		h.println()
+func (h *Host) RunCommands(interactive bool) {
+	if h.rawMode {
+		fmt.Fprintln(h)
+		h.displayPC()
 	}
 
-	h.displayPC()
-
 	for {
-		h.prompt()
-
-		line, err := h.getLine()
+		line, err := h.readLine(interactive)
 		if err != nil {
 			break
 		}
@@ -146,41 +280,57 @@ func (h *Host) RunCommands(r io.Reader, w io.Writer, interactive bool) {
 		if err != nil {
 			break
 		}
+
+		h.lastLine = line
 	}
 }
 
+func (h *Host) setState(s state) {
+	h.state = s
+	switch h.state {
+	case stateMiniAssembler:
+		h.prompt = "! "
+	default:
+		h.prompt = "* "
+	}
+	h.rawTerminal.SetPrompt(h.prompt)
+}
+
 func (h *Host) processCommand(line string) error {
-	var c cmd.Selection
+	var n cmd.Node
+	var args []string
 	if line != "" {
 		var err error
-		c, err = cmds.Lookup(line)
+		n, args, err = cmds.Lookup(line)
 		switch {
 		case err == cmd.ErrNotFound:
-			h.println("Command not found.")
+			fmt.Fprintln(h, "Command not found.")
 			return nil
 		case err == cmd.ErrAmbiguous:
-			h.println("Command is ambiguous.")
+			fmt.Fprintln(h, "Command is ambiguous.")
 			return nil
 		case err != nil:
-			h.printf("ERROR: %v.\n", err)
+			fmt.Fprintf(h, "ERROR: %v.\n", err)
 			return nil
 		}
 	} else if h.lastCmd != nil {
-		c = *h.lastCmd
+		n = h.lastCmd
+		args = h.lastArgs
 	}
 
-	if c.Command == nil {
+	if st, ok := n.(*cmd.Tree); ok {
+		st.DisplayHelp(h)
+		h.lastCmd, h.lastArgs = nil, nil
 		return nil
 	}
-	if c.Command.Data == nil && c.Command.Subtree != nil {
-		h.displayCommands(c.Command.Subtree, nil)
-		return nil
+
+	if c, ok := n.(*cmd.Command); ok {
+		h.lastCmd, h.lastArgs = c, args
+		handler := c.Data.(func(*Host, *cmd.Command, []string) error)
+		return handler(h, c, args)
 	}
 
-	h.lastCmd = &c
-
-	handler := c.Command.Data.(func(*Host, cmd.Selection) error)
-	return handler(h, c)
+	return nil
 }
 
 func (h *Host) processMiniAssembler(line string) error {
@@ -202,28 +352,28 @@ func (h *Host) assembleInline() error {
 	defer func() {
 		h.assembly = nil
 		h.miniAddr = 0
-		h.state = stateProcessingCommands
+		h.setState(stateProcessingCommands)
 	}()
 
 	if len(h.assembly) == 0 {
-		h.println("No assembly code entered.")
+		fmt.Fprintln(h, "No assembly code entered.")
 		return nil
 	}
 
-	h.println("Assembling inline code...")
+	fmt.Fprintln(h, "Assembling inline code...")
 	s := strings.Join(h.assembly, "\n")
-	a, _, err := asm.Assemble(strings.NewReader(s), "inline", h.output, 0)
+	a, _, err := asm.Assemble(strings.NewReader(s), "inline", h, 0)
 
 	if err != nil {
 		for _, e := range a.Errors {
-			h.println(e)
+			fmt.Fprintln(h, e)
 		}
-		h.println("Assembly failed.")
+		fmt.Fprintln(h, "Assembly failed.")
 		return nil
 	}
 
 	if int(h.miniAddr)+len(a.Code) > 64*1024 {
-		h.println("Assembly failed. Code goes beyond 64K.")
+		fmt.Fprintln(h, "Assembly failed. Code goes beyond 64K.")
 		return nil
 	}
 
@@ -232,53 +382,43 @@ func (h *Host) assembleInline() error {
 
 	for addr, end := int(h.miniAddr), int(h.miniAddr)+len(a.Code); addr < end; {
 		d, next := h.disassemble(uint16(addr), 0)
-		h.println(d)
+		fmt.Fprintln(h, d)
 		if next < uint16(addr) {
 			break
 		}
 		addr = int(next)
 	}
 
-	h.printf("Code successfully assembled at $%04X.\n", h.miniAddr)
+	fmt.Fprintf(h, "Code successfully assembled at $%04X.\n", h.miniAddr)
 	return nil
 }
 
 // Break interrupts a running CPU.
 func (h *Host) Break() {
-	h.println()
-
 	switch h.state {
 	case stateRunning:
 		h.state = stateInterrupted
 
 	case stateProcessingCommands:
-		h.println("Type 'quit' to exit the application.")
-		h.prompt()
-		return
+		fmt.Fprintln(h, "Type 'quit' to exit the application.")
 
 	case stateMiniAssembler:
-		h.println("Interactive assembly canceled.")
 		h.assembly = nil
-		h.state = stateProcessingCommands
-		h.prompt()
+		h.setState(stateProcessingCommands)
+		fmt.Fprintln(h, "Interactive assembly canceled.")
 	}
 }
 
-func (h *Host) printf(format string, args ...any) {
-	fmt.Fprintf(h.output, format, args...)
-	h.flush()
-}
-
-func (h *Host) println(args ...any) {
-	fmt.Fprintln(h.output, args...)
-	h.flush()
-}
-
-func (h *Host) flush() {
-	h.output.Flush()
-}
-
-func (h *Host) getLine() (string, error) {
+func (h *Host) readLine(interactive bool) (string, error) {
+	if h.rawMode {
+		return h.rawTerminal.ReadLine()
+	}
+	if h.input == nil {
+		return "", errors.New("no input reader assigned")
+	}
+	if interactive {
+		fmt.Fprintf(h, "%s", h.prompt)
+	}
 	if h.input.Scan() {
 		return h.input.Text(), nil
 	}
@@ -288,71 +428,55 @@ func (h *Host) getLine() (string, error) {
 	return "", io.EOF
 }
 
-func (h *Host) prompt() {
-	if !h.interactive {
-		return
-	}
-
-	switch h.state {
-	case stateProcessingCommands:
-		h.printf("* ")
-	case stateMiniAssembler:
-		h.printf("%2d  ", len(h.assembly)+1)
-	}
-	h.flush()
-}
-
 func (h *Host) displayPC() {
-	if h.interactive {
-		d, _ := h.disassemble(h.cpu.Reg.PC, displayAll)
-		h.println(d)
-	}
+	d, _ := h.disassemble(h.cpu.Reg.PC, displayAll)
+	fmt.Fprintln(h, d)
 }
 
-func (h *Host) cmdAnnotate(c cmd.Selection) error {
-	if len(c.Args) < 1 {
-		h.displayUsage(c.Command)
+func (h *Host) cmdAnnotate(c *cmd.Command, args []string) error {
+	if len(args) < 1 {
+		c.DisplayUsage(h)
 		return nil
 	}
 
-	addr, err := h.parseExpr(c.Args[0])
+	addr, err := h.parseExpr(args[0])
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 
 	var annotation string
-	if len(c.Args) >= 2 {
-		annotation = strings.Join(c.Args[1:], " ")
+	if len(args) >= 2 {
+		annotation = strings.Join(args[1:], " ")
 	}
 
 	if annotation == "" {
 		delete(h.annotations, addr)
-		h.printf("Annotation removed at $%04X.\n", addr)
+		fmt.Fprintf(h, "Annotation removed at $%04X.\n", addr)
 	} else {
 		h.annotations[addr] = annotation
-		h.printf("Annotation added at $%04X.\n", addr)
+		fmt.Fprintf(h, "Annotation added at $%04X.\n", addr)
 	}
 
 	return nil
 }
 
-func (h *Host) cmdAssembleFile(c cmd.Selection) error {
-	if len(c.Args) < 1 {
-		h.displayUsage(c.Command)
+func (h *Host) cmdAssembleFile(c *cmd.Command, args []string) error {
+	if len(args) < 1 {
+		c.DisplayUsage(h)
 		return nil
 	}
 
-	filename := c.Args[0]
-	if filepath.Ext(filename) == "" {
-		filename += ".asm"
+	path := args[0]
+	if filepath.Ext(path) == "" {
+		path += ".asm"
 	}
 
 	var options asm.Option
-	if len(c.Args) > 1 {
-		verbose, err := stringToBool(c.Args[1])
+	if len(args) > 1 {
+		verbose, err := stringToBool(args[1])
 		if err != nil {
-			h.displayUsage(c.Command)
+			c.DisplayUsage(h)
 			return nil
 		}
 		if verbose {
@@ -360,95 +484,49 @@ func (h *Host) cmdAssembleFile(c cmd.Selection) error {
 		}
 	}
 
-	file, err := os.Open(filename)
+	err := asm.AssembleFile(path, options, h)
 	if err != nil {
-		h.printf("Failed to open '%s': %v\n", filepath.Base(filename), err)
-		return nil
-	}
-	defer file.Close()
-
-	assembly, sourceMap, err := asm.Assemble(file, filename, h.output, options)
-	if err != nil {
-		h.printf("Failed to assemble: %s\n", filepath.Base(filename))
-		for _, e := range assembly.Errors {
-			h.println(e)
-		}
-		return nil
+		fmt.Fprintf(os.Stderr, "Failed to assemble (%v).\n", err)
 	}
 
-	file.Close()
-
-	ext := filepath.Ext(filename)
-	filePrefix := filename[0 : len(filename)-len(ext)]
-	binFilename := filePrefix + ".bin"
-	file, err = os.OpenFile(binFilename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
-	if err != nil {
-		h.printf("Failed to create '%s': %v\n", filepath.Base(binFilename), err)
-		return nil
-	}
-
-	_, err = assembly.WriteTo(file)
-	if err != nil {
-		h.printf("Failed to save '%s': %v\n", filepath.Base(binFilename), err)
-		return nil
-	}
-
-	file.Close()
-
-	mapFilename := filePrefix + ".map"
-	file, err = os.OpenFile(mapFilename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
-	if err != nil {
-		h.printf("Failed to create '%s': %v\n", filepath.Base(mapFilename), err)
-		return nil
-	}
-
-	_, err = sourceMap.WriteTo(file)
-	if err != nil {
-		h.printf("Failed to write '%s': %v\n", filepath.Base(mapFilename), err)
-		return nil
-	}
-
-	file.Close()
-
-	h.printf("Assembled '%s' to '%s'.\n", filepath.Base(filename), filepath.Base(binFilename))
 	return nil
 }
 
-func (h *Host) cmdAssembleInteractive(c cmd.Selection) error {
-	if len(c.Args) == 0 {
-		h.displayUsage(c.Command)
+func (h *Host) cmdAssembleInteractive(c *cmd.Command, args []string) error {
+	if len(args) == 0 {
+		c.DisplayUsage(h)
 		return nil
 	}
 
-	addr, err := h.parseAddr(c.Args[0], 0)
+	addr, err := h.parseAddr(args[0], 0)
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 
-	h.state = stateMiniAssembler
+	h.setState(stateMiniAssembler)
 	h.miniAddr = addr
 	h.assembly = nil
 	h.lastCmd = nil
 
-	h.println("Enter assembly language instructions.")
-	h.println("Type END to assemble, Ctrl-C to cancel.")
+	fmt.Fprintln(h, "Enter assembly language instructions.")
+	fmt.Fprintln(h, "Type END to assemble, Ctrl-C to cancel.")
 	return nil
 }
 
-func (h *Host) cmdAssembleMap(c cmd.Selection) error {
-	if len(c.Args) < 2 {
-		h.displayUsage(c.Command)
+func (h *Host) cmdAssembleMap(c *cmd.Command, args []string) error {
+	if len(args) < 2 {
+		c.DisplayUsage(h)
 		return nil
 	}
 
-	addr, err := h.parseAddr(c.Args[1], 0)
+	addr, err := h.parseAddr(args[1], 0)
 	if err != nil {
-		h.println("Invalid origin address.")
+		fmt.Fprintln(h, "Invalid origin address.")
 		return nil
 	}
 
-	filename := c.Args[0]
+	filename := args[0]
 	file, err := os.Open(filename)
 	if err != nil {
 		if path.Ext(filename) == "" {
@@ -456,7 +534,7 @@ func (h *Host) cmdAssembleMap(c cmd.Selection) error {
 			file, err = os.Open(filename)
 		}
 		if err != nil {
-			h.printf("%v\n", err)
+			fmt.Fprintf(h, "%v\n", err)
 			return nil
 		}
 	}
@@ -464,7 +542,7 @@ func (h *Host) cmdAssembleMap(c cmd.Selection) error {
 
 	code, err := ioutil.ReadAll(file)
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 	file.Close()
@@ -480,25 +558,25 @@ func (h *Host) cmdAssembleMap(c cmd.Selection) error {
 
 	file, err = os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 
 	_, err = sourceMap.WriteTo(file)
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 	file.Close()
 
-	h.printf("Saved source map '%s'.\n", filename)
+	fmt.Fprintf(h, "Saved source map '%s'.\n", filename)
 	return nil
 }
 
-func (h *Host) cmdBreakpointList(c cmd.Selection) error {
+func (h *Host) cmdBreakpointList(c *cmd.Command, args []string) error {
 	bp := h.debugger.GetBreakpoints()
 	if len(bp) == 0 {
-		h.println("No breakpoints set.")
+		fmt.Fprintln(h, "No breakpoints set.")
 		return nil
 	}
 
@@ -509,102 +587,102 @@ func (h *Host) cmdBreakpointList(c cmd.Selection) error {
 		return ""
 	}
 
-	h.println("Breakpoints:")
+	fmt.Fprintln(h, "Breakpoints:")
 	for _, b := range bp {
-		h.printf("   $%04X %s\n", b.Address, disabled(b))
+		fmt.Fprintf(h, "   $%04X %s\n", b.Address, disabled(b))
 	}
 	return nil
 }
 
-func (h *Host) cmdBreakpointAdd(c cmd.Selection) error {
-	if len(c.Args) < 1 {
-		h.displayUsage(c.Command)
+func (h *Host) cmdBreakpointAdd(c *cmd.Command, args []string) error {
+	if len(args) < 1 {
+		c.DisplayUsage(h)
 		return nil
 	}
 
-	addr, err := h.parseExpr(c.Args[0])
+	addr, err := h.parseExpr(args[0])
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 
 	h.debugger.AddBreakpoint(addr)
-	h.printf("Breakpoint added at $%04x.\n", addr)
+	fmt.Fprintf(h, "Breakpoint added at $%04x.\n", addr)
 	return nil
 }
 
-func (h *Host) cmdBreakpointRemove(c cmd.Selection) error {
-	if len(c.Args) < 1 {
-		h.displayUsage(c.Command)
+func (h *Host) cmdBreakpointRemove(c *cmd.Command, args []string) error {
+	if len(args) < 1 {
+		c.DisplayUsage(h)
 		return nil
 	}
 
-	addr, err := h.parseExpr(c.Args[0])
+	addr, err := h.parseExpr(args[0])
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 
 	if h.debugger.GetBreakpoint(addr) == nil {
-		h.printf("No breakpoint was set on $%04X.\n", addr)
+		fmt.Fprintf(h, "No breakpoint was set on $%04X.\n", addr)
 		return nil
 	}
 
 	h.debugger.RemoveBreakpoint(addr)
-	h.printf("Breakpoint at $%04x removed.\n", addr)
+	fmt.Fprintf(h, "Breakpoint at $%04x removed.\n", addr)
 	return nil
 }
 
-func (h *Host) cmdBreakpointEnable(c cmd.Selection) error {
-	if len(c.Args) < 1 {
-		h.displayUsage(c.Command)
+func (h *Host) cmdBreakpointEnable(c *cmd.Command, args []string) error {
+	if len(args) < 1 {
+		c.DisplayUsage(h)
 		return nil
 	}
 
-	addr, err := h.parseExpr(c.Args[0])
+	addr, err := h.parseExpr(args[0])
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 
 	b := h.debugger.GetBreakpoint(addr)
 	if b == nil {
-		h.printf("No breakpoint was set on $%04X.\n", addr)
+		fmt.Fprintf(h, "No breakpoint was set on $%04X.\n", addr)
 		return nil
 	}
 
 	b.Disabled = false
-	h.printf("Breakpoint at $%04x enabled.\n", addr)
+	fmt.Fprintf(h, "Breakpoint at $%04x enabled.\n", addr)
 	return nil
 }
 
-func (h *Host) cmdBreakpointDisable(c cmd.Selection) error {
-	if len(c.Args) < 1 {
-		h.displayUsage(c.Command)
+func (h *Host) cmdBreakpointDisable(c *cmd.Command, args []string) error {
+	if len(args) < 1 {
+		c.DisplayUsage(h)
 		return nil
 	}
 
-	addr, err := h.parseExpr(c.Args[0])
+	addr, err := h.parseExpr(args[0])
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 
 	b := h.debugger.GetBreakpoint(addr)
 	if b == nil {
-		h.printf("No breakpoint was set on $%04X.\n", addr)
+		fmt.Fprintf(h, "No breakpoint was set on $%04X.\n", addr)
 		return nil
 	}
 
 	b.Disabled = true
-	h.printf("Breakpoint at $%04x disabled.\n", addr)
+	fmt.Fprintf(h, "Breakpoint at $%04x disabled.\n", addr)
 	return nil
 }
 
-func (h *Host) cmdDataBreakpointList(c cmd.Selection) error {
+func (h *Host) cmdDataBreakpointList(c *cmd.Command, args []string) error {
 	bp := h.debugger.GetDataBreakpoints()
 	if len(bp) == 0 {
-		h.println("No data breakpoints set.")
+		fmt.Fprintln(h, "No data breakpoints set.")
 		return nil
 	}
 
@@ -615,254 +693,232 @@ func (h *Host) cmdDataBreakpointList(c cmd.Selection) error {
 		return ""
 	}
 
-	h.println("Data breakpoints:")
+	fmt.Fprintln(h, "Data breakpoints:")
 	for _, b := range h.debugger.GetDataBreakpoints() {
 		if b.Conditional {
-			h.printf("   $%04X on value $%02X %s\n", b.Address, b.Value, disabled(b))
+			fmt.Fprintf(h, "   $%04X on value $%02X %s\n", b.Address, b.Value, disabled(b))
 		} else {
-			h.printf("   $%04X %s\n", b.Address, disabled(b))
+			fmt.Fprintf(h, "   $%04X %s\n", b.Address, disabled(b))
 		}
 	}
 	return nil
 }
 
-func (h *Host) cmdDataBreakpointAdd(c cmd.Selection) error {
-	if len(c.Args) < 1 {
-		h.displayUsage(c.Command)
+func (h *Host) cmdDataBreakpointAdd(c *cmd.Command, args []string) error {
+	if len(args) < 1 {
+		c.DisplayUsage(h)
 		return nil
 	}
 
-	addr, err := h.parseExpr(c.Args[0])
+	addr, err := h.parseExpr(args[0])
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 
-	if len(c.Args) > 1 {
-		value, err := h.parseExpr(c.Args[1])
+	if len(args) > 1 {
+		value, err := h.parseExpr(args[1])
 		if err != nil {
-			h.printf("%v\n", err)
+			fmt.Fprintf(h, "%v\n", err)
 			return nil
 		}
 		h.debugger.AddConditionalDataBreakpoint(addr, byte(value))
-		h.printf("Conditional data Breakpoint added at $%04x for value $%02X.\n", addr, value)
+		fmt.Fprintf(h, "Conditional data Breakpoint added at $%04x for value $%02X.\n", addr, value)
 	} else {
 		h.debugger.AddDataBreakpoint(addr)
-		h.printf("Data breakpoint added at $%04x.\n", addr)
+		fmt.Fprintf(h, "Data breakpoint added at $%04x.\n", addr)
 	}
 
 	return nil
 }
 
-func (h *Host) cmdDataBreakpointRemove(c cmd.Selection) error {
-	if len(c.Args) < 1 {
-		h.displayUsage(c.Command)
+func (h *Host) cmdDataBreakpointRemove(c *cmd.Command, args []string) error {
+	if len(args) < 1 {
+		c.DisplayUsage(h)
 		return nil
 	}
 
-	addr, err := h.parseExpr(c.Args[0])
+	addr, err := h.parseExpr(args[0])
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 
 	if h.debugger.GetDataBreakpoint(addr) == nil {
-		h.printf("No data breakpoint was set on $%04X.\n", addr)
+		fmt.Fprintf(h, "No data breakpoint was set on $%04X.\n", addr)
 		return nil
 	}
 
 	h.debugger.RemoveDataBreakpoint(addr)
-	h.printf("Data breakpoint at $%04x removed.\n", addr)
+	fmt.Fprintf(h, "Data breakpoint at $%04x removed.\n", addr)
 	return nil
 }
 
-func (h *Host) cmdDataBreakpointEnable(c cmd.Selection) error {
-	if len(c.Args) < 1 {
-		h.displayUsage(c.Command)
+func (h *Host) cmdDataBreakpointEnable(c *cmd.Command, args []string) error {
+	if len(args) < 1 {
+		c.DisplayUsage(h)
 		return nil
 	}
 
-	addr, err := h.parseExpr(c.Args[0])
+	addr, err := h.parseExpr(args[0])
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 
 	b := h.debugger.GetDataBreakpoint(addr)
 	if b == nil {
-		h.printf("No data breakpoint was set on $%04X.\n", addr)
+		fmt.Fprintf(h, "No data breakpoint was set on $%04X.\n", addr)
 		return nil
 	}
 
 	b.Disabled = false
-	h.printf("Data breakpoint at $%04x enabled.\n", addr)
+	fmt.Fprintf(h, "Data breakpoint at $%04x enabled.\n", addr)
 	return nil
 }
 
-func (h *Host) cmdDataBreakpointDisable(c cmd.Selection) error {
-	if len(c.Args) < 1 {
-		h.displayUsage(c.Command)
+func (h *Host) cmdDataBreakpointDisable(c *cmd.Command, args []string) error {
+	if len(args) < 1 {
+		c.DisplayUsage(h)
 		return nil
 	}
 
-	addr, err := h.parseExpr(c.Args[0])
+	addr, err := h.parseExpr(args[0])
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 
 	b := h.debugger.GetDataBreakpoint(addr)
 	if b == nil {
-		h.printf("No data breakpoint was set on $%04X.\n", addr)
+		fmt.Fprintf(h, "No data breakpoint was set on $%04X.\n", addr)
 		return nil
 	}
 
 	b.Disabled = true
-	h.printf("Data breakpoint at $%04x disabled.\n", addr)
+	fmt.Fprintf(h, "Data breakpoint at $%04x disabled.\n", addr)
 	return nil
 }
 
-func (h *Host) cmdDisassemble(c cmd.Selection) error {
-	if len(c.Args) == 0 {
-		c.Args = []string{"$"}
+func (h *Host) cmdDisassemble(c *cmd.Command, args []string) error {
+	if len(args) == 0 {
+		args = []string{"$"}
 	}
 
-	addr, err := h.parseAddr(c.Args[0], h.settings.NextDisasmAddr)
+	addr, err := h.parseAddr(args[0], h.settings.NextDisasmAddr)
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 
-	lines := h.settings.DisasmLines
-	if len(c.Args) > 1 {
-		l, err := h.parseExpr(c.Args[1])
+	count := h.settings.DisasmLines
+	if len(args) > 1 {
+		l, err := h.parseExpr(args[1])
 		if err != nil {
-			h.printf("%v\n", err)
+			fmt.Fprintf(h, "%v\n", err)
 			return nil
 		}
-		lines = int(l)
+		count = int(l)
 	}
 
-	for i := 0; i < lines; i++ {
+	for i := 0; i < count; i++ {
 		d, next := h.disassemble(addr, displayAnnotations)
-		h.println(d)
+		fmt.Fprintln(h, d)
 		addr = next
 	}
 
 	h.settings.NextDisasmAddr = addr
-	h.lastCmd.Args = []string{"$", fmt.Sprintf("%d", lines)}
+	h.lastArgs = []string{"$", strconv.Itoa(count)}
 	return nil
 }
 
-func (h *Host) cmdExports(c cmd.Selection) error {
+func (h *Host) cmdExports(c *cmd.Command, args []string) error {
 	if len(h.sourceMap.Exports) == 0 {
-		h.println("No active exports.")
+		fmt.Fprintln(h, "No active exports.")
 		return nil
 	}
 
-	h.println("Exported addresses:")
+	fmt.Fprintln(h, "Exported addresses:")
 	for _, e := range h.sourceMap.Exports {
-		h.printf("   %-16s $%04X\n", e.Label, e.Address)
+		fmt.Fprintf(h, "   %-16s $%04X\n", e.Label, e.Address)
 	}
 	return nil
 }
 
-func (h *Host) cmdEvaluate(c cmd.Selection) error {
-	if len(c.Args) < 1 {
-		h.displayUsage(c.Command)
+func (h *Host) cmdEvaluate(c *cmd.Command, args []string) error {
+	if len(args) < 1 {
+		c.DisplayUsage(h)
 		return nil
 	}
 
-	expr := strings.Join(c.Args, " ")
+	expr := strings.Join(args, " ")
 	v, err := h.parseExpr(expr)
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 
-	h.printf("$%04X\n", v)
+	fmt.Fprintf(h, "$%04X\n", v)
 	return nil
 }
 
-func (h *Host) cmdExecute(c cmd.Selection) error {
-	if len(c.Args) < 1 {
-		h.displayUsage(c.Command)
+func (h *Host) cmdExecute(c *cmd.Command, args []string) error {
+	if len(args) < 1 {
+		c.DisplayUsage(h)
 		return nil
 	}
 
-	file, err := os.Open(c.Args[0])
+	file, err := os.Open(args[0])
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 	defer file.Close()
 
-	input, interactive := h.input, h.interactive
-
-	h.RunCommands(file, h.output, false)
-
-	h.input, h.interactive = input, interactive
+	ioState := h.EnableProcessedMode(file, os.Stdout)
+	h.RunCommands(false)
+	h.RestoreIoState(ioState)
 
 	return nil
 }
 
-func (h *Host) cmdHelp(c cmd.Selection) error {
-	switch {
-	case len(c.Args) == 0:
-		h.displayCommands(cmds, nil)
-	default:
-		s, err := cmds.Lookup(strings.Join(c.Args, " "))
-		if err != nil {
-			h.printf("%v\n", err)
-		} else {
-			switch {
-			case s.Command.Subtree != nil:
-				h.displayCommands(s.Command.Subtree, s.Command)
-			default:
-				if s.Command.Usage != "" {
-					h.printf("Usage: %s\n\n", s.Command.Usage)
-				}
-				switch {
-				case s.Command.Description != "":
-					h.printf("Description:\n%s\n\n", indentWrap(3, s.Command.Description))
-				case s.Command.Brief != "":
-					h.printf("Description:\n%s.\n\n", indentWrap(3, s.Command.Brief))
-				}
-				if s.Command.Shortcuts != nil {
-					switch {
-					case len(s.Command.Shortcuts) > 1:
-						h.printf("Shortcuts: %s\n\n", strings.Join(s.Command.Shortcuts, ", "))
-					default:
-						h.printf("Shortcut: %s\n\n", s.Command.Shortcuts[0])
-					}
-				}
-			}
-		}
+func (h *Host) cmdHelp(c *cmd.Command, args []string) error {
+	if len(args) == 0 {
+		cmds.DisplayHelp(h)
+		return nil
 	}
+
+	n, _, err := cmds.Lookup(strings.Join(args, " "))
+	if err != nil {
+		fmt.Fprintf(h, "%v.\n\n", err)
+		return nil
+	}
+
+	n.DisplayHelp(h)
 	return nil
 }
 
-func (h *Host) cmdList(c cmd.Selection) error {
-	if len(c.Args) == 0 {
-		c.Args = []string{"$"}
+func (h *Host) cmdList(c *cmd.Command, args []string) error {
+	if len(args) == 0 {
+		args = []string{"$"}
 	}
 
 	// Parse the address.
-	addr, err := h.parseAddr(c.Args[0], h.settings.NextSourceAddr)
+	addr, err := h.parseAddr(args[0], h.settings.NextSourceAddr)
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 
 	// Parse the number of lines to display.
-	nl := h.settings.SourceLines
-	if len(c.Args) > 1 {
-		v, err := h.parseExpr(strings.Join(c.Args[1:], " "))
+	count := h.settings.SourceLines
+	if len(args) > 1 {
+		v, err := h.parseExpr(strings.Join(args[1:], " "))
 		if err != nil {
-			h.printf("%v\n", err)
+			fmt.Fprintf(h, "%v\n", err)
 			return nil
 		}
-		nl = int(v)
+		count = int(v)
 	}
 
 	// Keep track of the last displayed line number for each source file.
@@ -889,19 +945,19 @@ func (h *Host) cmdList(c cmd.Selection) error {
 		cn := addr - orig
 		h.cpu.Mem.LoadBytes(orig, b[:cn])
 		cs := codeString(b[:cn])
-		h.printf("%04X- %-8s\t%s\n", orig, cs, lines[li-1])
+		fmt.Fprintf(h, "%04X- %-8s\t%s\n", orig, cs, lines[li-1])
 
 		last[fn] = li
 		break
 	}
 
 	if len(last) == 0 {
-		h.printf("No source code found for address $%04X.\n", addr)
+		fmt.Fprintf(h, "No source code found for address $%04X.\n", addr)
 		return nil
 	}
 
 	// Display remaining source code lines.
-	for i := 0; i < nl-1; i++ {
+	for i := 0; i < count-1; i++ {
 		orig := addr
 
 		fn, li, err := h.sourceMap.Find(int(orig))
@@ -930,30 +986,30 @@ func (h *Host) cmdList(c cmd.Selection) error {
 			if i == j-1 {
 				c = cs
 			}
-			h.printf("%04X- %-8s\t%s\n", orig, c, lines[i])
+			fmt.Fprintf(h, "%04X- %-8s\t%s\n", orig, c, lines[i])
 		}
 
 		last[fn] = li
 	}
 
 	h.settings.NextSourceAddr = addr
-	h.lastCmd.Args = []string{"$", fmt.Sprintf("%d", nl)}
+	h.lastArgs = []string{"$", strconv.Itoa(count)}
 	return nil
 }
 
-func (h *Host) cmdLoad(c cmd.Selection) error {
-	if len(c.Args) < 1 {
-		h.displayUsage(c.Command)
+func (h *Host) cmdLoad(c *cmd.Command, args []string) error {
+	if len(args) < 1 {
+		c.DisplayUsage(h)
 		return nil
 	}
 
-	filename := c.Args[0]
+	filename := args[0]
 
 	loadAddr := -1
-	if len(c.Args) >= 2 {
-		addr, err := h.parseExpr(c.Args[1])
+	if len(args) >= 2 {
+		addr, err := h.parseExpr(args[1])
 		if err != nil {
-			h.printf("%v\n", err)
+			fmt.Fprintf(h, "%v\n", err)
 			return nil
 		}
 		loadAddr = int(addr)
@@ -963,27 +1019,27 @@ func (h *Host) cmdLoad(c cmd.Selection) error {
 	return err
 }
 
-func (h *Host) cmdMemoryDump(c cmd.Selection) error {
-	if len(c.Args) == 0 {
-		c.Args = []string{"$"}
+func (h *Host) cmdMemoryDump(c *cmd.Command, args []string) error {
+	if len(args) == 0 {
+		args = []string{"$"}
 	}
 
 	var addr uint16
-	if len(c.Args) > 0 {
+	if len(args) > 0 {
 		var err error
-		addr, err = h.parseAddr(c.Args[0], h.settings.NextMemDumpAddr)
+		addr, err = h.parseAddr(args[0], h.settings.NextMemDumpAddr)
 		if err != nil {
-			h.printf("%v\n", err)
+			fmt.Fprintf(h, "%v\n", err)
 			return nil
 		}
 	}
 
 	bytes := uint16(h.settings.MemDumpBytes)
-	if len(c.Args) >= 2 {
+	if len(args) >= 2 {
 		var err error
-		bytes, err = h.parseExpr(c.Args[1])
+		bytes, err = h.parseExpr(args[1])
 		if err != nil {
-			h.printf("%v\n", err)
+			fmt.Fprintf(h, "%v\n", err)
 			return nil
 		}
 	}
@@ -991,26 +1047,26 @@ func (h *Host) cmdMemoryDump(c cmd.Selection) error {
 	h.dumpMemory(addr, bytes)
 
 	h.settings.NextMemDumpAddr = addr + bytes
-	h.lastCmd.Args = []string{"$", fmt.Sprintf("%d", bytes)}
+	h.lastArgs = []string{"$", strconv.Itoa(int(bytes))}
 	return nil
 }
 
-func (h *Host) cmdMemorySet(c cmd.Selection) error {
-	if len(c.Args) < 2 {
-		h.displayUsage(c.Command)
+func (h *Host) cmdMemorySet(c *cmd.Command, args []string) error {
+	if len(args) < 2 {
+		c.DisplayUsage(h)
 		return nil
 	}
 
-	addr, err := h.parseAddr(c.Args[0], h.settings.NextMemDumpAddr)
+	addr, err := h.parseAddr(args[0], h.settings.NextMemDumpAddr)
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 
-	for i := 1; i < len(c.Args); i++ {
-		v, err := h.parseExpr(c.Args[i])
+	for i := 1; i < len(args); i++ {
+		v, err := h.parseExpr(args[i])
 		if err != nil {
-			h.printf("%v\n", err)
+			fmt.Fprintf(h, "%v\n", err)
 			return nil
 		}
 		h.mem.StoreByte(addr, byte(v))
@@ -1020,58 +1076,58 @@ func (h *Host) cmdMemorySet(c cmd.Selection) error {
 	return nil
 }
 
-func (h *Host) cmdMemoryCopy(c cmd.Selection) error {
-	if len(c.Args) < 3 {
-		h.displayUsage(c.Command)
+func (h *Host) cmdMemoryCopy(c *cmd.Command, args []string) error {
+	if len(args) < 3 {
+		c.DisplayUsage(h)
 		return nil
 	}
 
-	dst, err := h.parseAddr(c.Args[0], 0)
+	dst, err := h.parseAddr(args[0], 0)
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 
-	src0, err := h.parseAddr(c.Args[1], 0)
+	src0, err := h.parseAddr(args[1], 0)
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 
-	src1, err := h.parseAddr(c.Args[2], 0)
+	src1, err := h.parseAddr(args[2], 0)
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 
 	if src1 < src0 {
-		h.println("Source-end address must be greater than source-begin address.")
+		fmt.Fprintln(h, "Source-end address must be greater than source-begin address.")
 		return nil
 	}
 
 	b := make([]byte, src1-src0+1)
 	h.cpu.Mem.LoadBytes(src0, b)
 	h.cpu.Mem.StoreBytes(dst, b)
-	h.printf("%d bytes copied from $%04X to $%04X.\n", len(b), src0, dst)
+	fmt.Fprintf(h, "%d bytes copied from $%04X to $%04X.\n", len(b), src0, dst)
 	return nil
 }
 
-func (h *Host) cmdQuit(c cmd.Selection) error {
+func (h *Host) cmdQuit(c *cmd.Command, args []string) error {
 	return errors.New("exiting program")
 }
 
-func (h *Host) cmdRegister(c cmd.Selection) error {
-	if len(c.Args) == 0 {
-		h.printf("%s C=%d\n", disasm.GetRegisterString(&h.cpu.Reg), h.cpu.Cycles)
+func (h *Host) cmdRegister(c *cmd.Command, args []string) error {
+	if len(args) == 0 {
+		fmt.Fprintf(h, "%s C=%d\n", disasm.GetRegisterString(&h.cpu.Reg), h.cpu.Cycles)
 		return nil
 	}
 
-	if len(c.Args) == 1 {
-		h.displayUsage(c.Command)
+	if len(args) == 1 {
+		c.DisplayUsage(h)
 		return nil
 	}
 
-	key, value := strings.ToUpper(c.Args[0]), strings.Join(c.Args[1:], " ")
+	key, value := strings.ToUpper(args[0]), strings.Join(args[1:], " ")
 
 	var flag *bool
 	var flagName string
@@ -1093,16 +1149,16 @@ func (h *Host) cmdRegister(c cmd.Selection) error {
 	if flag != nil {
 		v, err := stringToBool(value)
 		if err != nil {
-			h.printf("%v\n", err)
+			fmt.Fprintf(h, "%v\n", err)
 			return nil
 		}
 
 		*flag = v
-		h.printf("Status flag %s set to %v.\n", flagName, v)
+		fmt.Fprintf(h, "Status flag %s set to %v.\n", flagName, v)
 	} else {
 		v, err := h.exprParser.Parse(value, h)
 		if err != nil {
-			h.printf("%v\n", err)
+			fmt.Fprintf(h, "%v\n", err)
 			return nil
 		}
 
@@ -1123,36 +1179,36 @@ func (h *Host) cmdRegister(c cmd.Selection) error {
 		case "PC":
 			h.cpu.Reg.PC, sz = uint16(v), 2
 		default:
-			h.printf("Unknown register '%s'.\n", key)
+			fmt.Fprintf(h, "Unknown register '%s'.\n", key)
 			return nil
 		}
 
 		switch sz {
 		case 1:
-			h.printf("Register %s set to $%02X.\n", strings.ToUpper(key), byte(v))
+			fmt.Fprintf(h, "Register %s set to $%02X.\n", strings.ToUpper(key), byte(v))
 		case 2:
-			h.printf("Register %s set to $%04X.\n", strings.ToUpper(key), uint16(v))
+			fmt.Fprintf(h, "Register %s set to $%04X.\n", strings.ToUpper(key), uint16(v))
 		}
 	}
 
-	if h.interactive {
-		h.printf("%s C=%d\n", disasm.GetRegisterString(&h.cpu.Reg), h.cpu.Cycles)
+	if h.rawMode {
+		fmt.Fprintf(h, "%s C=%d\n", disasm.GetRegisterString(&h.cpu.Reg), h.cpu.Cycles)
 	}
 
 	return nil
 }
 
-func (h *Host) cmdRun(c cmd.Selection) error {
-	if len(c.Args) > 0 {
-		pc, err := h.parseExpr(c.Args[0])
+func (h *Host) cmdRun(c *cmd.Command, args []string) error {
+	if len(args) > 0 {
+		pc, err := h.parseExpr(args[0])
 		if err != nil {
-			h.printf("%v\n", err)
+			fmt.Fprintf(h, "%v\n", err)
 			return nil
 		}
 		h.cpu.SetPC(pc)
 	}
 
-	h.printf("Running from $%04X. Press ctrl-C to break.\n", h.cpu.Reg.PC)
+	fmt.Fprintf(h, "Running from $%04X. Press ctrl-C to break.\n", h.cpu.Reg.PC)
 
 	h.state = stateRunning
 	for h.state == stateRunning {
@@ -1163,22 +1219,22 @@ func (h *Host) cmdRun(c cmd.Selection) error {
 		h.displayPC()
 	}
 
-	h.state = stateProcessingCommands
+	h.setState(stateProcessingCommands)
 	h.settings.NextDisasmAddr = h.cpu.Reg.PC
 	return nil
 }
 
-func (h *Host) cmdSet(c cmd.Selection) error {
-	switch len(c.Args) {
+func (h *Host) cmdSet(c *cmd.Command, args []string) error {
+	switch len(args) {
 	case 0:
-		h.println("Variables:")
-		h.settings.Display(h.output)
+		fmt.Fprintln(h, "Variables:")
+		h.settings.Display(h)
 
 	case 1:
-		h.displayUsage(c.Command)
+		c.DisplayUsage(h)
 
 	default:
-		key, value := strings.ToLower(c.Args[0]), strings.Join(c.Args[1:], " ")
+		key, value := strings.ToLower(args[0]), strings.Join(args[1:], " ")
 		v, errV := h.exprParser.Parse(value, h)
 
 		// Setting a debugger setting?
@@ -1202,9 +1258,9 @@ func (h *Host) cmdSet(c cmd.Selection) error {
 		}
 
 		if err == nil {
-			h.println("Setting updated.")
+			fmt.Fprintln(h, "Setting updated.")
 		} else {
-			h.printf("%v\n", err)
+			fmt.Fprintf(h, "%v\n", err)
 		}
 
 		h.onSettingsUpdate()
@@ -1213,11 +1269,11 @@ func (h *Host) cmdSet(c cmd.Selection) error {
 	return nil
 }
 
-func (h *Host) cmdStepIn(c cmd.Selection) error {
+func (h *Host) cmdStepIn(c *cmd.Command, args []string) error {
 	// Parse the number of steps.
 	count := 1
-	if len(c.Args) > 0 {
-		n, err := h.parseExpr(c.Args[0])
+	if len(args) > 0 {
+		n, err := h.parseExpr(args[0])
 		if err == nil {
 			count = int(n)
 		}
@@ -1226,28 +1282,28 @@ func (h *Host) cmdStepIn(c cmd.Selection) error {
 	if count == 0 {
 		h.displayPC()
 	} else {
-		h.state = stateRunning
+		h.setState(stateRunning)
 		for i := count - 1; i >= 0 && h.state == stateRunning; i-- {
 			h.step()
 			switch {
 			case i == h.settings.MaxStepLines:
-				h.println("...")
+				fmt.Fprintln(h, "...")
 			case i < h.settings.MaxStepLines:
 				h.displayPC()
 			}
 		}
 	}
 
-	h.state = stateProcessingCommands
+	h.setState(stateProcessingCommands)
 	h.settings.NextDisasmAddr = h.cpu.Reg.PC
 	return nil
 }
 
-func (h *Host) cmdStepOver(c cmd.Selection) error {
+func (h *Host) cmdStepOver(c *cmd.Command, args []string) error {
 	// Parse the number of steps.
 	count := 1
-	if len(c.Args) > 0 {
-		n, err := h.parseExpr(c.Args[0])
+	if len(args) > 0 {
+		n, err := h.parseExpr(args[0])
 		if err == nil {
 			count = int(n)
 		}
@@ -1256,38 +1312,38 @@ func (h *Host) cmdStepOver(c cmd.Selection) error {
 	if count == 0 {
 		h.displayPC()
 	} else {
-		h.state = stateRunning
+		h.setState(stateRunning)
 		for i := count - 1; i >= 0 && h.state == stateRunning; i-- {
 			h.stepOver()
 			switch {
 			case i == h.settings.MaxStepLines:
-				h.println("...")
+				fmt.Fprintln(h, "...")
 			case i < h.settings.MaxStepLines:
 				h.displayPC()
 			}
 		}
 	}
 
-	h.state = stateProcessingCommands
+	h.setState(stateProcessingCommands)
 	h.settings.NextDisasmAddr = h.cpu.Reg.PC
 	return nil
 }
 
-func (h *Host) cmdStepOut(c cmd.Selection) error {
+func (h *Host) cmdStepOut(c *cmd.Command, args []string) error {
 	count := 1
 
-	h.state = stateRunning
+	h.setState(stateRunning)
 	for i := count - 1; i >= 0 && h.state == stateRunning; i-- {
 		h.stepOut()
 		switch {
 		case i == h.settings.MaxStepLines:
-			h.println("...")
+			fmt.Fprintln(h, "...")
 		case i < h.settings.MaxStepLines:
 			h.displayPC()
 		}
 	}
 
-	h.state = stateProcessingCommands
+	h.setState(stateProcessingCommands)
 	h.settings.NextDisasmAddr = h.cpu.Reg.PC
 	return nil
 }
@@ -1296,7 +1352,7 @@ func (h *Host) load(filename string, addr int) (origin uint16, err error) {
 	filename, err = filepath.Abs(filename)
 	basefile := filepath.Base(filename)
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return 0, nil
 	}
 
@@ -1307,7 +1363,7 @@ func (h *Host) load(filename string, addr int) (origin uint16, err error) {
 			file, err = os.Open(filename)
 		}
 		if err != nil {
-			h.printf("%v\n", err)
+			fmt.Fprintf(h, "%v\n", err)
 			return 0, nil
 		}
 	}
@@ -1316,7 +1372,7 @@ func (h *Host) load(filename string, addr int) (origin uint16, err error) {
 	a := &asm.Assembly{}
 	_, err = a.ReadFrom(file)
 	if err != nil {
-		h.printf("%v\n", err)
+		fmt.Fprintf(h, "%v\n", err)
 		return 0, nil
 	}
 
@@ -1333,18 +1389,18 @@ func (h *Host) load(filename string, addr int) (origin uint16, err error) {
 		sourceMap = asm.NewSourceMap()
 		_, err = sourceMap.ReadFrom(file)
 		if err != nil {
-			h.printf("Failed to read source map '%s': %v\n", filepath.Base(filename), err)
+			fmt.Fprintf(h, "Failed to read source map '%s': %v\n", filepath.Base(filename), err)
 			sourceMap = nil
 		} else {
 			if crc32.ChecksumIEEE(a.Code) == sourceMap.CRC {
-				h.printf("Loaded source map from '%s'.\n", filepath.Base(filename))
+				fmt.Fprintf(h, "Loaded source map from '%s'.\n", filepath.Base(filename))
 				if len(h.sourceMap.Files) == 0 {
 					h.sourceMap = sourceMap
 				} else {
 					h.sourceMap.Merge(sourceMap)
 				}
 			} else {
-				h.printf("Source map CRC doesn't match for '%s'.\n", basefile)
+				fmt.Fprintf(h, "Source map CRC doesn't match for '%s'.\n", basefile)
 				sourceMap = nil
 			}
 		}
@@ -1361,13 +1417,13 @@ func (h *Host) load(filename string, addr int) (origin uint16, err error) {
 		origin, originSet = uint16(addr), true
 	}
 	if !originSet {
-		h.printf("File '%s' has no source map and requires an origin address.\n", basefile)
+		fmt.Fprintf(h, "File '%s' has no source map and requires an origin address.\n", basefile)
 		return 0, nil
 	}
 
 	// Copy the code to the CPU memory and adjust the program counter.
 	h.cpu.Mem.StoreBytes(origin, a.Code)
-	h.printf("Loaded '%s' to $%04X..$%04X.\n", basefile, origin, int(origin)+len(a.Code)-1)
+	fmt.Fprintf(h, "Loaded '%s' to $%04X..$%04X.\n", basefile, origin, int(origin)+len(a.Code)-1)
 
 	h.settings.NextDisasmAddr = origin
 	return origin, nil
@@ -1500,7 +1556,7 @@ func (h *Host) dumpMemory(addr0, bytes uint16) {
 			byteToBuf(m, buf[c1:c1+2])
 			buf[c2] = toPrintableChar(m)
 		}
-		h.println(string(buf))
+		fmt.Fprintln(h, string(buf))
 		return
 	}
 
@@ -1525,32 +1581,7 @@ func (h *Host) dumpMemory(addr0, bytes uint16) {
 				buf[c2] = ' '
 			}
 		}
-		h.println(string(buf))
-	}
-}
-
-func (h *Host) displayUsage(c *cmd.Command) {
-	if c.Usage != "" {
-		h.printf("Usage: %s\n", c.Usage)
-	}
-}
-
-func (h *Host) displayCommands(commands *cmd.Tree, c *cmd.Command) {
-	h.printf("%s commands:\n", commands.Title)
-	for _, c := range commands.Commands {
-		if c.Brief != "" {
-			h.printf("    %-15s  %s\n", c.Name, c.Brief)
-		}
-	}
-	h.println()
-
-	if c != nil && c.Shortcuts != nil && len(c.Shortcuts) > 0 {
-		switch {
-		case len(c.Shortcuts) > 1:
-			h.printf("Shortcuts: %s\n\n", strings.Join(c.Shortcuts, ", "))
-		default:
-			h.printf("Shortcut: %s\n\n", c.Shortcuts[0])
-		}
+		fmt.Fprintln(h, string(buf))
 	}
 }
 
@@ -1608,26 +1639,26 @@ func (h *Host) resolveIdentifier(s string) (int64, error) {
 
 // OnBrk is called when the CPU is about to execute a BRK instruction.
 func (h *Host) OnBrk(cpu *cpu.CPU) {
-	h.state = stateInterrupted
-	h.printf("BRK encountered at $%04X.\n", cpu.Reg.PC)
+	h.setState(stateInterrupted)
+	fmt.Fprintf(h, "BRK encountered at $%04X.\n", cpu.Reg.PC)
 }
 
 // OnBreakpoint is called when the debugger encounters a code breakpoint.
 func (h *Host) OnBreakpoint(cpu *cpu.CPU, b *cpu.Breakpoint) {
-	h.state = stateBreakpoint
-	h.printf("Breakpoint hit at $%04X.\n", b.Address)
+	h.setState(stateBreakpoint)
+	fmt.Fprintf(h, "Breakpoint hit at $%04X.\n", b.Address)
 	h.displayPC()
 }
 
 // OnDataBreakpoint is called when the debugger encounters a data breakpoint.
 func (h *Host) OnDataBreakpoint(cpu *cpu.CPU, b *cpu.DataBreakpoint) {
-	h.printf("Data breakpoint hit on address $%04X.\n", b.Address)
+	fmt.Fprintf(h, "Data breakpoint hit on address $%04X.\n", b.Address)
 
-	h.state = stateBreakpoint
+	h.setState(stateBreakpoint)
 
 	if cpu.LastPC != cpu.Reg.PC {
 		d, _ := h.disassemble(cpu.LastPC, displayAll)
-		h.println(d)
+		fmt.Fprintln(h, d)
 	}
 
 	h.displayPC()

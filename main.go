@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 
+	"github.com/beevik/go6502/asm"
 	"github.com/beevik/go6502/host"
 )
 
@@ -28,16 +30,18 @@ func init() {
 func main() {
 	flag.Parse()
 
-	h := host.New()
-
-	// Do command-line assemble if requested.
+	// Initiate assembly from the command line if requested.
 	if assemble != "" {
-		err := h.AssembleFile(assemble)
+		err := asm.AssembleFile(assemble, 0, os.Stdout)
 		if err != nil {
-			fmt.Printf("Failed to assemble file '%s'.\n", assemble)
+			fmt.Fprintf(os.Stderr, "Failed to assemble (%v).\n", err)
 		}
 		os.Exit(0)
 	}
+
+	// Create the host
+	h := host.New()
+	defer h.Cleanup()
 
 	// Run commands contained in command-line files.
 	args := flag.Args()
@@ -47,7 +51,9 @@ func main() {
 			if err != nil {
 				exitOnError(err)
 			}
-			h.RunCommands(file, os.Stdout, false)
+			ioState := h.EnableProcessedMode(file, os.Stdout)
+			h.RunCommands(false)
+			h.RestoreIoState(ioState)
 			file.Close()
 		}
 	}
@@ -57,8 +63,16 @@ func main() {
 	signal.Notify(c, os.Interrupt)
 	go handleInterrupt(h, c)
 
-	// Run commands interactively.
-	h.RunCommands(os.Stdin, os.Stdout, true)
+	// Run commands interactively. Disable raw mode on Windows because the
+	// golang.org/x/term package is buggy on Windows.
+	if runtime.GOOS == "windows" {
+		h.EnableProcessedMode(os.Stdin, os.Stdout)
+	} else {
+		h.EnableRawMode()
+	}
+
+	// Interactively run commands entered by the user.
+	h.RunCommands(true)
 }
 
 func handleInterrupt(h *host.Host, c chan os.Signal) {

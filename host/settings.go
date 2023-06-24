@@ -89,7 +89,7 @@ func (s *settings) Display(w io.Writer) {
 }
 
 func (s *settings) Kind(key string) reflect.Kind {
-	f, err := settingsTree.Find(strings.ToLower(key))
+	f, err := settingsTree.FindValue(strings.ToLower(key))
 	if err != nil {
 		return reflect.Invalid
 	}
@@ -97,7 +97,7 @@ func (s *settings) Kind(key string) reflect.Kind {
 }
 
 func (s *settings) Set(key string, value any) error {
-	ff, err := settingsTree.Find(strings.ToLower(key))
+	ff, err := settingsTree.FindValue(strings.ToLower(key))
 	if err != nil {
 		return err
 	}
