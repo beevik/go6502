@@ -21,7 +21,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"path"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -168,7 +167,7 @@ func (h *Host) disableRawMode() {
 
 func (h *Host) autocomplete(line string, pos int, key rune) (newLine string, newPos int, ok bool) {
 	if key == '\t' {
-		matches := cmds.Autocomplete(line)
+		matches := cmds.Autocomplete(line[:pos])
 		if len(matches) == 1 {
 			match := matches[0] + " "
 			return match, len(match), true
@@ -264,6 +263,13 @@ func (h *Host) RunCommands(interactive bool) {
 
 	for {
 		line, err := h.readLine(interactive)
+
+		// ctrl-C?
+		if h.rawMode && err == io.EOF {
+			h.Break()
+			continue
+		}
+
 		if err != nil {
 			break
 		}
@@ -289,9 +295,9 @@ func (h *Host) setState(s state) {
 	h.state = s
 	switch h.state {
 	case stateMiniAssembler:
-		h.prompt = "! "
+		h.prompt = term.Cyan + "! " + term.Reset
 	default:
-		h.prompt = "* "
+		h.prompt = term.Green + "* " + term.Reset
 	}
 	h.rawTerminal.SetPrompt(h.prompt)
 }
@@ -526,50 +532,48 @@ func (h *Host) cmdAssembleMap(c *cmd.Command, args []string) error {
 		return nil
 	}
 
-	filename := args[0]
-	file, err := os.Open(filename)
+	binFilename := args[0]
+	binFile, err := os.Open(binFilename)
 	if err != nil {
-		if path.Ext(filename) == "" {
-			filename = filename + ".bin"
-			file, err = os.Open(filename)
+		if filepath.Ext(binFilename) == "" {
+			binFilename += ".bin"
+			binFile, err = os.Open(binFilename)
 		}
 		if err != nil {
 			fmt.Fprintf(h, "%v\n", err)
 			return nil
 		}
 	}
-	defer file.Close()
+	defer binFile.Close()
 
-	code, err := ioutil.ReadAll(file)
+	code, err := ioutil.ReadAll(binFile)
 	if err != nil {
 		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
-	file.Close()
 
 	sourceMap := asm.NewSourceMap()
 	sourceMap.Origin = addr
 	sourceMap.Size = uint32(len(code))
 	sourceMap.CRC = crc32.ChecksumIEEE(code)
 
-	ext := filepath.Ext(filename)
-	filePrefix := filename[:len(filename)-len(ext)]
-	filename = filePrefix + ".map"
+	ext := filepath.Ext(binFilename)
+	mapFilename := binFilename[:len(binFilename)-len(ext)] + ".map"
 
-	file, err = os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	mapFile, err := os.OpenFile(mapFilename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		fmt.Fprintf(h, "%v\n", err)
+		return nil
+	}
+	defer mapFile.Close()
+
+	_, err = sourceMap.WriteTo(mapFile)
 	if err != nil {
 		fmt.Fprintf(h, "%v\n", err)
 		return nil
 	}
 
-	_, err = sourceMap.WriteTo(file)
-	if err != nil {
-		fmt.Fprintf(h, "%v\n", err)
-		return nil
-	}
-	file.Close()
-
-	fmt.Fprintf(h, "Saved source map '%s'.\n", filename)
+	fmt.Fprintf(h, "Saved source map '%s'.\n", mapFilename)
 	return nil
 }
 
@@ -1348,64 +1352,60 @@ func (h *Host) cmdStepOut(c *cmd.Command, args []string) error {
 	return nil
 }
 
-func (h *Host) load(filename string, addr int) (origin uint16, err error) {
-	filename, err = filepath.Abs(filename)
-	basefile := filepath.Base(filename)
+func (h *Host) load(binFilename string, addr int) (origin uint16, err error) {
+	binFilename, err = filepath.Abs(binFilename)
 	if err != nil {
 		fmt.Fprintf(h, "%v\n", err)
 		return 0, nil
 	}
 
-	file, err := os.Open(filename)
+	ext := filepath.Ext(binFilename)
+	binFile, err := os.Open(binFilename)
 	if err != nil {
-		if path.Ext(filename) == "" {
-			filename = filename + ".bin"
-			file, err = os.Open(filename)
+		if ext == "" {
+			ext = ".bin"
+			binFilename = binFilename + ext
+			binFile, err = os.Open(binFilename)
 		}
 		if err != nil {
 			fmt.Fprintf(h, "%v\n", err)
 			return 0, nil
 		}
 	}
-	defer file.Close()
+	defer binFile.Close()
 
 	a := &asm.Assembly{}
-	_, err = a.ReadFrom(file)
+	_, err = a.ReadFrom(binFile)
 	if err != nil {
 		fmt.Fprintf(h, "%v\n", err)
 		return 0, nil
 	}
 
-	file.Close()
-
-	ext := filepath.Ext(filename)
-	filePrefix := filename[:len(filename)-len(ext)]
-	filename = filePrefix + ".map"
-
 	// Try loading a source map file if it exists.
-	file, err = os.Open(filename)
+	mapFilename := binFilename[:len(binFilename)-len(ext)] + ".map"
+	mapFile, err := os.Open(mapFilename)
 	var sourceMap *asm.SourceMap
 	if err == nil {
+		defer mapFile.Close()
 		sourceMap = asm.NewSourceMap()
-		_, err = sourceMap.ReadFrom(file)
+		_, err = sourceMap.ReadFrom(mapFile)
 		if err != nil {
-			fmt.Fprintf(h, "Failed to read source map '%s': %v\n", filepath.Base(filename), err)
+			fmt.Fprintf(h, "Failed to read source map '%s': %v\n", filepath.Base(mapFilename), err)
 			sourceMap = nil
 		} else {
 			if crc32.ChecksumIEEE(a.Code) == sourceMap.CRC {
-				fmt.Fprintf(h, "Loaded source map from '%s'.\n", filepath.Base(filename))
+				fmt.Fprintf(h, "Loaded source map from '%s'.\n", filepath.Base(mapFilename))
 				if len(h.sourceMap.Files) == 0 {
 					h.sourceMap = sourceMap
 				} else {
 					h.sourceMap.Merge(sourceMap)
 				}
 			} else {
-				fmt.Fprintf(h, "Source map CRC doesn't match for '%s'.\n", basefile)
+				fmt.Fprintf(h, "Source map CRC doesn't match for '%s'.\n", filepath.Base(binFilename))
 				sourceMap = nil
 			}
 		}
 	}
-	file.Close()
 
 	// Set the origin address using either the value from the source map file
 	// or the value passed to this function.
@@ -1417,13 +1417,13 @@ func (h *Host) load(filename string, addr int) (origin uint16, err error) {
 		origin, originSet = uint16(addr), true
 	}
 	if !originSet {
-		fmt.Fprintf(h, "File '%s' has no source map and requires an origin address.\n", basefile)
+		fmt.Fprintf(h, "File '%s' has no source map and requires an origin address.\n", filepath.Base(binFilename))
 		return 0, nil
 	}
 
 	// Copy the code to the CPU memory and adjust the program counter.
 	h.cpu.Mem.StoreBytes(origin, a.Code)
-	fmt.Fprintf(h, "Loaded '%s' to $%04X..$%04X.\n", basefile, origin, int(origin)+len(a.Code)-1)
+	fmt.Fprintf(h, "Loaded '%s' to $%04X..$%04X.\n", filepath.Base(binFilename), origin, int(origin)+len(a.Code)-1)
 
 	h.settings.NextDisasmAddr = origin
 	return origin, nil

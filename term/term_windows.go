@@ -5,8 +5,6 @@
 package term
 
 import (
-	"os"
-
 	"golang.org/x/sys/windows"
 )
 
@@ -25,7 +23,8 @@ func makeRawInput(fd int) (*State, error) {
 	if err := windows.GetConsoleMode(windows.Handle(fd), &st); err != nil {
 		return nil, err
 	}
-	raw := st &^ (windows.ENABLE_ECHO_INPUT | windows.ENABLE_PROCESSED_INPUT | windows.ENABLE_LINE_INPUT | windows.ENABLE_VIRTUAL_TERMINAL_INPUT)
+	raw := st &^ (windows.ENABLE_ECHO_INPUT | windows.ENABLE_PROCESSED_INPUT | windows.ENABLE_LINE_INPUT | windows.ENABLE_WINDOW_INPUT)
+	raw |= windows.ENABLE_VIRTUAL_TERMINAL_INPUT
 	if err := windows.SetConsoleMode(windows.Handle(fd), raw); err != nil {
 		return nil, err
 	}
@@ -63,30 +62,4 @@ func getSize(fd int) (width, height int, err error) {
 		return 0, 0, err
 	}
 	return int(info.Window.Right - info.Window.Left + 1), int(info.Window.Bottom - info.Window.Top + 1), nil
-}
-
-func readPassword(fd int) ([]byte, error) {
-	var st uint32
-	if err := windows.GetConsoleMode(windows.Handle(fd), &st); err != nil {
-		return nil, err
-	}
-	old := st
-
-	st &^= (windows.ENABLE_ECHO_INPUT | windows.ENABLE_LINE_INPUT)
-	st |= (windows.ENABLE_PROCESSED_OUTPUT | windows.ENABLE_PROCESSED_INPUT | windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING | windows.ENABLE_VIRTUAL_TERMINAL_INPUT)
-	if err := windows.SetConsoleMode(windows.Handle(fd), st); err != nil {
-		return nil, err
-	}
-
-	defer windows.SetConsoleMode(windows.Handle(fd), old)
-
-	var h windows.Handle
-	p, _ := windows.GetCurrentProcess()
-	if err := windows.DuplicateHandle(p, windows.Handle(fd), p, &h, 0, false, windows.DUPLICATE_SAME_ACCESS); err != nil {
-		return nil, err
-	}
-
-	f := os.NewFile(uintptr(h), "stdin")
-	defer f.Close()
-	return readPasswordLine(f)
 }

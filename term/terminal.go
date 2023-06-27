@@ -7,34 +7,23 @@ package term
 import (
 	"bytes"
 	"io"
-	"runtime"
 	"strconv"
 	"sync"
 	"unicode/utf8"
 )
 
-// EscapeCodes contains escape sequences that can be written to the terminal in
-// order to achieve different styles of text.
-type EscapeCodes struct {
-	// Foreground colors
-	Black, Red, Green, Yellow, Blue, Magenta, Cyan, White []byte
-
-	// Reset all attributes
-	Reset []byte
-}
-
-var vt100EscapeCodes = EscapeCodes{
-	Black:   []byte{keyEscape, '[', '3', '0', 'm'},
-	Red:     []byte{keyEscape, '[', '3', '1', 'm'},
-	Green:   []byte{keyEscape, '[', '3', '2', 'm'},
-	Yellow:  []byte{keyEscape, '[', '3', '3', 'm'},
-	Blue:    []byte{keyEscape, '[', '3', '4', 'm'},
-	Magenta: []byte{keyEscape, '[', '3', '5', 'm'},
-	Cyan:    []byte{keyEscape, '[', '3', '6', 'm'},
-	White:   []byte{keyEscape, '[', '3', '7', 'm'},
-
-	Reset: []byte{keyEscape, '[', '0', 'm'},
-}
+// VT100 Escape codes
+var (
+	Black   = string([]byte{keyEscape, '[', '3', '0', 'm'})
+	Red     = string([]byte{keyEscape, '[', '3', '1', 'm'})
+	Green   = string([]byte{keyEscape, '[', '3', '2', 'm'})
+	Yellow  = string([]byte{keyEscape, '[', '3', '3', 'm'})
+	Blue    = string([]byte{keyEscape, '[', '3', '4', 'm'})
+	Magenta = string([]byte{keyEscape, '[', '3', '5', 'm'})
+	Cyan    = string([]byte{keyEscape, '[', '3', '6', 'm'})
+	White   = string([]byte{keyEscape, '[', '3', '7', 'm'})
+	Reset   = string([]byte{keyEscape, '[', '0', 'm'})
+)
 
 // Terminal contains the state for running a VT100 terminal that is capable of
 // reading lines of input.
@@ -51,11 +40,6 @@ type Terminal struct {
 	// history, the callback should return true.
 	HistoryTestCallback func(line string) (accept bool)
 
-	// Escape contains a pointer to the escape codes for this terminal.
-	// It's always a valid pointer, although the escape codes themselves
-	// may be empty if the terminal doesn't support them.
-	Escape *EscapeCodes
-
 	// lock protects the terminal and the state in this object from
 	// concurrent processing of a key press and a Write() call.
 	lock sync.Mutex
@@ -69,9 +53,6 @@ type Terminal struct {
 	pos int
 	// echo is true if local echo is enabled
 	echo bool
-	// pasteActive is true iff there is a bracketed paste operation in
-	// progress.
-	pasteActive bool
 
 	// cursorX contains the current X value of the cursor where the left
 	// edge is 0. cursorY contains the row number where the first row of
@@ -91,7 +72,7 @@ type Terminal struct {
 
 	// history contains previously entered commands so that they can be
 	// accessed with the up and down keys.
-	history stRingBuffer
+	history historyBuffer
 	// historyIndex stores the currently accessed history entry, where zero
 	// means the immediately previous entry.
 	historyIndex int
@@ -107,7 +88,6 @@ type Terminal struct {
 // "> ").
 func NewTerminal(c io.ReadWriter, prompt string) *Terminal {
 	return &Terminal{
-		Escape:       &vt100EscapeCodes,
 		c:            c,
 		prompt:       []rune(prompt),
 		termWidth:    80,
@@ -136,46 +116,40 @@ const (
 	keyDeleteWord
 	keyDeleteLine
 	keyClearScreen
-	keyPasteStart
-	keyPasteEnd
 )
 
 var (
-	crlf       = []byte{'\r', '\n'}
-	pasteStart = []byte{keyEscape, '[', '2', '0', '0', '~'}
-	pasteEnd   = []byte{keyEscape, '[', '2', '0', '1', '~'}
+	crlf = []byte{'\r', '\n'}
 )
 
 // bytesToKey tries to parse a key sequence from b. If successful, it returns
 // the key and the remainder of the input. Otherwise it returns utf8.RuneError.
-func bytesToKey(b []byte, pasteActive bool) (rune, []byte) {
+func bytesToKey(b []byte) (rune, []byte) {
 	if len(b) == 0 {
 		return utf8.RuneError, nil
 	}
 
-	if !pasteActive {
-		switch b[0] {
-		case 1: // ^A
-			return keyHome, b[1:]
-		case 2: // ^B
-			return keyLeft, b[1:]
-		case 5: // ^E
-			return keyEnd, b[1:]
-		case 6: // ^F
-			return keyRight, b[1:]
-		case 8: // ^H
-			return keyBackspace, b[1:]
-		case 11: // ^K
-			return keyDeleteLine, b[1:]
-		case 12: // ^L
-			return keyClearScreen, b[1:]
-		case 23: // ^W
-			return keyDeleteWord, b[1:]
-		case 14: // ^N
-			return keyDown, b[1:]
-		case 16: // ^P
-			return keyUp, b[1:]
-		}
+	switch b[0] {
+	case 1: // ^A
+		return keyHome, b[1:]
+	case 2: // ^B
+		return keyLeft, b[1:]
+	case 5: // ^E
+		return keyEnd, b[1:]
+	case 6: // ^F
+		return keyRight, b[1:]
+	case 8: // ^H
+		return keyBackspace, b[1:]
+	case 11: // ^K
+		return keyDeleteLine, b[1:]
+	case 12: // ^L
+		return keyClearScreen, b[1:]
+	case 23: // ^W
+		return keyDeleteWord, b[1:]
+	case 14: // ^N
+		return keyDown, b[1:]
+	case 16: // ^P
+		return keyUp, b[1:]
 	}
 
 	if b[0] != keyEscape {
@@ -186,7 +160,7 @@ func bytesToKey(b []byte, pasteActive bool) (rune, []byte) {
 		return r, b[l:]
 	}
 
-	if !pasteActive && len(b) >= 3 && b[0] == keyEscape && b[1] == '[' {
+	if len(b) >= 3 && b[1] == '[' {
 		switch b[2] {
 		case 'A':
 			return keyUp, b[3:]
@@ -201,23 +175,22 @@ func bytesToKey(b []byte, pasteActive bool) (rune, []byte) {
 		case 'F':
 			return keyEnd, b[3:]
 		}
-	}
 
-	if !pasteActive && len(b) >= 6 && b[0] == keyEscape && b[1] == '[' && b[2] == '1' && b[3] == ';' && b[4] == '3' {
-		switch b[5] {
-		case 'C':
-			return keyAltRight, b[6:]
-		case 'D':
-			return keyAltLeft, b[6:]
+		if len(b) >= 4 && b[3] == '~' {
+			switch b[2] {
+			case '3': // DEL key
+				return keyCtrlD, b[4:]
+			}
 		}
-	}
 
-	if !pasteActive && len(b) >= 6 && bytes.Equal(b[:6], pasteStart) {
-		return keyPasteStart, b[6:]
-	}
-
-	if pasteActive && len(b) >= 6 && bytes.Equal(b[:6], pasteEnd) {
-		return keyPasteEnd, b[6:]
+		if len(b) >= 6 && b[2] == '1' && b[3] == ';' && b[4] == '3' {
+			switch b[5] {
+			case 'C':
+				return keyAltRight, b[6:]
+			case 'D':
+				return keyAltLeft, b[6:]
+			}
+		}
 	}
 
 	// If we get here then we have a key that we don't recognise, or a
@@ -456,11 +429,6 @@ func visualLength(runes []rune) int {
 // handleKey processes the given key and, optionally, returns a line of text
 // that the user has entered.
 func (t *Terminal) handleKey(key rune) (line string, ok bool) {
-	if t.pasteActive && key != keyEnter {
-		t.addKeyToLine(key)
-		return
-	}
-
 	switch key {
 	case keyBackspace:
 		if t.pos == 0 {
@@ -695,34 +663,10 @@ func (t *Terminal) Write(buf []byte) (n int, err error) {
 	return
 }
 
-// ReadPassword temporarily changes the prompt and reads a password, without
-// echo, from the terminal.
-func (t *Terminal) ReadPassword(prompt string) (line string, err error) {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-
-	oldPrompt := t.prompt
-	t.prompt = []rune(prompt)
-	t.echo = false
-
-	line, err = t.readLine()
-
-	t.prompt = oldPrompt
-	t.echo = true
-
-	return
-}
-
 // ReadLine returns a line of input from the terminal.
 func (t *Terminal) ReadLine() (line string, err error) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-
-	return t.readLine()
-}
-
-func (t *Terminal) readLine() (line string, err error) {
-	// t.lock must be held at this point
 
 	if t.cursorX == 0 && t.cursorY == 0 {
 		t.writeLine(t.prompt)
@@ -730,39 +674,18 @@ func (t *Terminal) readLine() (line string, err error) {
 		t.outBuf = t.outBuf[:0]
 	}
 
-	lineIsPasted := t.pasteActive
-
 	for {
 		rest := t.remainder
 		lineOk := false
 		for !lineOk {
 			var key rune
-			key, rest = bytesToKey(rest, t.pasteActive)
+			key, rest = bytesToKey(rest)
 			if key == utf8.RuneError {
 				break
 			}
-			if !t.pasteActive {
-				if key == keyCtrlD {
-					if len(t.line) == 0 {
-						return "", io.EOF
-					}
-				}
-				if key == keyCtrlC {
-					return "", io.EOF
-				}
-				if key == keyPasteStart {
-					t.pasteActive = true
-					if len(t.line) == 0 {
-						lineIsPasted = true
-					}
-					continue
-				}
-			} else if key == keyPasteEnd {
-				t.pasteActive = false
-				continue
-			}
-			if !t.pasteActive {
-				lineIsPasted = false
+			if key == keyCtrlC {
+				t.remainder = nil
+				return "", io.EOF
 			}
 			line, lineOk = t.handleKey(key)
 		}
@@ -780,9 +703,6 @@ func (t *Terminal) readLine() (line string, err error) {
 				if t.HistoryTestCallback == nil || t.HistoryTestCallback(line) {
 					t.history.Add(line)
 				}
-			}
-			if lineIsPasted {
-				err = ErrPasteIndicator
 			}
 			return
 		}
@@ -886,33 +806,8 @@ func (t *Terminal) SetSize(width, height int) error {
 	return err
 }
 
-type pasteIndicatorError struct{}
-
-func (pasteIndicatorError) Error() string {
-	return "terminal: ErrPasteIndicator not correctly handled"
-}
-
-// ErrPasteIndicator may be returned from ReadLine as the error, in addition
-// to valid line data. It indicates that bracketed paste mode is enabled and
-// that the returned line consists only of pasted data. Programs may wish to
-// interpret pasted data more literally than typed data.
-var ErrPasteIndicator = pasteIndicatorError{}
-
-// SetBracketedPasteMode requests that the terminal bracket paste operations
-// with markers. Not all terminals support this but, if it is supported, then
-// enabling this mode will stop any autocomplete callback from running due to
-// pastes. Additionally, any lines that are completely pasted will be returned
-// from ReadLine with the error set to ErrPasteIndicator.
-func (t *Terminal) SetBracketedPasteMode(on bool) {
-	if on {
-		io.WriteString(t.c, "\x1b[?2004h")
-	} else {
-		io.WriteString(t.c, "\x1b[?2004l")
-	}
-}
-
-// stRingBuffer is a ring buffer of strings.
-type stRingBuffer struct {
+// historyBuffer is a ring buffer of strings.
+type historyBuffer struct {
 	// entries contains max elements.
 	entries []string
 	max     int
@@ -922,17 +817,17 @@ type stRingBuffer struct {
 	size int
 }
 
-func (s *stRingBuffer) Add(a string) {
-	if s.entries == nil {
+func (b *historyBuffer) Add(value string) {
+	if b.entries == nil {
 		const defaultNumEntries = 128
-		s.entries = make([]string, defaultNumEntries)
-		s.max = defaultNumEntries
+		b.entries = make([]string, defaultNumEntries)
+		b.max = defaultNumEntries
 	}
 
-	s.head = (s.head + 1) % s.max
-	s.entries[s.head] = a
-	if s.size < s.max {
-		s.size++
+	b.head = (b.head + 1) % b.max
+	b.entries[b.head] = value
+	if b.size < b.max {
+		b.size++
 	}
 }
 
@@ -940,54 +835,13 @@ func (s *stRingBuffer) Add(a string) {
 // If n is zero then the immediately prior value is returned, if one, then the
 // next most recent, and so on. If such an element doesn't exist then ok is
 // false.
-func (s *stRingBuffer) NthPreviousEntry(n int) (value string, ok bool) {
-	if n < 0 || n >= s.size {
+func (b *historyBuffer) NthPreviousEntry(n int) (value string, ok bool) {
+	if n < 0 || n >= b.size {
 		return "", false
 	}
-	index := s.head - n
+	index := b.head - n
 	if index < 0 {
-		index += s.max
+		index += b.max
 	}
-	return s.entries[index], true
-}
-
-// readPasswordLine reads from reader until it finds \n or io.EOF.
-// The slice returned does not include the \n.
-// readPasswordLine also ignores any \r it finds.
-// Windows uses \r as end of line. So, on Windows, readPasswordLine
-// reads until it finds \r and ignores any \n it finds during processing.
-func readPasswordLine(reader io.Reader) ([]byte, error) {
-	var buf [1]byte
-	var ret []byte
-
-	for {
-		n, err := reader.Read(buf[:])
-		if n > 0 {
-			switch buf[0] {
-			case '\b':
-				if len(ret) > 0 {
-					ret = ret[:len(ret)-1]
-				}
-			case '\n':
-				if runtime.GOOS != "windows" {
-					return ret, nil
-				}
-				// otherwise ignore \n
-			case '\r':
-				if runtime.GOOS == "windows" {
-					return ret, nil
-				}
-				// otherwise ignore \r
-			default:
-				ret = append(ret, buf[0])
-			}
-			continue
-		}
-		if err != nil {
-			if err == io.EOF && len(ret) > 0 {
-				return ret, nil
-			}
-			return ret, err
-		}
-	}
+	return b.entries[index], true
 }

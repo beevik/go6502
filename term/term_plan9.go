@@ -44,7 +44,3 @@ func restore(fd int, state *State) error {
 func getSize(fd int) (width, height int, err error) {
 	return 0, 0, fmt.Errorf("terminal: GetSize not implemented on %s/%s", runtime.GOOS, runtime.GOARCH)
 }
-
-func readPassword(fd int) ([]byte, error) {
-	return nil, fmt.Errorf("terminal: ReadPassword not implemented on %s/%s", runtime.GOOS, runtime.GOARCH)
-}

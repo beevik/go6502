@@ -72,29 +72,3 @@ func getSize(fd int) (width, height int, err error) {
 	}
 	return int(ws.Col), int(ws.Row), nil
 }
-
-// passwordReader is an io.Reader that reads from a specific file descriptor.
-type passwordReader int
-
-func (r passwordReader) Read(buf []byte) (int, error) {
-	return unix.Read(int(r), buf)
-}
-
-func readPassword(fd int) ([]byte, error) {
-	termios, err := unix.IoctlGetTermios(fd, ioctlReadTermios)
-	if err != nil {
-		return nil, err
-	}
-
-	newState := *termios
-	newState.Lflag &^= unix.ECHO
-	newState.Lflag |= unix.ICANON | unix.ISIG
-	newState.Iflag |= unix.ICRNL
-	if err := unix.IoctlSetTermios(fd, ioctlWriteTermios, &newState); err != nil {
-		return nil, err
-	}
-
-	defer unix.IoctlSetTermios(fd, ioctlWriteTermios, termios)
-
-	return readPasswordLine(passwordReader(fd))
-}

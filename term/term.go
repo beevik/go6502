@@ -58,10 +58,3 @@ func Restore(fd int, oldState *State) error {
 func GetSize(fd int) (width, height int, err error) {
 	return getSize(fd)
 }
-
-// ReadPassword reads a line of input from a terminal without local echo.  This
-// is commonly used for inputting passwords and other sensitive data. The slice
-// returned does not include the \n.
-func ReadPassword(fd int) ([]byte, error) {
-	return readPassword(fd)
-}
