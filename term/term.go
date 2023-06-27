@@ -26,11 +26,18 @@ func IsTerminal(fd int) bool {
 	return isTerminal(fd)
 }
 
-// MakeRaw puts the terminal connected to the given file descriptor into raw
-// mode and returns the previous state of the terminal so that it can be
-// restored.
-func MakeRaw(fd int) (*State, error) {
-	return makeRaw(fd)
+// MakeRawInput puts the terminal connected to the given file descriptor into
+// raw input mode and returns the previous state of the terminal so that it
+// can be restored.
+func MakeRawInput(fd int) (*State, error) {
+	return makeRawInput(fd)
+}
+
+// MakeRawOutput puts the terminal connected to the given file descriptor into
+// raw output mode and returns the previous state of the terminal so that it
+// can be restored.
+func MakeRawOutput(fd int) (*State, error) {
+	return makeRawOutput(fd)
 }
 
 // GetState returns the current state of a terminal which may be useful to

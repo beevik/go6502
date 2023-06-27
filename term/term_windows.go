@@ -20,12 +20,25 @@ func isTerminal(fd int) bool {
 	return err == nil
 }
 
-func makeRaw(fd int) (*State, error) {
+func makeRawInput(fd int) (*State, error) {
 	var st uint32
 	if err := windows.GetConsoleMode(windows.Handle(fd), &st); err != nil {
 		return nil, err
 	}
-	raw := st &^ (windows.ENABLE_ECHO_INPUT | windows.ENABLE_PROCESSED_INPUT | windows.ENABLE_LINE_INPUT | windows.ENABLE_PROCESSED_OUTPUT)
+	raw := st &^ (windows.ENABLE_ECHO_INPUT | windows.ENABLE_PROCESSED_INPUT | windows.ENABLE_LINE_INPUT | windows.ENABLE_VIRTUAL_TERMINAL_INPUT)
+	if err := windows.SetConsoleMode(windows.Handle(fd), raw); err != nil {
+		return nil, err
+	}
+	return &State{state{st}}, nil
+}
+
+func makeRawOutput(fd int) (*State, error) {
+	var st uint32
+	if err := windows.GetConsoleMode(windows.Handle(fd), &st); err != nil {
+		return nil, err
+	}
+	raw := st &^ (windows.ENABLE_WRAP_AT_EOL_OUTPUT | windows.DISABLE_NEWLINE_AUTO_RETURN)
+	raw |= windows.ENABLE_PROCESSED_OUTPUT | windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING
 	if err := windows.SetConsoleMode(windows.Handle(fd), raw); err != nil {
 		return nil, err
 	}
@@ -60,7 +73,7 @@ func readPassword(fd int) ([]byte, error) {
 	old := st
 
 	st &^= (windows.ENABLE_ECHO_INPUT | windows.ENABLE_LINE_INPUT)
-	st |= (windows.ENABLE_PROCESSED_OUTPUT | windows.ENABLE_PROCESSED_INPUT)
+	st |= (windows.ENABLE_PROCESSED_OUTPUT | windows.ENABLE_PROCESSED_INPUT | windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING | windows.ENABLE_VIRTUAL_TERMINAL_INPUT)
 	if err := windows.SetConsoleMode(windows.Handle(fd), st); err != nil {
 		return nil, err
 	}

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"runtime"
 
 	"github.com/beevik/go6502/asm"
 	"github.com/beevik/go6502/host"
@@ -63,15 +62,8 @@ func main() {
 	signal.Notify(c, os.Interrupt)
 	go handleInterrupt(h, c)
 
-	// Run commands interactively. Disable raw mode on Windows because the
-	// golang.org/x/term package is buggy on Windows.
-	if runtime.GOOS == "windows" {
-		h.EnableProcessedMode(os.Stdin, os.Stdout)
-	} else {
-		h.EnableRawMode()
-	}
-
 	// Interactively run commands entered by the user.
+	h.EnableRawMode()
 	h.RunCommands(true)
 }
 

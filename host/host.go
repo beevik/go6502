@@ -138,12 +138,12 @@ func (h *Host) Cleanup() {
 func (h *Host) enableRawMode() {
 	if !h.rawMode {
 		var err error
-		h.rawInputState, err = term.MakeRaw(int(os.Stdin.Fd()))
+		h.rawInputState, err = term.MakeRawInput(int(os.Stdin.Fd()))
 		if err != nil {
 			panic(err)
 		}
 
-		h.rawOutputState, err = term.MakeRaw(int(os.Stdout.Fd()))
+		h.rawOutputState, err = term.MakeRawOutput(int(os.Stdout.Fd()))
 		if err != nil {
 			term.Restore(int(os.Stdin.Fd()), h.rawInputState)
 			panic(err)
@@ -257,7 +257,7 @@ func (h *Host) RestoreIoState(state *IoState) {
 // to a writer. If the commands are interactive, a prompt is displayed while
 // the host waits for the the next command to be entered.
 func (h *Host) RunCommands(interactive bool) {
-	if h.rawMode {
+	if interactive {
 		fmt.Fprintln(h)
 		h.displayPC()
 	}

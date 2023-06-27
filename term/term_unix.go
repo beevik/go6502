@@ -44,6 +44,14 @@ func makeRaw(fd int) (*State, error) {
 	return &oldState, nil
 }
 
+func makeRawInput(fd int) (*State, error) {
+	return makeRaw(fd)
+}
+
+func makeRawOutput(fd int) (*State, error) {
+	return makeRaw(fd)
+}
+
 func getState(fd int) (*State, error) {
 	termios, err := unix.IoctlGetTermios(fd, ioctlReadTermios)
 	if err != nil {

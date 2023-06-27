@@ -22,6 +22,14 @@ func makeRaw(fd int) (*State, error) {
 	return nil, fmt.Errorf("terminal: MakeRaw not implemented on %s/%s", runtime.GOOS, runtime.GOARCH)
 }
 
+func makeRawInput(fd int) (*State, error) {
+	return makeRaw(fd)
+}
+
+func makeRawOutput(fd int) (*State, error) {
+	return makeRaw(fd)
+}
+
 func getState(fd int) (*State, error) {
 	return nil, fmt.Errorf("terminal: GetState not implemented on %s/%s", runtime.GOOS, runtime.GOARCH)
 }
