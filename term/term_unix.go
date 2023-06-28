@@ -52,6 +52,10 @@ func makeRawOutput(fd int) (*State, error) {
 	return makeRaw(fd)
 }
 
+func peekKey(fd int, key rune) bool {
+	return false
+}
+
 func getState(fd int) (*State, error) {
 	termios, err := unix.IoctlGetTermios(fd, ioctlReadTermios)
 	if err != nil {

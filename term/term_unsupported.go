@@ -30,6 +30,10 @@ func makeRawOutput(fd int) (*State, error) {
 	return makeRaw(fd)
 }
 
+func peekKey(fd int, key rune) bool {
+	return false
+}
+
 func getState(fd int) (*State, error) {
 	return nil, fmt.Errorf("terminal: GetState not implemented on %s/%s", runtime.GOOS, runtime.GOARCH)
 }

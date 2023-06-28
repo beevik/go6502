@@ -46,6 +46,12 @@ func GetState(fd int) (*State, error) {
 	return getState(fd)
 }
 
+// PeekKey scans the input buffer for the presence of a "key-down" event
+// for the specified key character. Currently supported only on Windows.
+func PeekKey(fd int, key rune) bool {
+	return peekKey(fd, key)
+}
+
 // Restore restores the terminal connected to the given file descriptor to a
 // previous state.
 func Restore(fd int, oldState *State) error {

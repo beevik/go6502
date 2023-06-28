@@ -1215,8 +1215,9 @@ func (h *Host) cmdRun(c *cmd.Command, args []string) error {
 	fmt.Fprintf(h, "Running from $%04X. Press ctrl-C to break.\n", h.cpu.Reg.PC)
 
 	h.state = stateRunning
-	for h.state == stateRunning {
+	for step := 0; h.state == stateRunning; step++ {
 		h.step()
+		h.breakCheck(step)
 	}
 
 	if h.state == stateInterrupted {
@@ -1226,6 +1227,29 @@ func (h *Host) cmdRun(c *cmd.Command, args []string) error {
 	h.setState(stateProcessingCommands)
 	h.settings.NextDisasmAddr = h.cpu.Reg.PC
 	return nil
+}
+
+func (h *Host) breakCheck(step int) {
+	// To prevent performance degradation, only test for ctrl-C once every 128
+	// CPU steps.
+	if (step & 127) == 127 {
+		// Peek at the console's input buffer to see if it contains a key-down
+		// event for ctrl-C. This is only necessary on Windows, where there is
+		// no ability to detect a break signal. On all other platforms,
+		// term.PeekKey() is a no-op that returns false.
+		const CtrlC rune = 3
+		if h.rawMode && term.PeekKey(int(os.Stdin.Fd()), CtrlC) {
+			// If ctrl-C was detected, flush the input buffer by reading lines
+			// until the ctrl-C is encountered.
+			for {
+				_, err := h.rawTerminal.ReadLine()
+				if err == io.EOF {
+					break
+				}
+			}
+			h.Break()
+		}
+	}
 }
 
 func (h *Host) cmdSet(c *cmd.Command, args []string) error {
@@ -1445,7 +1469,7 @@ func (h *Host) stepOver() {
 	if inst.Name == "JSR" {
 		count := 1
 	loop:
-		for h.state == stateRunning && cpu.Reg.PC != nextaddr {
+		for step := 0; h.state == stateRunning && cpu.Reg.PC != nextaddr; step++ {
 			inst := cpu.GetInstruction(cpu.Reg.PC)
 			cpu.Step()
 			switch inst.Name {
@@ -1457,6 +1481,7 @@ func (h *Host) stepOver() {
 					break loop
 				}
 			}
+			h.breakCheck(step)
 		}
 	}
 }
@@ -1464,12 +1489,13 @@ func (h *Host) stepOver() {
 func (h *Host) stepOut() {
 	cpu := h.cpu
 
-	for h.state == stateRunning {
+	for step := 0; h.state == stateRunning; step++ {
 		inst := cpu.GetInstruction(cpu.Reg.PC)
 		cpu.Step()
 		if inst.Name == "RTS" || inst.Name == "RTI" {
 			break
 		}
+		h.breakCheck(step)
 	}
 }
 

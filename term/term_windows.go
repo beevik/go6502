@@ -5,11 +5,39 @@
 package term
 
 import (
+	"syscall"
+	"unsafe"
+
 	"golang.org/x/sys/windows"
 )
 
 type state struct {
 	mode uint32
+}
+
+type keyRecord struct {
+	EventType       uint32
+	KeyDown         uint32
+	RepeatCount     uint16
+	VirtualKeyCode  uint16
+	VirtualScanCode uint16
+	UnicodeChar     uint16
+	ControlKeyState uint32
+}
+
+const peekRecordSize = 20
+const peekBufMaxRecords = 128
+
+var (
+	dll                  *windows.DLL
+	procPeekConsoleInput *windows.Proc
+	peekBuf              []byte
+)
+
+func init() {
+	dll = windows.MustLoadDLL("kernel32.dll")
+	procPeekConsoleInput = dll.MustFindProc("PeekConsoleInputW")
+	peekBuf = make([]byte, peekRecordSize*peekBufMaxRecords)
 }
 
 func isTerminal(fd int) bool {
@@ -28,12 +56,14 @@ func makeRawInput(fd int) (*State, error) {
 	var disable uint32 = windows.ENABLE_PROCESSED_INPUT |
 		windows.ENABLE_LINE_INPUT |
 		windows.ENABLE_ECHO_INPUT |
+		windows.ENABLE_MOUSE_INPUT |
 		windows.ENABLE_WINDOW_INPUT
 	newMode := (mode & ^disable) | enable
 
 	if err := windows.SetConsoleMode(windows.Handle(fd), newMode); err != nil {
 		return nil, err
 	}
+
 	return &State{state{mode}}, nil
 }
 
@@ -53,6 +83,30 @@ func makeRawOutput(fd int) (*State, error) {
 		return nil, err
 	}
 	return &State{state{mode}}, nil
+}
+
+func peekKey(fd int, key rune) bool {
+	peekBufPtr := uintptr(unsafe.Pointer(&peekBuf[0]))
+
+	var count int
+	_, _, err := syscall.SyscallN(procPeekConsoleInput.Addr(),
+		uintptr(windows.Handle(fd)),
+		peekBufPtr,
+		peekBufMaxRecords,
+		uintptr(unsafe.Pointer(&count)))
+
+	if err != 0 {
+		return false
+	}
+
+	for i := 0; i < count; i++ {
+		r := (*keyRecord)(unsafe.Pointer(peekBufPtr + uintptr(i)*peekRecordSize))
+		if r.EventType == uint32(1) && r.KeyDown == uint32(1) && rune(r.UnicodeChar) == key {
+			return true
+		}
+	}
+
+	return false
 }
 
 func getState(fd int) (*State, error) {
