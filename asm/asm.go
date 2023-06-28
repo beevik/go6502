@@ -341,6 +341,8 @@ const (
 	Verbose Option = 1 << iota // verbose output during assembly
 )
 
+const defaultOrigin = 0x1000
+
 // AssembleFile reads a file containing 6502 assembly code, assembles it,
 // and produces a binary output file and a source map file.
 func AssembleFile(path string, options Option, out io.Writer) error {
@@ -350,7 +352,7 @@ func AssembleFile(path string, options Option, out io.Writer) error {
 	}
 	defer inFile.Close()
 
-	assembly, sourceMap, err := Assemble(inFile, path, out, options)
+	assembly, sourceMap, err := Assemble(inFile, path, defaultOrigin, out, options)
 	if err != nil {
 		for _, e := range assembly.Errors {
 			fmt.Fprintln(out, e)
@@ -393,7 +395,7 @@ func AssembleFile(path string, options Option, out io.Writer) error {
 
 // Assemble reads data from the provided stream and attempts to assemble it
 // into 6502 byte code.
-func Assemble(r io.Reader, filename string, out io.Writer, options Option) (*Assembly, *SourceMap, error) {
+func Assemble(r io.Reader, filename string, origin uint16, out io.Writer, options Option) (*Assembly, *SourceMap, error) {
 	if out == nil {
 		out = os.Stdout
 	}
@@ -401,7 +403,7 @@ func Assemble(r io.Reader, filename string, out io.Writer, options Option) (*Ass
 	a := &assembler{
 		arch:      cpu.NMOS,
 		instSet:   cpu.GetInstructionSet(cpu.NMOS),
-		origin:    0x1000,
+		origin:    int(origin),
 		pc:        -1,
 		r:         r,
 		constants: make(map[string]*expr),

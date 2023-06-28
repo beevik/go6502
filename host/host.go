@@ -368,7 +368,7 @@ func (h *Host) assembleInline() error {
 
 	fmt.Fprintln(h, "Assembling inline code...")
 	s := strings.Join(h.assembly, "\n")
-	a, _, err := asm.Assemble(strings.NewReader(s), "inline", h, 0)
+	a, _, err := asm.Assemble(strings.NewReader(s), "inline", h.miniAddr, h, 0)
 
 	if err != nil {
 		for _, e := range a.Errors {

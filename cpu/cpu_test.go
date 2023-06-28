@@ -11,7 +11,7 @@ import (
 
 func loadCPU(t *testing.T, asmString string) *cpu.CPU {
 	b := strings.NewReader(asmString)
-	r, sm, err := asm.Assemble(b, "test.asm", os.Stdout, 0)
+	r, sm, err := asm.Assemble(b, "test.asm", 0x1000, os.Stdout, 0)
 	if err != nil {
 		t.Error(err)
 		return nil

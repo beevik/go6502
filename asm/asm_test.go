@@ -13,7 +13,7 @@ import (
 
 func assemble(t *testing.T, code string) ([]byte, error) {
 	r := bytes.NewReader([]byte(code))
-	assembly, _, err := Assemble(r, "test", os.Stdout, 0)
+	assembly, _, err := Assemble(r, "test", 0x1000, os.Stdout, 0)
 	if err != nil {
 		return []byte{}, err
 	}

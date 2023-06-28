@@ -19,29 +19,40 @@ func isTerminal(fd int) bool {
 }
 
 func makeRawInput(fd int) (*State, error) {
-	var st uint32
-	if err := windows.GetConsoleMode(windows.Handle(fd), &st); err != nil {
+	var mode uint32
+	if err := windows.GetConsoleMode(windows.Handle(fd), &mode); err != nil {
 		return nil, err
 	}
-	raw := st &^ (windows.ENABLE_ECHO_INPUT | windows.ENABLE_PROCESSED_INPUT | windows.ENABLE_LINE_INPUT | windows.ENABLE_WINDOW_INPUT)
-	raw |= windows.ENABLE_VIRTUAL_TERMINAL_INPUT
-	if err := windows.SetConsoleMode(windows.Handle(fd), raw); err != nil {
+
+	var enable uint32 = windows.ENABLE_VIRTUAL_TERMINAL_INPUT
+	var disable uint32 = windows.ENABLE_PROCESSED_INPUT |
+		windows.ENABLE_LINE_INPUT |
+		windows.ENABLE_ECHO_INPUT |
+		windows.ENABLE_WINDOW_INPUT
+	newMode := (mode & ^disable) | enable
+
+	if err := windows.SetConsoleMode(windows.Handle(fd), newMode); err != nil {
 		return nil, err
 	}
-	return &State{state{st}}, nil
+	return &State{state{mode}}, nil
 }
 
 func makeRawOutput(fd int) (*State, error) {
-	var st uint32
-	if err := windows.GetConsoleMode(windows.Handle(fd), &st); err != nil {
+	var mode uint32
+	if err := windows.GetConsoleMode(windows.Handle(fd), &mode); err != nil {
 		return nil, err
 	}
-	raw := st &^ (windows.ENABLE_WRAP_AT_EOL_OUTPUT | windows.DISABLE_NEWLINE_AUTO_RETURN)
-	raw |= windows.ENABLE_PROCESSED_OUTPUT | windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING
-	if err := windows.SetConsoleMode(windows.Handle(fd), raw); err != nil {
+
+	var enable uint32 = windows.ENABLE_PROCESSED_OUTPUT |
+		windows.ENABLE_WRAP_AT_EOL_OUTPUT |
+		windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING
+	var disable uint32 = windows.DISABLE_NEWLINE_AUTO_RETURN
+	newMode := (mode & ^disable) | enable
+
+	if err := windows.SetConsoleMode(windows.Handle(fd), newMode); err != nil {
 		return nil, err
 	}
-	return &State{state{st}}, nil
+	return &State{state{mode}}, nil
 }
 
 func getState(fd int) (*State, error) {
