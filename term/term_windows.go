@@ -26,19 +26,13 @@ type keyRecord struct {
 }
 
 const peekRecordSize = 20
-const peekBufMaxRecords = 128
 
 var (
 	dll                  *windows.DLL
 	procPeekConsoleInput *windows.Proc
 	peekBuf              []byte
+	peekBufMaxRecords    int
 )
-
-func init() {
-	dll = windows.MustLoadDLL("kernel32.dll")
-	procPeekConsoleInput = dll.MustFindProc("PeekConsoleInputW")
-	peekBuf = make([]byte, peekRecordSize*peekBufMaxRecords)
-}
 
 func isTerminal(fd int) bool {
 	var st uint32
@@ -86,19 +80,44 @@ func makeRawOutput(fd int) (*State, error) {
 }
 
 func peekKey(fd int, key rune) bool {
-	peekBufPtr := uintptr(unsafe.Pointer(&peekBuf[0]))
-
-	var count int
-	_, _, err := syscall.SyscallN(procPeekConsoleInput.Addr(),
-		uintptr(windows.Handle(fd)),
-		peekBufPtr,
-		peekBufMaxRecords,
-		uintptr(unsafe.Pointer(&count)))
-
-	if err != 0 {
-		return false
+	// Lazy-allocate the peek buffer.
+	if peekBuf == nil {
+		// Lazy-load the kernel32 DLL
+		if dll == nil {
+			dll = windows.MustLoadDLL("kernel32.dll")
+		}
+		procPeekConsoleInput = dll.MustFindProc("PeekConsoleInputW")
+		peekBufMaxRecords = 16
+		peekBuf = make([]byte, peekRecordSize*peekBufMaxRecords)
 	}
 
+	// Peek at the console input buffer.
+	var peekBufPtr uintptr
+	var count int
+	for {
+		peekBufPtr = uintptr(unsafe.Pointer(&peekBuf[0]))
+
+		_, _, err := syscall.SyscallN(procPeekConsoleInput.Addr(),
+			uintptr(windows.Handle(fd)),
+			peekBufPtr,
+			uintptr(peekBufMaxRecords),
+			uintptr(unsafe.Pointer(&count)))
+
+		if err != 0 {
+			return false
+		}
+		if count < peekBufMaxRecords {
+			break
+		}
+
+		// The record buffer wasn't large enough to hold all events, so grow
+		// it and try again.
+		peekBufMaxRecords *= 2
+		peekBuf = make([]byte, peekRecordSize*peekBufMaxRecords)
+	}
+
+	// Search the record buffer for a key-down event containing the requested
+	// key.
 	for i := 0; i < count; i++ {
 		r := (*keyRecord)(unsafe.Pointer(peekBufPtr + uintptr(i)*peekRecordSize))
 		if r.EventType == uint32(1) && r.KeyDown == uint32(1) && rune(r.UnicodeChar) == key {
