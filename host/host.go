@@ -33,17 +33,6 @@ import (
 	"github.com/beevik/go6502/term"
 )
 
-type displayFlags uint8
-
-const (
-	displayVerbose displayFlags = 1 << iota
-	displayRegisters
-	displayCycles
-	displayAnnotations
-
-	displayAll = displayRegisters | displayCycles | displayAnnotations
-)
-
 type state byte
 
 const (
@@ -63,6 +52,7 @@ type Host struct {
 	rawTerminal    *term.Terminal
 	rawInputState  *term.State
 	rawOutputState *term.State
+	theme          *disasm.Theme
 	prompt         string
 	mem            *cpu.FlatMemory
 	cpu            *cpu.CPU
@@ -98,9 +88,17 @@ func New() *Host {
 		os.Stdout,
 	}
 
+	theme := &disasm.Theme{
+		Addr:    term.BrightWhite,
+		Inst:    term.BrightCyan,
+		Operand: term.Green,
+		Reset:   term.Reset,
+	}
+
 	h := &Host{
 		rawMode:     false,
 		rawTerminal: term.NewTerminal(console, ""),
+		theme:       theme,
 		exprParser:  newExprParser(),
 		sourceCode:  make(map[string][]string),
 		sourceMap:   asm.NewSourceMap(),
@@ -387,7 +385,7 @@ func (h *Host) assembleInline() error {
 	h.sourceMap.ClearRange(int(h.miniAddr), len(a.Code))
 
 	for addr, end := int(h.miniAddr), int(h.miniAddr)+len(a.Code); addr < end; {
-		d, next := h.disassemble(uint16(addr), 0)
+		d, next := disasm.Disassemble(h.cpu, uint16(addr), disasm.ShowBasic, "", h.theme)
 		fmt.Fprintln(h, d)
 		if next < uint16(addr) {
 			break
@@ -435,7 +433,7 @@ func (h *Host) readLine(interactive bool) (string, error) {
 }
 
 func (h *Host) displayPC() {
-	d, _ := h.disassemble(h.cpu.Reg.PC, displayAll)
+	d, _ := disasm.Disassemble(h.cpu, h.cpu.Reg.PC, disasm.ShowFull, "", h.theme)
 	fmt.Fprintln(h, d)
 }
 
@@ -826,7 +824,7 @@ func (h *Host) cmdDisassemble(c *cmd.Command, args []string) error {
 	}
 
 	for i := 0; i < count; i++ {
-		d, next := h.disassemble(addr, displayAnnotations)
+		d, next := disasm.Disassemble(h.cpu, addr, disasm.ShowBasic, h.annotations[addr], h.theme)
 		fmt.Fprintln(h, d)
 		addr = next
 	}
@@ -928,10 +926,9 @@ func (h *Host) cmdList(c *cmd.Command, args []string) error {
 	// Keep track of the last displayed line number for each source file.
 	last := make(map[string]int)
 
-	b := make([]byte, 3)
-
 	// Search around the address for an address with source code, and attempt
 	// to display the first source code line.
+	var buf [3]byte
 	for _, o := range []int{0, -1, -2, +1, +2, -3, +3, -4, +4, -5, +5} {
 		orig := uint16(int(addr) + o)
 
@@ -945,11 +942,11 @@ func (h *Host) cmdList(c *cmd.Command, args []string) error {
 			continue
 		}
 
-		_, addr = disasm.Disassemble(h.cpu.Mem, orig)
+		addr = h.cpu.NextAddr(orig)
 		cn := addr - orig
-		h.cpu.Mem.LoadBytes(orig, b[:cn])
-		cs := codeString(b[:cn])
-		fmt.Fprintf(h, "%04X- %-8s\t%s\n", orig, cs, lines[li-1])
+		h.cpu.Mem.LoadBytes(orig, buf[:cn])
+		cs := codeString(buf[:cn])
+		fmt.Fprintf(h, "%04X- %-8s %s\n", orig, cs, lines[li-1])
 
 		last[fn] = li
 		break
@@ -975,10 +972,10 @@ func (h *Host) cmdList(c *cmd.Command, args []string) error {
 			continue
 		}
 
-		_, addr = disasm.Disassemble(h.cpu.Mem, orig)
+		addr = h.cpu.NextAddr(orig)
 		cn := addr - orig
-		h.cpu.Mem.LoadBytes(orig, b[:cn])
-		cs := codeString(b[:cn])
+		h.cpu.Mem.LoadBytes(orig, buf[:cn])
+		cs := codeString(buf[:cn])
 
 		l, ok := last[fn]
 		if !ok {
@@ -990,7 +987,7 @@ func (h *Host) cmdList(c *cmd.Command, args []string) error {
 			if i == j-1 {
 				c = cs
 			}
-			fmt.Fprintf(h, "%04X- %-8s\t%s\n", orig, c, lines[i])
+			fmt.Fprintf(h, "%04X- %-8s %s\n", orig, c, lines[i])
 		}
 
 		last[fn] = li
@@ -1461,7 +1458,7 @@ func (h *Host) stepOver() {
 	cpu := h.cpu
 
 	inst := cpu.GetInstruction(cpu.Reg.PC)
-	nextaddr := cpu.Reg.PC + uint16(inst.Length)
+	next := cpu.Reg.PC + uint16(inst.Length)
 	cpu.Step()
 
 	// If a JSR was just stepped, keep stepping until the return address
@@ -1469,7 +1466,7 @@ func (h *Host) stepOver() {
 	if inst.Name == "JSR" {
 		count := 1
 	loop:
-		for step := 0; h.state == stateRunning && cpu.Reg.PC != nextaddr; step++ {
+		for step := 0; h.state == stateRunning && cpu.Reg.PC != next; step++ {
 			inst := cpu.GetInstruction(cpu.Reg.PC)
 			cpu.Step()
 			switch inst.Name {
@@ -1529,41 +1526,6 @@ func (h *Host) parseExpr(expr string) (uint16, error) {
 		v = 0x10000 + v
 	}
 	return uint16(v), nil
-}
-
-func (h *Host) disassemble(addr uint16, flags displayFlags) (str string, next uint16) {
-	cpu := h.cpu
-
-	var line string
-	line, next = disasm.Disassemble(cpu.Mem, addr)
-
-	l := next - addr
-	b := make([]byte, l)
-	cpu.Mem.LoadBytes(addr, b)
-
-	if h.settings.CompactMode && (flags&displayVerbose) == 0 {
-		str = fmt.Sprintf("%04X- %-8s  %-15s", addr, codeString(b[:l]), line)
-		if (flags & displayRegisters) != 0 {
-			str = disasm.GetCompactRegisterString(&h.cpu.Reg) + "  " + str
-		}
-	} else {
-		str = fmt.Sprintf("%04X-   %-8s    %-15s", addr, codeString(b[:l]), line)
-
-		if (flags & displayRegisters) != 0 {
-			str += " " + disasm.GetRegisterString(&h.cpu.Reg)
-		}
-		if (flags & displayCycles) != 0 {
-			str += fmt.Sprintf(" C=%d", h.cpu.Cycles)
-		}
-	}
-
-	if (flags & displayAnnotations) != 0 {
-		if anno, ok := h.annotations[addr]; ok {
-			str += " ; " + anno
-		}
-	}
-
-	return str, next
 }
 
 func (h *Host) dumpMemory(addr0, bytes uint16) {
@@ -1683,7 +1645,7 @@ func (h *Host) OnDataBreakpoint(cpu *cpu.CPU, b *cpu.DataBreakpoint) {
 	h.setState(stateBreakpoint)
 
 	if cpu.LastPC != cpu.Reg.PC {
-		d, _ := h.disassemble(cpu.LastPC, displayAll)
+		d, _ := disasm.Disassemble(h.cpu, cpu.LastPC, disasm.ShowFull, "", h.theme)
 		fmt.Fprintln(h, d)
 	}
 

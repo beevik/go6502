@@ -14,15 +14,23 @@ import (
 
 // VT100 Escape codes
 var (
-	Black   = string([]byte{keyEscape, '[', '3', '0', 'm'})
-	Red     = string([]byte{keyEscape, '[', '3', '1', 'm'})
-	Green   = string([]byte{keyEscape, '[', '3', '2', 'm'})
-	Yellow  = string([]byte{keyEscape, '[', '3', '3', 'm'})
-	Blue    = string([]byte{keyEscape, '[', '3', '4', 'm'})
-	Magenta = string([]byte{keyEscape, '[', '3', '5', 'm'})
-	Cyan    = string([]byte{keyEscape, '[', '3', '6', 'm'})
-	White   = string([]byte{keyEscape, '[', '3', '7', 'm'})
-	Reset   = string([]byte{keyEscape, '[', '0', 'm'})
+	Black         = string([]byte{keyEscape, '[', '3', '0', 'm'})
+	Red           = string([]byte{keyEscape, '[', '3', '1', 'm'})
+	Green         = string([]byte{keyEscape, '[', '3', '2', 'm'})
+	Yellow        = string([]byte{keyEscape, '[', '3', '3', 'm'})
+	Blue          = string([]byte{keyEscape, '[', '3', '4', 'm'})
+	Magenta       = string([]byte{keyEscape, '[', '3', '5', 'm'})
+	Cyan          = string([]byte{keyEscape, '[', '3', '6', 'm'})
+	White         = string([]byte{keyEscape, '[', '3', '7', 'm'})
+	BrightBlack   = string([]byte{keyEscape, '[', '9', '0', 'm'})
+	BrightRed     = string([]byte{keyEscape, '[', '9', '1', 'm'})
+	BrightGreen   = string([]byte{keyEscape, '[', '9', '2', 'm'})
+	BrightYellow  = string([]byte{keyEscape, '[', '9', '3', 'm'})
+	BrightBlue    = string([]byte{keyEscape, '[', '9', '4', 'm'})
+	BrightMagenta = string([]byte{keyEscape, '[', '9', '5', 'm'})
+	BrightCyan    = string([]byte{keyEscape, '[', '9', '6', 'm'})
+	BrightWhite   = string([]byte{keyEscape, '[', '9', '7', 'm'})
+	Reset         = string([]byte{keyEscape, '[', '0', 'm'})
 )
 
 // Terminal contains the state for running a VT100 terminal that is capable of

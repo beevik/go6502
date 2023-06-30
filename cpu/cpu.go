@@ -26,12 +26,12 @@ type BrkHandler interface {
 // CPU represents a single 6502 CPU. It contains a pointer to the
 // memory associated with the CPU.
 type CPU struct {
-	Arch        Architecture // CPU architecture
-	Reg         Registers    // CPU registers
-	Mem         Memory       // assigned memory
-	Cycles      uint64       // total executed CPU cycles
-	LastPC      uint16       // Previous program counter
-	instSet     *InstructionSet
+	Arch        Architecture    // CPU architecture
+	Reg         Registers       // CPU registers
+	Mem         Memory          // assigned memory
+	Cycles      uint64          // total executed CPU cycles
+	LastPC      uint16          // Previous program counter
+	InstSet     *InstructionSet // Instruction set used by the CPU
 	pageCrossed bool
 	deltaCycles int8
 	debugger    *Debugger
@@ -52,7 +52,7 @@ func NewCPU(arch Architecture, m Memory) *CPU {
 	cpu := &CPU{
 		Arch:      arch,
 		Mem:       m,
-		instSet:   GetInstructionSet(arch),
+		InstSet:   GetInstructionSet(arch),
 		storeByte: (*CPU).storeByteNormal,
 	}
 
@@ -68,7 +68,15 @@ func (cpu *CPU) SetPC(addr uint16) {
 // GetInstruction returns the instruction opcode at the requested address.
 func (cpu *CPU) GetInstruction(addr uint16) *Instruction {
 	opcode := cpu.Mem.LoadByte(addr)
-	return cpu.instSet.Lookup(opcode)
+	return cpu.InstSet.Lookup(opcode)
+}
+
+// NextAddr returns the address of the next instruction following the
+// instruction at addr.
+func (cpu *CPU) NextAddr(addr uint16) uint16 {
+	opcode := cpu.Mem.LoadByte(addr)
+	inst := cpu.InstSet.Lookup(opcode)
+	return addr + uint16(inst.Length)
 }
 
 // Step the cpu by one instruction.
@@ -77,7 +85,7 @@ func (cpu *CPU) Step() {
 	opcode := cpu.Mem.LoadByte(cpu.Reg.PC)
 
 	// Look up the instruction data for the opcode
-	inst := cpu.instSet.Lookup(opcode)
+	inst := cpu.InstSet.Lookup(opcode)
 
 	// If the instruction is undefined, reset the CPU (for now).
 	if inst.fn == nil {
