@@ -964,7 +964,7 @@ func (h *Host) cmdList(c *cmd.Command, args []string) error {
 		cn := addr - orig
 		h.cpu.Mem.LoadBytes(orig, buf[:cn])
 		cs := codeString(buf[:cn])
-		fmt.Fprintf(h, "%04X- %-8s %s\n", orig, cs, lines[li-1])
+		fmt.Fprintf(h, "%04X- %-8s\t%s\n", orig, cs, lines[li-1])
 
 		last[fn] = li
 		break
@@ -1005,7 +1005,7 @@ func (h *Host) cmdList(c *cmd.Command, args []string) error {
 			if i == j-1 {
 				c = cs
 			}
-			fmt.Fprintf(h, "%04X- %-8s %s\n", orig, c, lines[i])
+			fmt.Fprintf(h, "%04X- %-8s\t%s\n", orig, c, lines[i])
 		}
 
 		last[fn] = li
