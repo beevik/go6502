@@ -108,7 +108,7 @@ func Disassemble(c *cpu.CPU, addr uint16, flags Flags, anno string, theme *Theme
 	}
 
 	if (flags & ShowCycles) != 0 {
-		line += fmt.Sprintf(" C=%d", c.Cycles)
+		line += fmt.Sprintf("C=%d", c.Cycles)
 	}
 
 	if (flags&ShowAnnotations) != 0 && anno != "" {

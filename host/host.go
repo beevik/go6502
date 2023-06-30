@@ -166,19 +166,37 @@ func (h *Host) disableRawMode() {
 func (h *Host) autocomplete(line string, pos int, key rune) (newLine string, newPos int, ok bool) {
 	if key == '\t' {
 		matches := cmds.Autocomplete(line[:pos])
+
+		// Exactly one match, so use it to autocomplete.
 		if len(matches) == 1 {
 			match := matches[0] + " "
 			return match, len(match), true
 		}
+
+		// More than one match, so display all of them but don't autocomplete.
 		if len(matches) > 1 {
+			width := 8
 			for i, m := range matches {
-				index := strings.LastIndex(m, " ")
-				if index != -1 {
-					matches[i] = matches[i][index+1:]
+				spi := strings.LastIndex(m, " ")
+				if spi != -1 {
+					matches[i] = matches[i][spi+1:]
 				}
-				matches[i] = matches[i] + " "
+				l := len(matches[i]) + 2
+				if l > width {
+					width = l
+				}
 			}
-			fmt.Fprintln(h, strings.Join(matches, "  "))
+
+			fmt.Fprintln(h, h.prompt)
+			nr := 78 / width
+			for i := 0; i < len(matches); i++ {
+				fmt.Fprintf(h, matches[i]+strings.Repeat(" ", width-len(matches[i])))
+				if i%nr == nr-1 && i != len(matches)-1 {
+					fmt.Fprintln(h)
+				}
+			}
+			fmt.Fprintln(h)
+
 			return "", 0, false
 		}
 	}
