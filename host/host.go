@@ -173,21 +173,30 @@ func (h *Host) autocomplete(line string, pos int, key rune) (newLine string, new
 			return match, len(match), true
 		}
 
-		// More than one match, so display all of them but don't autocomplete.
+		// More than one match, so display all of them and autocomplete the
+		// matches' shared prefix.
 		if len(matches) > 1 {
+			// Echo the typed line before displaying matches.
+			fmt.Fprintln(h, h.prompt+line)
+
+			prefix := sharedPrefix(matches)
+
+			// Modify the list of matches by stripping everything before the
+			// final space. Also, calculate a display width for each match for
+			// a cleaner looking output.
 			width := 8
 			for i, m := range matches {
-				spi := strings.LastIndex(m, " ")
-				if spi != -1 {
-					matches[i] = matches[i][spi+1:]
+				wsIndex := strings.LastIndex(m, " ")
+				if wsIndex != -1 {
+					matches[i] = m[wsIndex+1:]
 				}
-				l := len(matches[i]) + 2
+				l := len(m) + 2
 				if l > width {
 					width = l
 				}
 			}
 
-			fmt.Fprintln(h, h.prompt)
+			// Display all possible matches.
 			nr := 78 / width
 			for i := 0; i < len(matches); i++ {
 				fmt.Fprintf(h, matches[i]+strings.Repeat(" ", width-len(matches[i])))
@@ -197,10 +206,31 @@ func (h *Host) autocomplete(line string, pos int, key rune) (newLine string, new
 			}
 			fmt.Fprintln(h)
 
-			return "", 0, false
+			return prefix, len(prefix), true
 		}
 	}
+
 	return "", 0, false
+}
+
+func sharedPrefix(strings []string) string {
+	helper := func(a, b string) string {
+		l := min(len(a), len(b))
+		for i := 0; i < l; i++ {
+			if a[i] != b[i] {
+				return a[:i]
+			}
+		}
+		return a[:l]
+	}
+	if len(strings) == 0 {
+		return ""
+	}
+	result := strings[0]
+	for _, s := range strings[1:] {
+		result = helper(s, result)
+	}
+	return result
 }
 
 func (h *Host) historyTest(line string) bool {
