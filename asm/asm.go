@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/beevik/go6502/cpu"
+	"github.com/cjr29/go6502/cpu"
 )
 
 var (

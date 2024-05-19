@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/beevik/go6502/cpu"
+	"github.com/cjr29/go6502/cpu"
 )
 
 // Theme is a struct of color escape codes used to colorize the output

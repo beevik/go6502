@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/beevik/go6502/asm"
-	"github.com/beevik/go6502/cpu"
+	"github.com/cjr29/go6502/asm"
+	"github.com/cjr29/go6502/cpu"
 )
 
 func loadCPU(t *testing.T, asmString string) *cpu.CPU {
