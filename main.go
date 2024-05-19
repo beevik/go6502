@@ -10,8 +10,8 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/beevik/go6502/asm"
-	"github.com/beevik/go6502/host"
+	"github.com/cjr29/go6502/asm"
+	"github.com/cjr29/go6502/host"
 )
 
 var (
