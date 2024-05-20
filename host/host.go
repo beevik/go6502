@@ -89,10 +89,15 @@ func New() *Host {
 	}
 
 	theme := &disasm.Theme{
-		Addr:    term.BrightWhite,
-		Inst:    term.BrightCyan,
-		Operand: term.Green,
-		Reset:   term.Reset,
+		Addr:       term.BrightWhite,
+		Code:       term.White,
+		Inst:       term.BrightCyan,
+		Operand:    term.Green,
+		RegName:    term.BrightYellow,
+		RegValue:   term.BrightGreen,
+		RegEqual:   term.White,
+		Annotation: term.BrightYellow,
+		Reset:      term.Reset,
 	}
 
 	h := &Host{
@@ -1167,7 +1172,8 @@ func (h *Host) cmdQuit(c *cmd.Command, args []string) error {
 
 func (h *Host) cmdRegister(c *cmd.Command, args []string) error {
 	if len(args) == 0 {
-		fmt.Fprintf(h, "%s C=%d\n", disasm.GetRegisterString(&h.cpu.Reg), h.cpu.Cycles)
+		fmt.Fprintf(h, disasm.GetRegisterString(&h.cpu.Reg, h.theme)+
+			disasm.GetCyclesString(h.cpu, h.theme)+"\n")
 		return nil
 	}
 
@@ -1241,7 +1247,8 @@ func (h *Host) cmdRegister(c *cmd.Command, args []string) error {
 	}
 
 	if h.rawMode {
-		fmt.Fprintf(h, "%s C=%d\n", disasm.GetRegisterString(&h.cpu.Reg), h.cpu.Cycles)
+		fmt.Fprintf(h, disasm.GetRegisterString(&h.cpu.Reg, h.theme)+
+			disasm.GetCyclesString(h.cpu, h.theme)+"\n")
 	}
 
 	return nil

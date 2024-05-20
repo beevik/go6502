@@ -22,9 +22,7 @@ type Theme struct {
 	Operand    string
 	RegName    string
 	RegValue   string
-	ReqEqual   string
-	RegFlagOn  string
-	RegFlagOff string
+	RegEqual   string
 	Annotation string
 	Reset      string
 }
@@ -72,13 +70,13 @@ func Disassemble(c *cpu.CPU, addr uint16, flags Flags, anno string, theme *Theme
 	line = ""
 
 	if (flags & ShowAddress) != 0 {
-		line += fmt.Sprintf("%04X- ", addr)
+		line += fmt.Sprintf("%s%04X%s- ", theme.Addr, addr, theme.Reset)
 	}
 
 	if (flags & ShowCode) != 0 {
 		var csbuf [3]byte
 		c.Mem.LoadBytes(addr, csbuf[:next-addr])
-		line += fmt.Sprintf("%-8s  ", codeString(csbuf[:next-addr]))
+		line += fmt.Sprintf("%s%-8s%s  ", theme.Code, codeString(csbuf[:next-addr]), theme.Reset)
 	}
 
 	if (flags & ShowInstruction) != 0 {
@@ -94,7 +92,7 @@ func Disassemble(c *cpu.CPU, addr uint16, flags Flags, anno string, theme *Theme
 		}
 
 		// Return string composed of CPU instruction and operand.
-		line += fmt.Sprintf("%s   "+modeFormat[inst.Mode], inst.Name, hexString(operand))
+		line += fmt.Sprintf("%s%s   %s"+modeFormat[inst.Mode]+"%s", theme.Inst, inst.Name, theme.Operand, hexString(operand), theme.Reset)
 
 		// Pad to next column using uncolorized version of the operand.
 		dummy := fmt.Sprintf(modeFormat[inst.Mode], hexString(operand))
@@ -102,33 +100,51 @@ func Disassemble(c *cpu.CPU, addr uint16, flags Flags, anno string, theme *Theme
 	}
 
 	if (flags & ShowRegisters) != 0 {
-		r := c.Reg
-		line += fmt.Sprintf("A=%02X X=%02X Y=%02X PS=[%s] SP=%02X PC=%04X ",
-			r.A, r.X, r.Y, getStatusBits(&r), r.SP, r.PC)
+		line += GetRegisterString(&c.Reg, theme)
 	}
 
 	if (flags & ShowCycles) != 0 {
-		line += fmt.Sprintf("C=%d", c.Cycles)
+		line += GetCyclesString(c, theme)
 	}
 
 	if (flags&ShowAnnotations) != 0 && anno != "" {
-		line += " ; " + anno
+		line += fmt.Sprintf(" ; %s%s%s", theme.Annotation, anno, theme.Reset)
 	}
 
 	return line, next
 }
 
-// GetRegisterString returns a string describing the contents of the 6502
-// registers.
-func GetRegisterString(r *cpu.Registers) string {
-	return fmt.Sprintf("A=%02X X=%02X Y=%02X PS=[%s] SP=%02X PC=%04X",
-		r.A, r.X, r.Y, getStatusBits(r), r.SP, r.PC)
+// GetCyclesString returns a string describing the number of elapsed
+// CPU cycles.
+func GetCyclesString(c *cpu.CPU, theme *Theme) string {
+	return fmt.Sprintf("%sC%s=%s%d%s",
+		theme.RegName, theme.RegEqual, theme.RegValue, c.Cycles,
+		theme.Reset)
 }
 
-// GetCompactRegisterString returns a compact string describing the contents
-// of the 6502 registers. It excludes the program counter and stack pointer.
-func GetCompactRegisterString(r *cpu.Registers) string {
-	return fmt.Sprintf("A=%02X X=%02X Y=%02X PS=[%s]", r.A, r.X, r.Y, getStatusBits(r))
+// GetRegisterString returns a string describing the contents of the 6502
+// registers.
+func GetRegisterString(r *cpu.Registers, theme *Theme) string {
+	fmt8 := func(name string, val byte) string {
+		return fmt.Sprintf("%s%s%s=%s%02X ",
+			theme.RegName, name, theme.RegEqual, theme.RegValue, val)
+	}
+	fmt16 := func(name string, val uint16) string {
+		return fmt.Sprintf("%s%s%s=%s%04X ",
+			theme.RegName, name, theme.RegEqual, theme.RegValue, val)
+	}
+	fmtS := func(name string, val string) string {
+		return fmt.Sprintf("%s%s%s=%s[%s] ",
+			theme.RegName, name, theme.RegEqual, theme.RegValue, val)
+	}
+
+	return fmt8("A", r.A) +
+		fmt8("X", r.X) +
+		fmt8("Y", r.Y) +
+		fmtS("PS", getStatusBits(r)) +
+		fmt8("SP", r.SP) +
+		fmt16("PC", r.PC) +
+		theme.Reset
 }
 
 func codeString(b []byte) string {
