@@ -48,7 +48,8 @@ func main() {
 		for _, filename := range args {
 			file, err := os.Open(filename)
 			if err != nil {
-				exitOnError(err)
+				fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
+				os.Exit(1)
 			}
 			ioState := h.EnableProcessedMode(file, os.Stdout)
 			h.RunCommands(false)
@@ -72,9 +73,4 @@ func handleInterrupt(h *host.Host, c chan os.Signal) {
 		<-c
 		h.Break()
 	}
-}
-
-func exitOnError(err error) {
-	fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
-	os.Exit(1)
 }

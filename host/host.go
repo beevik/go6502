@@ -543,7 +543,7 @@ func (h *Host) cmdAssembleFile(c *cmd.Command, args []string) error {
 
 	err := asm.AssembleFile(path, options, h)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to assemble (%v).\n", err)
+		fmt.Fprintf(h, "Failed to assemble (%v).\n", err)
 	}
 
 	return nil
