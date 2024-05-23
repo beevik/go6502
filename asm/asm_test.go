@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func assemble(t *testing.T, code string) ([]byte, error) {
+func assemble(code string) ([]byte, error) {
 	r := bytes.NewReader([]byte(code))
 	assembly, _, err := Assemble(r, "test", 0x1000, os.Stdout, 0)
 	if err != nil {
@@ -21,7 +21,7 @@ func assemble(t *testing.T, code string) ([]byte, error) {
 }
 
 func checkASM(t *testing.T, asm string, expected string) {
-	code, err := assemble(t, asm)
+	code, err := assemble(asm)
 	if err != nil {
 		t.Error(err)
 		return
@@ -43,7 +43,7 @@ func checkASM(t *testing.T, asm string, expected string) {
 }
 
 func checkASMError(t *testing.T, asm string, errString string) {
-	_, err := assemble(t, asm)
+	_, err := assemble(asm)
 	if err == nil {
 		t.Errorf("Expected error on %s, didn't get one\n", asm)
 		return

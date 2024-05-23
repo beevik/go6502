@@ -7,10 +7,12 @@ package asm
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 )
 
@@ -106,18 +108,6 @@ func (s *SourceMap) ClearRange(origin, size int) {
 	s.Exports = exports
 }
 
-type bySLAddr []SourceLine
-
-func (a bySLAddr) Len() int           { return len(a) }
-func (a bySLAddr) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a bySLAddr) Less(i, j int) bool { return a[i].Address < a[j].Address }
-
-type byEAddr []Export
-
-func (a byEAddr) Len() int           { return len(a) }
-func (a byEAddr) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a byEAddr) Less(i, j int) bool { return a[i].Address < a[j].Address }
-
 // Merge merges another source map (s2) into this source map.
 func (s *SourceMap) Merge(s2 *SourceMap) {
 	// Clear the portion of the original source map that references addresses
@@ -125,10 +115,7 @@ func (s *SourceMap) Merge(s2 *SourceMap) {
 	s.ClearRange(int(s2.Origin), int(s2.Size))
 
 	// Add exports from the new map.
-	s.Exports = append(s.Exports, s2.Exports...)
-
-	// Sort exports by address.
-	sort.Sort(byEAddr(s.Exports))
+	s.Exports = sortExports(append(s.Exports, s2.Exports...))
 
 	// Build a mapping from filename to file index.
 	fileCount := 0
@@ -150,9 +137,7 @@ func (s *SourceMap) Merge(s2 *SourceMap) {
 		}
 		s.Lines = append(s.Lines, l)
 	}
-
-	// Sort lines by address.
-	sort.Sort(bySLAddr(s.Lines))
+	s.Lines = sortLines(s.Lines)
 
 	// Build the files array from the file map.
 	s.Files = make([]string, len(fileMap))
@@ -287,9 +272,6 @@ func (s *SourceMap) WriteTo(w io.Writer) (n int64, err error) {
 			return n, err
 		}
 		ww.WriteByte(0)
-		if err != nil {
-			return n, err
-		}
 		n++
 
 		var b [2]byte
@@ -508,4 +490,20 @@ func encode67(w *bufio.Writer, v int) (n int, err error) {
 	nn, err := encode7(w, v)
 	n += nn
 	return n, err
+}
+
+func sortLines(lines []SourceLine) []SourceLine {
+	cmp := func(a, b SourceLine) int {
+		return cmp.Compare(a.Address, b.Address)
+	}
+	slices.SortFunc(lines, cmp)
+	return lines
+}
+
+func sortExports(exports []Export) []Export {
+	cmp := func(a, b Export) int {
+		return cmp.Compare(a.Address, b.Address)
+	}
+	slices.SortFunc(exports, cmp)
+	return exports
 }

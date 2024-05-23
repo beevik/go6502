@@ -214,7 +214,7 @@ func (p *exprParser) Parse(expr string, r resolver) (int64, error) {
 			}
 
 		case tokenOp:
-			if err := p.checkForUnaryOp(&tok, t); err != nil {
+			if err := p.checkForUnaryOp(&tok); err != nil {
 				return 0, err
 			}
 			for p.isCollapsible(&tok) {
@@ -397,7 +397,7 @@ func (p *exprParser) evalOutput() (token, error) {
 	}
 }
 
-func (p *exprParser) checkForUnaryOp(tok *token, t tstring) error {
+func (p *exprParser) checkForUnaryOp(tok *token) error {
 	o := tok.Value.(*op)
 	if o.UnaryOp == opNil {
 		return nil

@@ -14,6 +14,10 @@
 		.EX		START
 		.EX		DATA
 		.EX		END
+		.EX 		LDA_TEST
+		.EX		LDX_TEST
+		.EX		LDY_TEST
+		.EX		JSR_TEST
 
 ; ---------
 ; Constants

@@ -458,7 +458,7 @@ func Assemble(r io.Reader, filename string, origin uint16, out io.Writer, option
 		CRC:     crc32.ChecksumIEEE(a.code),
 		Files:   a.files,
 		Lines:   a.sourceLines,
-		Exports: a.exports,
+		Exports: sortExports(a.exports),
 	}
 
 	return assembly, sourceMap, err
