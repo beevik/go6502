@@ -122,6 +122,7 @@ func (s *SourceMap) Merge(s2 *SourceMap) {
 	fileMap := make(map[string]int)
 	for i, f := range s.Files {
 		fileMap[f] = i
+		fileCount++
 	}
 
 	// Add source lines from the new map.

@@ -96,6 +96,7 @@ func New() *Host {
 		RegName:    term.BrightYellow,
 		RegValue:   term.BrightGreen,
 		RegEqual:   term.White,
+		Source:     term.BrightGreen,
 		Annotation: term.BrightYellow,
 		Reset:      term.Reset,
 	}
@@ -419,7 +420,7 @@ func (h *Host) assembleInline() error {
 
 	fmt.Fprintln(h, "Assembling inline code...")
 	s := strings.Join(h.assembly, "\n")
-	a, _, err := asm.Assemble(strings.NewReader(s), "inline", h.miniAddr, h, 0)
+	a, sm, err := asm.Assemble(strings.NewReader(s), "inline", h.miniAddr, h, 0)
 
 	if err != nil {
 		for _, e := range a.Errors {
@@ -435,7 +436,7 @@ func (h *Host) assembleInline() error {
 	}
 
 	h.mem.StoreBytes(h.miniAddr, a.Code)
-	h.sourceMap.ClearRange(int(h.miniAddr), len(a.Code))
+	h.sourceMap.Merge(sm)
 
 	for addr, end := int(h.miniAddr), int(h.miniAddr)+len(a.Code); addr < end; {
 		d, next := disasm.Disassemble(h.cpu, uint16(addr), disasm.ShowBasic, "", h.theme)
@@ -999,7 +1000,10 @@ func (h *Host) cmdList(c *cmd.Command, args []string) error {
 		cn := addr - orig
 		h.cpu.Mem.LoadBytes(orig, buf[:cn])
 		cs := codeString(buf[:cn])
-		fmt.Fprintf(h, "%04X- %-8s\t%s\n", orig, cs, lines[li-1])
+		fmt.Fprintf(h, "%s%04X%s- %s%-8s%s\t%s%s%s\n",
+			h.theme.Addr, orig, h.theme.Reset,
+			h.theme.Code, cs, h.theme.Reset,
+			h.theme.Source, lines[li-1], h.theme.Source)
 
 		last[fn] = li
 		break
@@ -1012,11 +1016,18 @@ func (h *Host) cmdList(c *cmd.Command, args []string) error {
 
 	// Display remaining source code lines.
 	for i := 0; i < count-1; i++ {
-		orig := addr
-
-		fn, li, err := h.sourceMap.Find(int(orig))
+		var orig uint16
+		var fn string
+		var li int
+		for j := 0; j < 2; j++ {
+			orig = addr + uint16(j)
+			fn, li, err = h.sourceMap.Find(int(orig))
+			if err == nil {
+				break
+			}
+		}
 		if err != nil {
-			continue
+			break
 		}
 
 		lines, err := h.getSourceLines(fn)
@@ -1040,7 +1051,10 @@ func (h *Host) cmdList(c *cmd.Command, args []string) error {
 			if i == j-1 {
 				c = cs
 			}
-			fmt.Fprintf(h, "%04X- %-8s\t%s\n", orig, c, lines[i])
+			fmt.Fprintf(h, "%s%04X%s- %s%-8s%s\t%s%s%s\n",
+				h.theme.Addr, orig, h.theme.Reset,
+				h.theme.Code, c, h.theme.Reset,
+				h.theme.Source, lines[i], h.theme.Reset)
 		}
 
 		last[fn] = li

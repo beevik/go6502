@@ -23,6 +23,7 @@ type Theme struct {
 	RegName    string
 	RegValue   string
 	RegEqual   string
+	Source     string
 	Annotation string
 	Reset      string
 }
