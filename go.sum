@@ -1,6 +1,6 @@
-github.com/beevik/cmd v0.2.0 h1:hF8OjBGkaSig01upnKOX3Gv/I2+fSU4gZPv+9X2tAkM=
-github.com/beevik/cmd v0.2.0/go.mod h1:4FhajmCR0XjQanKhv+9TxFnXPYPHaf7PmhG8OaV0N5o=
-github.com/beevik/prefixtree v0.3.0 h1:X8HA4v10I1xaaCAALFg+JBgvMvVjIs9ZkwjFSwPK3So=
-github.com/beevik/prefixtree v0.3.0/go.mod h1:fRm/Aykn4/iqlmGeA2p1HQdQFOV33boGuK+43GRSZvE=
-golang.org/x/sys v0.20.0 h1:Od9JTbYCk261bKm4M/mw7AklTlFYIa0bIp9BgSm1S8Y=
-golang.org/x/sys v0.20.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
+github.com/beevik/cmd v0.3.0 h1:QjmDdyORcj+KCndcQHT3op2ONMVcV+gKaBlkmXjwl/8=
+github.com/beevik/cmd v0.3.0/go.mod h1:dpRu0gHueCpDS1wE+UVWiMEgvs23E4djsyePI2l/IsY=
+github.com/beevik/prefixtree/v2 v2.0.1 h1:RFXjlvdx/whSsnb47Z88Nnd0wpnI5kEi23N5IcD8J1g=
+github.com/beevik/prefixtree/v2 v2.0.1/go.mod h1:XHO9bShx0lkQYkbYKtfnQqtVCVvchjxgCRnLd4qNdgI=
+golang.org/x/sys v0.22.0 h1:RI27ohtqKCnwULzJLqkv897zojh5/DwS/ENaMzUOaWI=
+golang.org/x/sys v0.22.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=

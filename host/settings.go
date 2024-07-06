@@ -11,7 +11,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/beevik/prefixtree"
+	"github.com/beevik/prefixtree/v2"
 )
 
 type settings struct {
@@ -48,7 +48,7 @@ type settingsField struct {
 }
 
 var (
-	settingsTree   = prefixtree.New()
+	settingsTree   = prefixtree.New[*settingsField]()
 	settingsFields []settingsField
 )
 
@@ -93,15 +93,14 @@ func (s *settings) Kind(key string) reflect.Kind {
 	if err != nil {
 		return reflect.Invalid
 	}
-	return f.(*settingsField).kind
+	return f.kind
 }
 
 func (s *settings) Set(key string, value any) error {
-	ff, err := settingsTree.FindValue(strings.ToLower(key))
+	f, err := settingsTree.FindValue(strings.ToLower(key))
 	if err != nil {
 		return err
 	}
-	f := ff.(*settingsField)
 
 	vIn := reflect.ValueOf(value)
 	if (f.kind == reflect.String && vIn.Type().Kind() != reflect.String) ||
