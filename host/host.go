@@ -175,8 +175,23 @@ func (h *Host) autocomplete(line string, pos int, key rune) (newLine string, new
 
 		// Exactly one match, so use it to autocomplete.
 		if len(matches) == 1 {
-			match := matches[0] + " "
-			return match, len(match), true
+			match := matches[0]
+			n, _, _ := cmds.Lookup(match)
+			if cmd, ok := n.(*cmd.Command); ok {
+				if d, ok := cmd.Data.(cmdData); ok {
+					if d.autocomplete != nil {
+						matches = nil
+						for _, m2 := range d.autocomplete(h) {
+							matches = append(matches, match+" "+m2)
+						}
+					}
+				}
+			}
+
+			if len(matches) == 1 {
+				match := matches[0] + " "
+				return match, len(match), true
+			}
 		}
 
 		// More than one match, so display all of them and autocomplete the
@@ -384,8 +399,15 @@ func (h *Host) processCommand(line string) error {
 
 	if c, ok := n.(*cmd.Command); ok {
 		h.lastCmd, h.lastArgs = c, args
-		handler := c.Data.(func(*Host, *cmd.Command, []string) error)
-		return handler(h, c, args)
+		var handler func(*Host, *cmd.Command, []string) error
+		if d, ok := c.Data.(cmdData); ok {
+			handler = d.handler
+		} else if h, ok := c.Data.(func(*Host, *cmd.Command, []string) error); ok {
+			handler = h
+		}
+		if handler != nil {
+			return handler(h, c, args)
+		}
 	}
 
 	return nil
@@ -1182,6 +1204,10 @@ func (h *Host) cmdMemoryCopy(c *cmd.Command, args []string) error {
 
 func (h *Host) cmdQuit(c *cmd.Command, args []string) error {
 	return errors.New("exiting program")
+}
+
+func (h *Host) autocompleteRegister() []string {
+	return []string{"A", "C", "D", "I", "N", "PC", "SP", "V", "X", "Y", "Z"}
 }
 
 func (h *Host) cmdRegister(c *cmd.Command, args []string) error {

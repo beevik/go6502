@@ -4,6 +4,11 @@ import "github.com/beevik/cmd"
 
 var cmds *cmd.Tree
 
+type cmdData struct {
+	handler      func(h *Host, c *cmd.Command, args []string) error
+	autocomplete func(h *Host) []string
+}
+
 func init() {
 	root := cmd.NewTree(cmd.TreeDescriptor{Name: "go6502"})
 	root.AddCommand(cmd.CommandDescriptor{
@@ -241,7 +246,7 @@ func init() {
 			" flag names include N (Sign), Z (Zero), C (Carry), I (InterruptDisable)," +
 			" D (Decimal) and V (Overflow).",
 		Usage: "register [<name> <value>]",
-		Data:  (*Host).cmdRegister,
+		Data:  cmdData{(*Host).cmdRegister, (*Host).autocompleteRegister},
 	})
 	root.AddCommand(cmd.CommandDescriptor{
 		Name:  "run",
