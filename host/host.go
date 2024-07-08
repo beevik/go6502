@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -598,7 +597,7 @@ func (h *Host) cmdAssembleMap(c *cmd.Command, args []string) error {
 	}
 	defer binFile.Close()
 
-	code, err := ioutil.ReadAll(binFile)
+	code, err := io.ReadAll(binFile)
 	if err != nil {
 		fmt.Fprintf(h, "%v\n", err)
 		return nil

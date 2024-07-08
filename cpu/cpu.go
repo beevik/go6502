@@ -318,14 +318,14 @@ func (cpu *CPU) handleInterrupt(brk bool, addr uint16) {
 	cpu.Reg.PC = cpu.Mem.LoadAddress(addr)
 }
 
-// Generate a maskable IRQ (hardware) interrupt request.
+// Generate a maskable IRQ (hardware) interrupt request (unused)
 func (cpu *CPU) irq() {
 	if !cpu.Reg.InterruptDisable {
 		cpu.handleInterrupt(false, vectorIRQ)
 	}
 }
 
-// Generate a non-maskable interrupt.
+// Generate a non-maskable interrupt (unused)
 func (cpu *CPU) nmi() {
 	cpu.handleInterrupt(false, vectorNMI)
 }

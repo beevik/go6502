@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -319,7 +318,7 @@ type Assembly struct {
 // ReadFrom reads machine code from a binary input source.
 func (a *Assembly) ReadFrom(r io.Reader) (n int64, err error) {
 	a.Errors = []string{}
-	a.Code, err = ioutil.ReadAll(r)
+	a.Code, err = io.ReadAll(r)
 	n = int64(len(a.Code))
 	if n > 0x10000 {
 		return n, fmt.Errorf("code exceeded 64K size")
@@ -1114,7 +1113,7 @@ func (a *assembler) parseBinaryInclude(line, label fstring, param any) error {
 
 	seg := &bytedata{addr: -1}
 
-	data, err := ioutil.ReadAll(file)
+	data, err := io.ReadAll(file)
 	if err != nil {
 		a.addError(filename, "unable to read '%s'", filename.str)
 		return err
