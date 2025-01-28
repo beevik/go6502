@@ -2,5 +2,5 @@ github.com/beevik/cmd v0.3.0 h1:QjmDdyORcj+KCndcQHT3op2ONMVcV+gKaBlkmXjwl/8=
 github.com/beevik/cmd v0.3.0/go.mod h1:dpRu0gHueCpDS1wE+UVWiMEgvs23E4djsyePI2l/IsY=
 github.com/beevik/prefixtree/v2 v2.0.1 h1:RFXjlvdx/whSsnb47Z88Nnd0wpnI5kEi23N5IcD8J1g=
 github.com/beevik/prefixtree/v2 v2.0.1/go.mod h1:XHO9bShx0lkQYkbYKtfnQqtVCVvchjxgCRnLd4qNdgI=
-golang.org/x/sys v0.22.0 h1:RI27ohtqKCnwULzJLqkv897zojh5/DwS/ENaMzUOaWI=
-golang.org/x/sys v0.22.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
+golang.org/x/sys v0.29.0 h1:TPYlXGxvx1MGTn2GiZDhnjPA9wZzZeGKHHmKhHYvgaU=
+golang.org/x/sys v0.29.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=

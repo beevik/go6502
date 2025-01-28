@@ -13,7 +13,7 @@ access to all of these features.
 
 # Building the application
 
-Install go 1.18 or later, and then run `go build` to build the application.
+Install go 1.21 or later, and then run `go build` to build the application.
 
 
 # Tutorial

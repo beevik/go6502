@@ -25,13 +25,10 @@ type keyRecord struct {
 	ControlKeyState uint32
 }
 
-const peekRecordSize = 20
-
 var (
 	dll                  *windows.DLL
 	procPeekConsoleInput *windows.Proc
-	peekBuf              []byte
-	peekBufMaxRecords    int
+	peekBuf              []keyRecord
 )
 
 func isTerminal(fd int) bool {
@@ -82,44 +79,38 @@ func makeRawOutput(fd int) (*State, error) {
 func peekKey(fd int, key rune) bool {
 	// Lazy-allocate the peek buffer.
 	if peekBuf == nil {
-		// Lazy-load the kernel32 DLL
+		// Lazy-load the kernel32 DLL.
 		if dll == nil {
 			dll = windows.MustLoadDLL("kernel32.dll")
 		}
 		procPeekConsoleInput = dll.MustFindProc("PeekConsoleInputW")
-		peekBufMaxRecords = 16
-		peekBuf = make([]byte, peekRecordSize*peekBufMaxRecords)
+		peekBuf = make([]keyRecord, 16)
 	}
 
 	// Peek at the console input buffer.
-	var peekBufPtr uintptr
-	var count int
+	var len int
 	for {
-		peekBufPtr = uintptr(unsafe.Pointer(&peekBuf[0]))
-
 		_, _, err := syscall.SyscallN(procPeekConsoleInput.Addr(),
 			uintptr(windows.Handle(fd)),
-			peekBufPtr,
-			uintptr(peekBufMaxRecords),
-			uintptr(unsafe.Pointer(&count)))
+			uintptr(unsafe.Pointer(&peekBuf[0])),
+			uintptr(cap(peekBuf)),
+			uintptr(unsafe.Pointer(&len)))
 
 		if err != 0 {
 			return false
 		}
-		if count < peekBufMaxRecords {
+		if len < cap(peekBuf) {
 			break
 		}
 
 		// The record buffer wasn't large enough to hold all events, so grow
 		// it and try again.
-		peekBufMaxRecords *= 2
-		peekBuf = make([]byte, peekRecordSize*peekBufMaxRecords)
+		peekBuf = make([]keyRecord, cap(peekBuf)*2)
 	}
 
 	// Search the record buffer for a key-down event containing the requested
 	// key.
-	for i := 0; i < count; i++ {
-		r := (*keyRecord)(unsafe.Pointer(peekBufPtr + uintptr(i)*peekRecordSize))
+	for _, r := range peekBuf[:len] {
 		if r.EventType == uint32(1) && r.KeyDown == uint32(1) && rune(r.UnicodeChar) == key {
 			return true
 		}

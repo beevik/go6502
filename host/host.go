@@ -204,7 +204,7 @@ func (h *Host) autocomplete(line string, pos int, key rune) (newLine string, new
 			// Display all possible matches.
 			nr := 78 / width
 			for i := 0; i < len(matches); i++ {
-				fmt.Fprintf(h, matches[i]+strings.Repeat(" ", width-len(matches[i])))
+				fmt.Fprint(h, matches[i]+strings.Repeat(" ", width-len(matches[i])))
 				if i%nr == nr-1 && i != len(matches)-1 {
 					fmt.Fprintln(h)
 				}
