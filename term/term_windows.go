@@ -88,29 +88,29 @@ func peekKey(fd int, key rune) bool {
 	}
 
 	// Peek at the console input buffer.
-	var len int
+	var n int
 	for {
 		_, _, err := syscall.SyscallN(procPeekConsoleInput.Addr(),
 			uintptr(windows.Handle(fd)),
 			uintptr(unsafe.Pointer(&peekBuf[0])),
-			uintptr(cap(peekBuf)),
-			uintptr(unsafe.Pointer(&len)))
+			uintptr(len(peekBuf)),
+			uintptr(unsafe.Pointer(&n)))
 
 		if err != 0 {
 			return false
 		}
-		if len < cap(peekBuf) {
+		if n < len(peekBuf) {
 			break
 		}
 
 		// The record buffer wasn't large enough to hold all events, so grow
 		// it and try again.
-		peekBuf = make([]keyRecord, cap(peekBuf)*2)
+		peekBuf = make([]keyRecord, len(peekBuf)*2)
 	}
 
 	// Search the record buffer for a key-down event containing the requested
 	// key.
-	for _, r := range peekBuf[:len] {
+	for _, r := range peekBuf[:n] {
 		if r.EventType == uint32(1) && r.KeyDown == uint32(1) && rune(r.UnicodeChar) == key {
 			return true
 		}
