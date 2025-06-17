@@ -73,7 +73,7 @@ var ops = []opdata{
 	{7, 1, false, "<", func(a, b int) int { return a & 0xff }},        // ulessthan
 	{7, 1, false, ">", func(a, b int) int { return (a >> 8) & 0xff }}, // ugreaterthan
 	{7, 1, false, "/", func(a, b int) int { return (a >> 8) & 0xff }}, // uslash
-	{7, 1, false, "~", func(a, b int) int { return 0xffffffff ^ a }},  // bitneg
+	{7, 1, false, "~", func(a, b int) int { return ^a }},              // bitneg
 
 	// binary operations
 	{6, 2, true, "*", func(a, b int) int { return a * b }},           // multiply
@@ -569,7 +569,7 @@ func (p *exprParser) parseNumber(line fstring) (value, bytes int, remain fstring
 			case value <= 0x8000:
 				return 0x10000 - value, 2, remain, err
 			default:
-				return 0x100000000 - value, 4, remain, err
+				return int(int64(0x100000000) - int64(value)), 4, remain, err
 			}
 		case false:
 			switch {
