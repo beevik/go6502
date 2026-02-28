@@ -29,7 +29,7 @@ import (
 	"github.com/beevik/go6502/asm"
 	"github.com/beevik/go6502/cpu"
 	"github.com/beevik/go6502/disasm"
-	"github.com/beevik/go6502/term"
+	"github.com/beevik/term"
 )
 
 type state byte
