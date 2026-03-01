@@ -1,0 +1,247 @@
+{
+	"go6502": {
+		"cmds": [
+			{
+				"name": "help",
+				"description": "Display help for a command.",
+				"usage": "help [<command>]",
+                "shortcuts": ["?"]
+			},
+			{
+				"name": "annotate",
+				"brief": "Annotate an address",
+				"description": "Provide a code annotation at a memory address. When disassembling code at this address, the annotation will be displayed.",
+				"usage": "annotate <address> <string>"
+			},
+			{
+				"name": "assemble",
+				"brief": "Assemble commands",
+				"cmds": [
+					{
+						"name": "file",
+						"brief": "Assemble a file from disk and save the binary to disk",
+						"description": "Run the cross-assembler on the specified file, producing a binary file and source map file if successful. If you want verbose output, specify true as a second parameter.",
+						"usage": "assemble file <filename> [<verbose>]",
+						"shortcuts": ["a"]
+					},
+					{
+						"name": "interactive",
+						"brief": "Start interactive assembly mode",
+						"description": "Start interactive assembler mode. A new prompt will appear, allowing you to enter assembly language instructions interactively.  Once you type END, the instructions will be assembled and stored in memory at the specified address.",
+						"usage": "assemble interactive <address>",
+						"shortcuts": ["ai"]
+					},
+					{
+						"name": "map",
+						"brief": "Create a source map file",
+						"description": "Create an empty source map file for an existing binary file. Pass the name of the binary file and the origin address it should load at.",
+						"usage": "assemble map <filename> <origin>",
+						"shortcuts": ["am"]
+					}
+				]
+			},
+			{
+				"name": "breakpoint",
+				"brief": "Breakpoint commands",
+				"shortcuts": ["b", "bp"],
+				"cmds": [
+					{
+						"name": "list",
+						"brief": "List breakpoints",
+						"description": "List all current breakpoints.",
+						"usage": "breakpoint list",
+						"shortcuts": ["bl"]
+					},
+					{
+						"name": "add",
+						"brief": "Add a breakpoint",
+						"description": "Add a breakpoint at the specified address. The breakpoints starts enabled.",
+						"usage": "breakpoint add <address>",
+						"shortcuts": ["ba"]
+					},
+					{
+						"name": "remove",
+						"brief": "Remove a breakpoint",
+						"description": "Remove a breakpoint at the specified address.",
+						"usage": "breakpoint remove <address>",
+						"shortcuts": ["br"]
+					},
+					{
+						"name": "enable",
+						"brief": "Enable a breakpoint",
+						"description": "Enable a previously added breakpoint.",
+						"usage": "breakpoint enable <address>",
+						"shortcuts": ["be"]
+					},
+					{
+						"name": "disable",
+						"brief": "Disable a breakpoint",
+						"description": "Disable a previously added breakpoint. This prevents the breakpoint from being hit when running the CPU",
+						"usage": "breakpoint disable <address>",
+						"shortcuts": ["bd"]
+					}
+				]
+			},
+			{
+				"name": "databreakpoint",
+				"brief": "Data Breakpoint commands",
+				"shortcuts": ["db", "dbp"],
+				"cmds": [
+					{
+						"name": "list",
+						"brief": "List data breakpoints",
+						"description": "List all current data breakpoints.",
+						"usage": "databreakpoint list",
+						"shortcuts": ["dbl"]
+					},
+					{
+						"name": "add",
+						"brief": "Add a data breakpoint",
+						"description": "Add a new data breakpoint at the specified memory address. When the CPU stores data at this address, the breakpoint will stop the CPU. Optionally, a byte value may be specified, and the CPU will stop only when this value is stored. The data breakpoint starts enabled.",
+						"usage": "databreakpoint add <address> [<value>]",
+						"shortcuts": ["dba"]
+					},
+					{
+						"name": "remove",
+						"brief": "Remove a data breakpoint",
+						"description": "Remove a previously added data breakpoint at the specified memory address.",
+						"usage": "databreakpoint remove <address>",
+						"shortcuts": ["dbr"]
+					},
+					{
+						"name": "enable",
+						"brief": "Enable a data breakpoint",
+						"description": "Enable a previously added breakpoint.",
+						"usage": "databreakpoint enable <address>",
+						"shortcuts": ["dbe"]
+					},
+					{
+						"name": "disable",
+						"brief": "Disable a data breakpoint",
+						"description": "Disable a previously added breakpoint.",
+						"usage": "databreakpoint disable <address>",
+						"shortcuts": ["dbd"]
+					}
+				]
+			},
+			{
+                "name": "disassemble",
+				"brief": "Disassemble code",
+                "description": "Disassemble machine code starting at the requested address. The number of instruction lines to disassemble may be specified as an option. If no address is specified, the disassembly continues from where the last disassembly left off.",
+                "usage": "disassemble [<address>] [<lines>]",
+				"shortcuts": ["d"]
+			},
+			{
+				"name": "evaluate",
+				"brief": "Evaluate an expression",
+				"description": "Evaluate a mathemetical expression.",
+				"usage": "evaluate <expression>",
+				"shortcuts": ["e"]
+			},
+			{
+				"name": "execute",
+				"brief": "Execute a go6502 script file",
+				"description": "Load a go6502 script file from disk and execute the commands it contains.",
+				"usage": "execute <filename>"
+			},
+			{
+				"name": "exports",
+				"brief": "List exported addresses",
+				"description": "Display a list of all memory addresses exported by loaded binary files. Exported addresses are stored in a binary file's associated source map file.",
+				"usage": "exports"
+			},
+			{
+				"name": "list",
+				"brief": "List source code lines",
+				"description": "List the source code corresponding to the machine code at the specified address. A source map containing the address must have been previously loaded.",
+				"usage": "list <address> [<lines>]",
+				"shortcuts": ["l"]
+			},
+			{
+				"name": "load",
+				"brief": "Load a binary file",
+				"description": "Load the contents of a binary file into the emulated system's memory. If the file has an associated source map, it will be loaded too. If the file contains raw binary data, you must specify the address where the data will be loaded.",
+				"usage": "load <filename> [<address>]"
+			},
+			{
+				"name": "memory",
+				"brief": "Memory commands",
+				"cmds": [
+					{
+						"name": "dump",
+						"brief": "Dump memory at address",
+						"description": "Dump the contents of memory starting from the specified address. The number of bytes to dump may be specified as an option. If no address is specified, the memory dump continues from where the last dump left off.",
+						"usage": "memory dump [<address>] [<bytes>]",
+						"shortcuts": ["m"]
+					},
+					{
+						"name": "set",
+						"brief": "Set memory at address",
+						"description": "Set the contents of memory starting from the specified address. The values to assign should be a series of space-separated byte values. You may use an expression for each byte value.",
+						"usage": "memory set <address> <byte> [<byte> ...]",
+						"shortcuts": ["ms"]
+					},
+					{
+						"name": "copy",
+						"brief": "Copy memory",
+						"description": "Copy memory from one range of addresses to another. You must specify the destination address, the first byte of the source address, and the last byte of the source address.",
+						"usage": "memory copy <dst addr> <src addr begin> <src addr end>",
+						"shortcuts": ["mc"]
+					}
+				]
+			},
+			{
+				"name": "quit",
+				"brief": "Quit the program",
+				"description": "Quit the program.",
+				"usage": "quit"
+			},
+			{
+				"name": "register",
+				"brief": "View or change register values",
+				"description": "When used without arguments, this command displays the current contents of the CPU registers.  When used with arguments, this command changes the value of a register or one of the CPU's status flags. Allowed register names include A, X, Y, PC and SP. Allowed status flag names include N (Sign), Z (Zero), C (Carry), I (InterruptDisable), D (Decimal) and V (Overflow).",
+				"usage": "register [<name> <value>]",
+				"shortcuts": ["r", "."]
+			},
+			{
+				"name": "run",
+				"brief": "Run the CPU",
+				"description": "Run the CPU until a breakpoint is hit or until the user types Ctrl-C.",
+				"usage": "run"
+			},
+			{
+				"name": "set",
+				"brief": "Set a configuration variable",
+				"description": "Set the value of a configuration variable. To see the current values of all configuration variables, type set without any arguments.",
+				"usage": "set [<var> <value>]"
+			},
+			{
+				"name": "step",
+				"brief": "Step the debugger",
+				"cmds": [
+					{
+						"name": "in",
+						"brief": "Step into next instruction",
+						"description": "Step the CPU by a single instruction. If the instruction is a subroutine call, step into the subroutine. The number of steps may be specified as an option.",
+						"usage": "step in [<count>]",
+						"shortcuts": ["si"]
+					},
+					{
+						"name": "over",
+						"brief": "Step over next instruction",
+						"description": "Step the CPU by a single instruction. If the instruction is a subroutine call, step over the subroutine. The number of steps may be specified as an option.",
+						"usage": "step over [<count>]",
+						"shortcuts": ["s"]
+					},
+					{
+						"name": "out",
+						"brief": "Step out of the current subroutine",
+						"description": "Step the CPU until it executes an RTS or RTI instruction. This has the effect of stepping until the currently running subroutine has returned.",
+						"usage": "step out",
+						"shortcuts": ["so"]
+					}
+				]
+			}
+		]
+	}
+}

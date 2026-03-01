@@ -1,8 +1,8 @@
-github.com/beevik/cmd v0.3.0 h1:QjmDdyORcj+KCndcQHT3op2ONMVcV+gKaBlkmXjwl/8=
-github.com/beevik/cmd v0.3.0/go.mod h1:dpRu0gHueCpDS1wE+UVWiMEgvs23E4djsyePI2l/IsY=
+github.com/beevik/cmd v0.3.1-0.20260228235040-2bef4cefe447 h1:UX1S9vCD+fOo2wdumVZKAp5kCi6tnjuIor2pRtQIC2E=
+github.com/beevik/cmd v0.3.1-0.20260228235040-2bef4cefe447/go.mod h1:dpRu0gHueCpDS1wE+UVWiMEgvs23E4djsyePI2l/IsY=
 github.com/beevik/prefixtree/v2 v2.0.1 h1:RFXjlvdx/whSsnb47Z88Nnd0wpnI5kEi23N5IcD8J1g=
 github.com/beevik/prefixtree/v2 v2.0.1/go.mod h1:XHO9bShx0lkQYkbYKtfnQqtVCVvchjxgCRnLd4qNdgI=
-github.com/beevik/term v0.1.0 h1:aI08JoSDqTuxR6atADbYxqP2EEMfEZ7itocj5cOeWsg=
-github.com/beevik/term v0.1.0/go.mod h1:4uWwSLcbC9HA0IyqF8WbR2qVJBSBnY/HTvpwsyjFreA=
+github.com/beevik/term v0.1.1 h1:3r6DjppdCZiCUhO1fBZzg8DSwkzSr++i9RsL+M2wa7k=
+github.com/beevik/term v0.1.1/go.mod h1:4uWwSLcbC9HA0IyqF8WbR2qVJBSBnY/HTvpwsyjFreA=
 golang.org/x/sys v0.41.0 h1:Ivj+2Cp/ylzLiEU89QhWblYnOE9zerudt9Ftecq2C6k=
 golang.org/x/sys v0.41.0/go.mod h1:OgkHotnGiDImocRcuBABYBEXf8A9a87e/uXjp9XT3ks=
